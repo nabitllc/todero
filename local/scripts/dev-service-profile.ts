@@ -22,9 +22,9 @@ export function createDevServiceIdentity(input: {
     )
     .digest("hex");
 
-  const serviceName = input.mode === "watch" ? "paperclip-dev-watch" : "paperclip-dev-once";
+  const serviceName = input.mode === "watch" ? "todero-dev-watch" : "todero-dev-once";
   const serviceKey = createLocalServiceKey({
-    profileKind: "paperclip-dev",
+    profileKind: "todero-dev",
     serviceName,
     cwd: repoRoot,
     command: "dev-runner.ts",

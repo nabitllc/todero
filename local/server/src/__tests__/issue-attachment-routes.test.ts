@@ -31,7 +31,7 @@ const mockAccessService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
 function registerRouteMocks() {
-  vi.doMock("@paperclipai/shared/telemetry", () => ({
+  vi.doMock("@todero/shared/telemetry", () => ({
     trackAgentTaskCompleted: vi.fn(),
     trackErrorHandlerCrash: vi.fn(),
   }));
@@ -226,7 +226,7 @@ describe("MAX_ATTACHMENT_BYTES", () => {
 describe("issue attachment routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("@paperclipai/shared/telemetry");
+    vi.doUnmock("@todero/shared/telemetry");
     vi.doUnmock("../telemetry.js");
     vi.doUnmock("../services/issues.js");
     vi.doUnmock("../services/index.js");
@@ -636,7 +636,7 @@ describe("issue attachment routes", () => {
     expect(storage.getObject).not.toHaveBeenCalled();
   });
 
-  it("canonicalizes paperclip artifact metadata before creating a work product", async () => {
+  it("canonicalizes todero artifact metadata before creating a work product", async () => {
     const storage = createStorageService();
     const issue = {
       id: "11111111-1111-4111-8111-111111111111",
@@ -656,7 +656,7 @@ describe("issue attachment routes", () => {
       issueId: issue.id,
       companyId: issue.companyId,
       type: "artifact",
-      provider: "paperclip",
+      provider: "todero",
       title: "Clip",
       metadata: null,
     });
@@ -666,7 +666,7 @@ describe("issue attachment routes", () => {
       .post(`/api/issues/${issue.id}/work-products`)
       .send({
         type: "artifact",
-        provider: "paperclip",
+        provider: "todero",
         title: "Clip",
         metadata: {
           attachmentId: "22222222-2222-4222-8222-222222222222",
@@ -685,7 +685,7 @@ describe("issue attachment routes", () => {
       issue.companyId,
       expect.objectContaining({
         type: "artifact",
-        provider: "paperclip",
+        provider: "todero",
         metadata: {
           attachmentId: "22222222-2222-4222-8222-222222222222",
           contentType: "video/mp4",
@@ -699,7 +699,7 @@ describe("issue attachment routes", () => {
     );
   });
 
-  it("rejects paperclip artifact metadata that references another issue's attachment", async () => {
+  it("rejects todero artifact metadata that references another issue's attachment", async () => {
     const storage = createStorageService();
     const issue = {
       id: "11111111-1111-4111-8111-111111111111",
@@ -719,7 +719,7 @@ describe("issue attachment routes", () => {
       .post(`/api/issues/${issue.id}/work-products`)
       .send({
         type: "artifact",
-        provider: "paperclip",
+        provider: "todero",
         title: "Clip",
         metadata: {
           attachmentId: "22222222-2222-4222-8222-222222222222",
@@ -731,7 +731,7 @@ describe("issue attachment routes", () => {
     expect(mockWorkProductService.createForIssue).not.toHaveBeenCalled();
   });
 
-  it("canonicalizes paperclip artifact metadata on work product updates", async () => {
+  it("canonicalizes todero artifact metadata on work product updates", async () => {
     const storage = createStorageService();
     const issue = {
       id: "11111111-1111-4111-8111-111111111111",
@@ -744,7 +744,7 @@ describe("issue attachment routes", () => {
       issueId: issue.id,
       companyId: issue.companyId,
       type: "artifact",
-      provider: "paperclip",
+      provider: "todero",
       title: "Clip",
       metadata: null,
     });
@@ -760,7 +760,7 @@ describe("issue attachment routes", () => {
       issueId: issue.id,
       companyId: issue.companyId,
       type: "artifact",
-      provider: "paperclip",
+      provider: "todero",
       title: "Clip",
       metadata: null,
     });

@@ -39,11 +39,11 @@ describe("codex managed home", () => {
   });
 
   it("treats a concurrently-created expected auth symlink as success", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-home-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-home-"));
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const managedCodexHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -69,7 +69,7 @@ describe("codex managed home", () => {
         prepareManagedCodexHome(
           {
             CODEX_HOME: sharedCodexHome,
-            PAPERCLIP_HOME: paperclipHome,
+            PAPERCLIP_HOME: toderoHome,
             PAPERCLIP_INSTANCE_ID: "default",
           },
           async () => {},
@@ -85,11 +85,11 @@ describe("codex managed home", () => {
   });
 
   it("still throws on EEXIST when a raced-in auth symlink points elsewhere", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-home-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-home-"));
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const managedCodexHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -117,7 +117,7 @@ describe("codex managed home", () => {
         prepareManagedCodexHome(
           {
             CODEX_HOME: sharedCodexHome,
-            PAPERCLIP_HOME: paperclipHome,
+            PAPERCLIP_HOME: toderoHome,
             PAPERCLIP_INSTANCE_ID: "default",
           },
           async () => {},
@@ -132,19 +132,19 @@ describe("codex managed home", () => {
     }
   });
 
-  // Regression for #5028: older Paperclip versions copied auth.json into the
+  // Regression for #5028: older Todero versions copied auth.json into the
   // managed home instead of symlinking. After upgrading to the symlink-based
   // logic, the stale regular file at the target stayed in place and every
   // subsequent codex_local run failed with refresh_token_reused as soon as the
   // source token rotated. `ensureSymlink` now heals the upgrade path by
   // unlinking the stale copy and creating a symlink to the live source.
   it("replaces a stale regular-file auth.json with a symlink to the live source (#5028)", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-home-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-home-"));
     try {
       const sharedCodexHome = path.join(root, "shared-codex-home");
-      const paperclipHome = path.join(root, "paperclip-home");
+      const toderoHome = path.join(root, "todero-home");
       const managedCodexHome = path.join(
-        paperclipHome,
+        toderoHome,
         "instances",
         "default",
         "companies",
@@ -158,14 +158,14 @@ describe("codex managed home", () => {
       // The live source has rotated since the stale copy was written.
       await fs.writeFile(sharedAuth, '{"token":"fresh"}', "utf8");
 
-      // Simulate a stale copy left by a previous Paperclip version.
+      // Simulate a stale copy left by a previous Todero version.
       await fs.mkdir(managedCodexHome, { recursive: true });
       await fs.writeFile(managedAuth, '{"token":"stale-from-copy"}', "utf8");
 
       await prepareManagedCodexHome(
         {
           CODEX_HOME: sharedCodexHome,
-          PAPERCLIP_HOME: paperclipHome,
+          PAPERCLIP_HOME: toderoHome,
           PAPERCLIP_INSTANCE_ID: "default",
         },
         async () => {},
@@ -185,7 +185,7 @@ describe("codex managed home", () => {
   // ensureSymlink runs — so the heal branch never executes there. Call
   // ensureSymlink directly to prove the unlink-and-recreate path itself.
   it("ensureSymlink: unlinks a stale regular file and recreates the symlink", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-ensure-symlink-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-ensure-symlink-"));
     try {
       const source = path.join(root, "live-source.json");
       const target = path.join(root, "stale-target.json");
@@ -203,9 +203,9 @@ describe("codex managed home", () => {
 
   // The isDirectory() guard added with the heal branch must keep an unexpected
   // directory in place rather than throwing EISDIR. We treat a directory at
-  // this path as operator-owned, not a stale Paperclip copy.
+  // this path as operator-owned, not a stale Todero copy.
   it("ensureSymlink: leaves an unexpected directory in place instead of throwing", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-ensure-symlink-dir-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-ensure-symlink-dir-"));
     try {
       const source = path.join(root, "live-source.json");
       const target = path.join(root, "unexpected-dir");
@@ -226,11 +226,11 @@ describe("codex managed home", () => {
 
 describe("isManagedCodexHomePath", () => {
   const env = {
-    PAPERCLIP_HOME: "/srv/paperclip",
+    PAPERCLIP_HOME: "/srv/todero",
     PAPERCLIP_INSTANCE_ID: "default",
   } satisfies NodeJS.ProcessEnv;
   const companyRoot = path.resolve(
-    "/srv/paperclip/instances/default/companies/company-1",
+    "/srv/todero/instances/default/companies/company-1",
   );
 
   it("treats the per-agent managed home as managed", () => {
@@ -255,7 +255,7 @@ describe("isManagedCodexHomePath", () => {
       isManagedCodexHomePath(
         env,
         "company-1",
-        path.resolve("/srv/paperclip/instances/default/companies/company-2/codex-home"),
+        path.resolve("/srv/todero/instances/default/companies/company-2/codex-home"),
       ),
     ).toBe(false);
   });
@@ -269,7 +269,7 @@ describe("isManagedCodexHomePath", () => {
 
 describe("codexHomeHasUsableAuth", () => {
   it("is true for credential-bearing auth.json and false when missing", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-auth-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-auth-"));
     try {
       expect(await codexHomeHasUsableAuth(root)).toBe(false);
       await fs.writeFile(path.join(root, "auth.json"), "{}", "utf8");
@@ -288,7 +288,7 @@ describe("codexHomeHasUsableAuth", () => {
   });
 
   it("recognizes the Codex 0.143 AuthDotJson subscription shape", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-auth-modern-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-auth-modern-"));
     try {
       await fs.writeFile(
         path.join(root, "auth.json"),
@@ -311,7 +311,7 @@ describe("codexHomeHasUsableAuth", () => {
   });
 
   it("treats subscription auth without account_id or token material as unusable", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-auth-modern-invalid-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-auth-modern-invalid-"));
     try {
       await fs.writeFile(
         path.join(root, "auth.json"),
@@ -344,7 +344,7 @@ describe("codexHomeHasUsableAuth", () => {
   });
 
   it("is false for a dangling auth.json symlink", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-auth-dangling-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-auth-dangling-"));
     try {
       await fs.symlink(path.join(root, "missing-source.json"), path.join(root, "auth.json"));
       expect(await codexHomeHasUsableAuth(root)).toBe(false);
@@ -356,7 +356,7 @@ describe("codexHomeHasUsableAuth", () => {
 
 describe("seedManagedCodexHome", () => {
   it("symlinks auth.json from the shared source into an explicit per-agent home", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-"));
     try {
       const sharedCodexHome = path.join(root, "shared-codex-home");
       const agentHome = path.join(
@@ -385,7 +385,7 @@ describe("seedManagedCodexHome", () => {
   });
 
   it("writes an API-key auth.json into the home when an apiKey is supplied", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-apikey-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-apikey-"));
     try {
       const agentHome = path.join(root, "agent-home");
       const emptyShared = path.join(root, "empty-shared");
@@ -419,7 +419,7 @@ describe("seedManagedCodexHome", () => {
     });
 
   it("keeps a promoted subscription auth.json when the shared source has no auth", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-promoted-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-promoted-"));
     try {
       const companyHome = path.join(root, "company-home");
       const emptyShared = path.join(root, "empty-shared");
@@ -439,7 +439,7 @@ describe("seedManagedCodexHome", () => {
   });
 
   it("keeps a promoted subscription auth.json whose identity differs from the shared source", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-foreign-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-foreign-"));
     try {
       const companyHome = path.join(root, "company-home");
       const sharedCodexHome = path.join(root, "shared-codex-home");
@@ -464,7 +464,7 @@ describe("seedManagedCodexHome", () => {
   });
 
   it("still replaces a same-identity stale regular copy with the shared symlink (#5028)", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-stale-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-stale-"));
     try {
       const companyHome = path.join(root, "company-home");
       const sharedCodexHome = path.join(root, "shared-codex-home");
@@ -489,7 +489,7 @@ describe("seedManagedCodexHome", () => {
   });
 
   it("keeps the usable target when the shared source exists but cannot be read", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-src-err-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-src-err-"));
     try {
       const companyHome = path.join(root, "company-home");
       const sharedCodexHome = path.join(root, "shared-codex-home");
@@ -513,7 +513,7 @@ describe("seedManagedCodexHome", () => {
   });
 
   it("still removes an apikey-mode auth.json so the chatgpt-mode symlink is restored", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-seed-apikey-residue-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-seed-apikey-residue-"));
     try {
       const companyHome = path.join(root, "company-home");
       const sharedCodexHome = path.join(root, "shared-codex-home");
@@ -541,11 +541,11 @@ describe("seedManagedCodexHome", () => {
 // Startup backfill for already-isolated managed homes.
 describe("reconcileManagedCodexHome", () => {
   async function makeFixture() {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-reconcile-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-reconcile-"));
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const agentHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -560,7 +560,7 @@ describe("reconcileManagedCodexHome", () => {
     await fs.writeFile(sharedAuth, '{"OPENAI_API_KEY":"shared"}', "utf8");
     const env = {
       CODEX_HOME: sharedCodexHome,
-      PAPERCLIP_HOME: paperclipHome,
+      PAPERCLIP_HOME: toderoHome,
       PAPERCLIP_INSTANCE_ID: "default",
     } satisfies NodeJS.ProcessEnv;
     return { root, sharedCodexHome, sharedAuth, agentHome, agentAuth, env };
@@ -723,11 +723,11 @@ describe("reconcileManagedCodexHome", () => {
 
 describe("evaluateCodexCredentialReadiness", () => {
   async function makeFixture() {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-readiness-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-readiness-"));
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const companyRoot = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -737,7 +737,7 @@ describe("evaluateCodexCredentialReadiness", () => {
     const managedAgentHome = path.join(companyRoot, "agents", "agent-1", "codex-home");
     const env: NodeJS.ProcessEnv = {
       CODEX_HOME: sharedCodexHome,
-      PAPERCLIP_HOME: paperclipHome,
+      PAPERCLIP_HOME: toderoHome,
       PAPERCLIP_INSTANCE_ID: "default",
     };
     await fs.mkdir(sharedCodexHome, { recursive: true });
@@ -846,22 +846,22 @@ describe("evaluateCodexCredentialReadiness", () => {
   });
 
   it("replaces the managed MCP block and clears stale servers for an empty runtime set", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-mcp-config-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-mcp-config-"));
     try {
       const alphaHome = path.join(root, "agent-alpha");
       const zeroHome = path.join(root, "agent-zero");
       await writeManagedCodexMcpConfig({
         codexHome: alphaHome,
-        apiBaseUrl: "https://paperclip.example",
+        apiBaseUrl: "https://todero.example",
         gateways: [{
           name: "alpha",
-          endpointPath: "https://paperclip.example/api/tool-gateway/gateways/alpha/mcp",
+          endpointPath: "https://todero.example/api/tool-gateway/gateways/alpha/mcp",
           bearerToken: "alpha-token",
         }],
       });
       await writeManagedCodexMcpConfig({
         codexHome: zeroHome,
-        apiBaseUrl: "https://paperclip.example",
+        apiBaseUrl: "https://todero.example",
         gateways: [{
           name: "stale",
           endpointPath: "/api/tool-gateway/gateways/stale/mcp",
@@ -870,7 +870,7 @@ describe("evaluateCodexCredentialReadiness", () => {
       });
       await writeManagedCodexMcpConfig({
         codexHome: zeroHome,
-        apiBaseUrl: "https://paperclip.example",
+        apiBaseUrl: "https://todero.example",
         gateways: [],
       });
 
@@ -887,14 +887,14 @@ describe("evaluateCodexCredentialReadiness", () => {
   });
 
   it("restricts permissions on an existing managed MCP config", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-mcp-config-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-mcp-config-"));
     try {
       const configPath = path.join(root, "config.toml");
       await fs.writeFile(configPath, "model = \"gpt-5\"\n", { mode: 0o644 });
 
       await writeManagedCodexMcpConfig({
         codexHome: root,
-        apiBaseUrl: "https://paperclip.example",
+        apiBaseUrl: "https://todero.example",
         gateways: [],
       });
 
@@ -928,7 +928,7 @@ describe("stageCodexHomeForSync", () => {
     await fs.mkdir(home, { recursive: true });
     // auth.json is a symlink into the shared source (single-use rotating tokens).
     await fs.symlink(authSource, path.join(home, "auth.json"));
-    await fs.writeFile(path.join(home, "config.toml"), "model_provider = \"paperclip\"\n", "utf8");
+    await fs.writeFile(path.join(home, "config.toml"), "model_provider = \"todero\"\n", "utf8");
     await fs.writeFile(path.join(home, "config.json"), "{}\n", "utf8");
     await fs.writeFile(path.join(home, "instructions.md"), "hi\n", "utf8");
     // skills/ is a directory of symlinks.
@@ -949,7 +949,7 @@ describe("stageCodexHomeForSync", () => {
   }
 
   it("stages exactly the allowlist, derefs auth.json to bytes, and excludes decoys", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-"));
     let staged: string | null = null;
     try {
       const { home, authBytes, skillBytes } = await buildFakeHome(root);
@@ -983,7 +983,7 @@ describe("stageCodexHomeForSync", () => {
 
   // C1 — staged credential file must be mode 0600 (not the world-readable default).
   it("writes the staged auth.json with mode 0600", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-mode-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-mode-"));
     let staged: string | null = null;
     try {
       const { home } = await buildFakeHome(root);
@@ -999,7 +999,7 @@ describe("stageCodexHomeForSync", () => {
   // config.toml carries the managed MCP `Authorization: Bearer …` header and is
   // secret-bearing; the staged copy must be 0600, not the world-readable default.
   it("writes the staged config.toml (managed MCP bearer header) with mode 0600", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-toml-mode-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-toml-mode-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");
@@ -1008,7 +1008,7 @@ describe("stageCodexHomeForSync", () => {
       // and is persisted 0600 on disk.
       await fs.writeFile(
         path.join(home, "config.toml"),
-        "[mcp_servers.paperclip]\nheaders = { Authorization = \"Bearer secret-token\" }\n",
+        "[mcp_servers.todero]\nheaders = { Authorization = \"Bearer secret-token\" }\n",
         { mode: 0o600 },
       );
       staged = await stageCodexHomeForSync(home, { runId: "run-toml-mode" });
@@ -1023,7 +1023,7 @@ describe("stageCodexHomeForSync", () => {
   // Least privilege: no staged regular file needs group/other read, so every
   // one (config.json, instructions.md — not just credentials) is staged 0600.
   it("writes every staged regular file with mode 0600", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-all-mode-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-all-mode-"));
     let staged: string | null = null;
     try {
       const { home } = await buildFakeHome(root);
@@ -1040,7 +1040,7 @@ describe("stageCodexHomeForSync", () => {
 
   // C2 — staged dir must be 0700 (mkdtemp guarantees this on POSIX).
   it("creates the staged dir with mode 0700", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-dir-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-dir-"));
     let staged: string | null = null;
     try {
       const { home } = await buildFakeHome(root);
@@ -1054,7 +1054,7 @@ describe("stageCodexHomeForSync", () => {
   });
 
   it("skips absent optional entries without throwing", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-absent-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-absent-"));
     let staged: string | null = null;
     try {
       // Keyring-credential mode: no auth.json, no config.json.
@@ -1072,7 +1072,7 @@ describe("stageCodexHomeForSync", () => {
   });
 
   it("treats a dangling auth.json symlink as absent (skips it, no throw)", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-dangling-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-dangling-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");
@@ -1091,7 +1091,7 @@ describe("stageCodexHomeForSync", () => {
   // C3 + C4 — an unexpected I/O error must reject (fail-closed, not partial)
   // AND remove the temp dir it created (cleanup on the error path).
   it("fails closed and removes the temp dir on an unexpected I/O error", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-fail-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-fail-"));
     try {
       const { home } = await buildFakeHome(root);
 
@@ -1116,11 +1116,11 @@ describe("stageCodexHomeForSync", () => {
   });
 
   // Circular symlinks inside skills/ must be silently skipped (not throw ELOOP).
-  // Skill symlinks that point OUTSIDE skills/ are intentional design (Paperclip
+  // Skill symlinks that point OUTSIDE skills/ are intentional design (Todero
   // stores skill packages in a shared location) and are dereferenced normally;
   // all resulting files land 0600 inside the 0700 staged dir.
   it("skips circular skill symlinks (ELOOP) without throwing", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-circular-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-circular-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");
@@ -1146,7 +1146,7 @@ describe("stageCodexHomeForSync", () => {
   // Mode normalization: nested skill files must be staged 0600 regardless of
   // their source mode (0644 documents, 0755 scripts, etc.).
   it("writes nested skill files with mode 0600 regardless of source mode", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-skill-mode-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-skill-mode-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");
@@ -1173,7 +1173,7 @@ describe("stageCodexHomeForSync", () => {
   // exhausted. Cycle detection must let staging finish while still copying the
   // real content and skipping the self-referential link.
   it("does not infinitely traverse an ancestor directory link (back -> .) inside a skill", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-cycle-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-cycle-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");
@@ -1203,7 +1203,7 @@ describe("stageCodexHomeForSync", () => {
   // dereferenced into the staged asset — otherwise a malformed/compromised skill
   // could smuggle host secrets past CODEX_SYNC_ALLOWLIST.
   it("does not stage a nested skill symlink that escapes the skill root", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-escape-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-escape-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");
@@ -1241,7 +1241,7 @@ describe("stageCodexHomeForSync", () => {
   // never adopted as a containment root — otherwise the whole home
   // (`sessions/`, `*.sqlite`, …) would be dragged into the staged skills asset.
   it("skips a top-level skills entry that resolves to an ancestor of skills/", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-stage-ancestor-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-stage-ancestor-"));
     let staged: string | null = null;
     try {
       const home = path.join(root, "codex-home");

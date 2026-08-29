@@ -42,7 +42,7 @@ import {
   secretAccessEvents,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import { mcpGatewayProtocolRoutes, toolGatewayRoutes } from "../routes/tool-gateway.js";
 import { toolAccessService } from "../services/tool-access.js";
@@ -542,7 +542,7 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tool-gateway-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-tool-gateway-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -773,7 +773,7 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
     const first = await request(app)
       .post(`/mcp/gateways/${created.gatewayPublicId}`)
       .set("authorization", `Bearer ${badToken}`)
-      .set("x-paperclip-client-name", "Noisy client")
+      .set("x-todero-client-name", "Noisy client")
       .set("x-request-id", "auth-throttle-test")
       .send({ jsonrpc: "2.0", id: 1, method: "tools/list" })
       .expect(401);
@@ -782,7 +782,7 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
     const throttled = await request(app)
       .post(`/mcp/gateways/${created.gatewayPublicId}`)
       .set("authorization", `Bearer ${badToken}`)
-      .set("x-paperclip-client-name", "Noisy client")
+      .set("x-todero-client-name", "Noisy client")
       .set("x-request-id", "auth-throttle-test")
       .send({ jsonrpc: "2.0", id: 2, method: "tools/list" })
       .expect(429);
@@ -885,7 +885,7 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
     const throttled = await request(createGatewayRouteApp(db, serviceB))
       .post(`/mcp/gateways/${created.gatewayPublicId}`)
       .set("authorization", `Bearer ${badToken}`)
-      .set("x-paperclip-client-name", "Shared counter client")
+      .set("x-todero-client-name", "Shared counter client")
       .set("x-request-id", "auth-limiter-shared-test")
       .send({ jsonrpc: "2.0", id: 2, method: "tools/list" })
       .expect(429);
@@ -1367,7 +1367,7 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
     expect(sessionRequests).toEqual([
       expect.objectContaining({
         apiKey: "ak_composio_gateway_fixture",
-        userId: `paperclip:${company.id}`,
+        userId: `todero:${company.id}`,
         options: expect.objectContaining({
           mcp: true,
           toolkits: ["github"],
@@ -1468,7 +1468,7 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
 
   it("passes only approved env values to local stdio MCP processes", async () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
-    process.env.DATABASE_URL = "postgres://server-secret.example/paperclip";
+    process.env.DATABASE_URL = "postgres://server-secret.example/todero";
     try {
       const company = await createCompany(db);
       const agent = await createAgent(db, company.id);
@@ -2257,9 +2257,9 @@ rl.on("line", (line) => {
       expect(fakeRequest.headers.authorization).toBe(`Bearer ${credentialValue}`);
       expect(fakeRequest.headers["x-client-request-id"]).toBe("caller-123");
       expect(fakeRequest.headers["x-static-mode"]).toBe("canary");
-      expect(fakeRequest.headers["x-paperclip-agent-id"]).toBe(agent.id);
-      expect(fakeRequest.headers["x-paperclip-issue-id"]).toBe(issue.id);
-      expect(fakeRequest.headers["x-paperclip-tool-gateway-token"]).toBeUndefined();
+      expect(fakeRequest.headers["x-todero-agent-id"]).toBe(agent.id);
+      expect(fakeRequest.headers["x-todero-issue-id"]).toBe(issue.id);
+      expect(fakeRequest.headers["x-todero-tool-gateway-token"]).toBeUndefined();
       expect(fakeRequest.headers["x-unlisted-header"]).toBeUndefined();
       return {
         body: {
@@ -2297,7 +2297,7 @@ rl.on("line", (line) => {
             headerPolicy: {
               allowManagedCredentialOverride: true,
               passthrough: {
-                allowedHeaders: ["x-client-request-id", "authorization", "x-paperclip-tool-gateway-token"],
+                allowedHeaders: ["x-client-request-id", "authorization", "x-todero-tool-gateway-token"],
                 allowManagedCredentialOverride: true,
               },
               staticHeaders: [{ name: "x-static-mode", value: "canary" }],
@@ -2320,7 +2320,7 @@ rl.on("line", (line) => {
         callerHeaders: {
           authorization: "Bearer caller-must-not-win",
           "x-client-request-id": "caller-123",
-          "x-paperclip-tool-gateway-token": "caller-session-token",
+          "x-todero-tool-gateway-token": "caller-session-token",
           "x-unlisted-header": "drop-me",
         },
       });
@@ -2335,14 +2335,14 @@ rl.on("line", (line) => {
           passthroughHeaderNames: ["x-client-request-id"],
           droppedPassthroughHeaderNames: expect.arrayContaining([
             "authorization",
-            "x-paperclip-tool-gateway-token",
+            "x-todero-tool-gateway-token",
             "x-unlisted-header",
           ]),
           staticHeaderNames: ["x-static-mode"],
-          metadataHeaderNames: ["x-paperclip-agent-id", "x-paperclip-issue-id"],
+          metadataHeaderNames: ["x-todero-agent-id", "x-todero-issue-id"],
           collisionRules: expect.arrayContaining([
             { header: "authorization", source: "caller", action: "kept_managed_credential" },
-            { header: "x-paperclip-tool-gateway-token", source: "caller", action: "dropped_sensitive_header" },
+            { header: "x-todero-tool-gateway-token", source: "caller", action: "dropped_sensitive_header" },
           ]),
         },
       });
@@ -2360,14 +2360,14 @@ rl.on("line", (line) => {
     }
   });
 
-  it("drops auth-bearing and Paperclip session headers from passthrough allowlists", async () => {
+  it("drops auth-bearing and Todero session headers from passthrough allowlists", async () => {
     const company = await createCompany(db);
     const agent = await createAgent(db, company.id);
     const { run } = await createIssueAndRun(db, company.id, agent.id);
     const fake = await startFakeRemoteMcpServer((fakeRequest) => {
       expect(fakeRequest.headers.authorization).toBeUndefined();
       expect(fakeRequest.headers["x-auth-token"]).toBeUndefined();
-      expect(fakeRequest.headers["x-paperclip-tool-gateway-token"]).toBeUndefined();
+      expect(fakeRequest.headers["x-todero-tool-gateway-token"]).toBeUndefined();
       expect(fakeRequest.headers["x-client-request-id"]).toBe("caller-456");
       return {
         body: {
@@ -2393,7 +2393,7 @@ rl.on("line", (line) => {
                   "authorization",
                   "x-auth-token",
                   "x-client-request-id",
-                  "x-paperclip-tool-gateway-token",
+                  "x-todero-tool-gateway-token",
                 ],
               },
             },
@@ -2415,7 +2415,7 @@ rl.on("line", (line) => {
           authorization: "Bearer caller-should-drop",
           "x-auth-token": "drop-auth-token",
           "x-client-request-id": "caller-456",
-          "x-paperclip-tool-gateway-token": "drop-gateway-token",
+          "x-todero-tool-gateway-token": "drop-gateway-token",
         },
       });
 
@@ -2430,12 +2430,12 @@ rl.on("line", (line) => {
           droppedPassthroughHeaderNames: expect.arrayContaining([
             "authorization",
             "x-auth-token",
-            "x-paperclip-tool-gateway-token",
+            "x-todero-tool-gateway-token",
           ]),
           collisionRules: expect.arrayContaining([
             { header: "authorization", source: "caller", action: "dropped_sensitive_header" },
             { header: "x-auth-token", source: "caller", action: "dropped_sensitive_header" },
-            { header: "x-paperclip-tool-gateway-token", source: "caller", action: "dropped_sensitive_header" },
+            { header: "x-todero-tool-gateway-token", source: "caller", action: "dropped_sensitive_header" },
           ]),
         },
       });
@@ -2683,7 +2683,7 @@ rl.on("line", (line) => {
         connectionConfig: {
           sourceTemplateKey: "shopify",
           connectionMethodKey: "ucp-commerce",
-          methodConfig: { storeDomain: "paperclip-demo.myshopify.com" },
+          methodConfig: { storeDomain: "todero-demo.myshopify.com" },
         },
       });
       const toolName = expectedConnectedToolName({
@@ -2796,7 +2796,7 @@ rl.on("line", (line) => {
         connectionConfig: {
           sourceTemplateKey: "shopify",
           connectionMethodKey: "ucp-commerce",
-          methodConfig: { storeDomain: "paperclip-demo.myshopify.com" },
+          methodConfig: { storeDomain: "todero-demo.myshopify.com" },
         },
       });
       const toolName = expectedConnectedToolName({
@@ -3055,7 +3055,7 @@ rl.on("line", (line) => {
         connectionConfig: {
           sourceTemplateKey: "shopify",
           connectionMethodKey: "ucp-commerce",
-          methodConfig: { storeDomain: "paperclip-demo.myshopify.com" },
+          methodConfig: { storeDomain: "todero-demo.myshopify.com" },
         },
       });
       await allowToolsForAgent(db, company.id, agent.id, [
@@ -3239,7 +3239,7 @@ rl.on("line", (line) => {
             httpMethod: "POST",
             endpoint: fake.url,
             mcpMethod: "tools/call",
-            requestId: expect.stringMatching(/^paperclip-tool-/),
+            requestId: expect.stringMatching(/^todero-tool-/),
             upstreamToolName: "kv_set",
             dispatched: true,
           },
@@ -3981,7 +3981,7 @@ rl.on("line", (line) => {
 
     const listWithHeaderToken = await request(app)
       .get("/api/tool-gateway/tools")
-      .set("x-paperclip-tool-gateway-token", session.token);
+      .set("x-todero-tool-gateway-token", session.token);
     expect(listWithHeaderToken.status).toBe(200);
   });
 
@@ -4006,7 +4006,7 @@ rl.on("line", (line) => {
 
     const beforeRevoke = await request(app)
       .get("/api/tool-gateway/tools")
-      .set("x-paperclip-tool-gateway-token", session.token);
+      .set("x-todero-tool-gateway-token", session.token);
     expect(beforeRevoke.status).toBe(200);
 
     const revoked = await request(app)
@@ -4021,7 +4021,7 @@ rl.on("line", (line) => {
 
     const afterRevoke = await request(app)
       .get("/api/tool-gateway/tools")
-      .set("x-paperclip-tool-gateway-token", session.token);
+      .set("x-todero-tool-gateway-token", session.token);
     expect(afterRevoke.status).toBe(401);
     expect(afterRevoke.body.reasonCode).toBe("session_revoked");
 
@@ -4086,7 +4086,7 @@ rl.on("line", (line) => {
 
     const stillActive = await request(app)
       .get("/api/tool-gateway/tools")
-      .set("x-paperclip-tool-gateway-token", session.token);
+      .set("x-todero-tool-gateway-token", session.token);
     expect(stillActive.status).toBe(200);
 
     const revokedRows = await db
@@ -4128,7 +4128,7 @@ rl.on("line", (line) => {
 
     const otherRunStillActive = await request(app)
       .get("/api/tool-gateway/tools")
-      .set("x-paperclip-tool-gateway-token", otherRunSession.token);
+      .set("x-todero-tool-gateway-token", otherRunSession.token);
     expect(otherRunStillActive.status).toBe(200);
 
     const ownRun = await request(app)
@@ -4138,7 +4138,7 @@ rl.on("line", (line) => {
 
     const ownRunDenied = await request(app)
       .get("/api/tool-gateway/tools")
-      .set("x-paperclip-tool-gateway-token", session.token);
+      .set("x-todero-tool-gateway-token", session.token);
     expect(ownRunDenied.status).toBe(401);
     expect(ownRunDenied.body.reasonCode).toBe("session_revoked");
   });
@@ -4830,7 +4830,7 @@ rl.on("line", (line) => {
     const [idleSlot] = await db.select().from(toolRuntimeSlots).where(eq(toolRuntimeSlots.companyId, company.id));
     expect(idleSlot).toMatchObject({
       status: "idle",
-      commandTemplateKey: "paperclip.slow-stateful-stdio",
+      commandTemplateKey: "todero.slow-stateful-stdio",
       healthStatus: "ok",
     });
     expect(idleSlot.metadata).toMatchObject({

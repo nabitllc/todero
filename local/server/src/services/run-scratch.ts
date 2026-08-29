@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-export const HEARTBEAT_RUN_SCRATCH_MARKER = ".paperclip-run-scratch.json";
+export const HEARTBEAT_RUN_SCRATCH_MARKER = ".todero-run-scratch.json";
 
 export interface HeartbeatRunScratchMetadata {
   version: 1;
@@ -87,7 +87,7 @@ export async function prepareHeartbeatRunScratch(input: {
 }): Promise<HeartbeatRunScratch> {
   const issueSegment = sanitizePathSegment(input.issueIdentifier, "unassigned");
   const runSegment = sanitizePathSegment(input.runId.slice(0, 12), "run");
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `paperclip-run-${issueSegment}-${runSegment}-`));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `todero-run-${issueSegment}-${runSegment}-`));
   const markerPath = path.join(dir, HEARTBEAT_RUN_SCRATCH_MARKER);
   const metadata: HeartbeatRunScratchMetadata = {
     version: 1,
@@ -129,7 +129,7 @@ export async function cleanupHeartbeatRunScratch(input: {
 }): Promise<HeartbeatRunScratchCleanupResult> {
   const tmpRoot = path.resolve(os.tmpdir());
   const dir = path.resolve(input.scratch.dir);
-  if (!isPathInside(tmpRoot, dir) || !path.basename(dir).startsWith("paperclip-run-")) {
+  if (!isPathInside(tmpRoot, dir) || !path.basename(dir).startsWith("todero-run-")) {
     return { removed: false, dir, reason: "unmarked" };
   }
   try {

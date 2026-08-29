@@ -9,12 +9,12 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  createPaperclipIdGmailConnector,
+  createToderoIdGmailConnector,
   GMAIL_CONNECTOR_SCOPES,
   GOOGLE_WORKSPACE_CONNECTOR_PROFILES,
-  paperclipIdGmailConnectorConfigFromEnv,
-  PaperclipIdConnectorError,
-  type PaperclipIdGmailConnectorConfig,
+  toderoIdGmailConnectorConfigFromEnv,
+  ToderoIdConnectorError,
+  type ToderoIdGmailConnectorConfig,
 } from "./paperclip-id-gmail-connector.js";
 
 const instanceId = "inst_test";
@@ -37,12 +37,12 @@ function config() {
       environment: "staging",
       signPrivateKey: rawPrivateKey(signing.privateKey),
       sealPrivateKey: rawPrivateKey(sealing.privateKey),
-    } satisfies PaperclipIdGmailConnectorConfig,
+    } satisfies ToderoIdGmailConnectorConfig,
     sealPublicKey: sealing.publicKey,
   };
 }
 
-describe("Paperclip ID Gmail connector", () => {
+describe("Todero ID Gmail connector", () => {
   it("starts a signed session with exact endpoint audience and scope contract", async () => {
     const keys = config();
     const request = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
@@ -56,7 +56,7 @@ describe("Paperclip ID Gmail connector", () => {
         cid: companyId,
         env: "staging",
         op: "session",
-        ruri: "https://paperclip.example.test/api/tools/oauth/paperclip-id/callback",
+        ruri: "https://todero.example.test/api/tools/oauth/todero-id/callback",
         rst: "state-1",
       });
       return Response.json({
@@ -65,12 +65,12 @@ describe("Paperclip ID Gmail connector", () => {
         scopes: [...GMAIL_CONNECTOR_SCOPES],
       }, { status: 201 });
     });
-    const connector = createPaperclipIdGmailConnector({ config: keys.config, request: request as typeof fetch });
+    const connector = createToderoIdGmailConnector({ config: keys.config, request: request as typeof fetch });
 
     await expect(connector.startAuthorization({
       subject,
       companyId,
-      returnUri: "https://paperclip.example.test/api/tools/oauth/paperclip-id/callback",
+      returnUri: "https://todero.example.test/api/tools/oauth/todero-id/callback",
       returnState: "state-1",
     })).resolves.toMatchObject({ authorizationUrl: expect.stringContaining("accounts.google.com") });
   });
@@ -93,7 +93,7 @@ describe("Paperclip ID Gmail connector", () => {
       scopes: [...GMAIL_CONNECTOR_SCOPES],
       sealed,
     }));
-    const connector = createPaperclipIdGmailConnector({ config: keys.config, request: request as typeof fetch });
+    const connector = createToderoIdGmailConnector({ config: keys.config, request: request as typeof fetch });
 
     await expect(connector.claim({ subject, companyId, claimId: "clm_test" })).resolves.toEqual(credentials);
   });
@@ -120,7 +120,7 @@ describe("Paperclip ID Gmail connector", () => {
       expect(claims.prf).toBe(profile);
       return Response.json({ claimId: "clm_drive", scopes: credentials.scopes, sealed });
     });
-    const connector = createPaperclipIdGmailConnector({ config: keys.config, request: request as typeof fetch });
+    const connector = createToderoIdGmailConnector({ config: keys.config, request: request as typeof fetch });
 
     await expect(connector.claim({ subject, companyId, profile, claimId: "clm_drive" })).resolves.toEqual(credentials);
   });
@@ -131,7 +131,7 @@ describe("Paperclip ID Gmail connector", () => {
       protocolVersion: 2,
       profiles: ["gmail.read", "drive.write", "unknown.profile"],
     }));
-    const connector = createPaperclipIdGmailConnector({ config: keys.config, request: request as typeof fetch });
+    const connector = createToderoIdGmailConnector({ config: keys.config, request: request as typeof fetch });
     await expect(connector.getCapabilities()).resolves.toEqual(["gmail.read", "drive.write"]);
   });
 
@@ -140,21 +140,21 @@ describe("Paperclip ID Gmail connector", () => {
     const request = vi.fn(async () => new Response(JSON.stringify({
       error: "provider rejected access-secret refresh-secret",
     }), { status: 502 }));
-    const connector = createPaperclipIdGmailConnector({ config: keys.config, request: request as typeof fetch });
+    const connector = createToderoIdGmailConnector({ config: keys.config, request: request as typeof fetch });
 
     const error = await connector.refresh({ subject, companyId, refreshToken: "refresh-secret" }).catch((caught) => caught);
-    expect(error).toBeInstanceOf(PaperclipIdConnectorError);
+    expect(error).toBeInstanceOf(ToderoIdConnectorError);
     expect(String(error)).not.toContain("access-secret");
     expect(String(error)).not.toContain("refresh-secret");
     expect(request).toHaveBeenCalledOnce();
   });
 
   it("requires an all-or-nothing environment configuration and loopback for HTTP", () => {
-    expect(paperclipIdGmailConnectorConfigFromEnv({})).toBeNull();
-    expect(() => paperclipIdGmailConnectorConfigFromEnv({
+    expect(toderoIdGmailConnectorConfigFromEnv({})).toBeNull();
+    expect(() => toderoIdGmailConnectorConfigFromEnv({
       PAPERCLIP_ID_CONNECTOR_INSTANCE_ID: instanceId,
     })).toThrowError(/incomplete/);
-    expect(() => paperclipIdGmailConnectorConfigFromEnv({
+    expect(() => toderoIdGmailConnectorConfigFromEnv({
       PAPERCLIP_ID_CONNECTOR_INSTANCE_ID: instanceId,
       PAPERCLIP_ID_CONNECTOR_SIGN_PRIVATE_KEY: "key",
       PAPERCLIP_ID_CONNECTOR_SEAL_PRIVATE_KEY: "key",
@@ -168,7 +168,7 @@ function seal(
   payload: unknown,
   recipientPublicKey: KeyObject,
   purpose: "gmail-initial-tokens" | "gmail-access-token" | "google-workspace-initial-tokens" | "google-workspace-access-token",
-  configValue: PaperclipIdGmailConnectorConfig,
+  configValue: ToderoIdGmailConnectorConfig,
   profile?: string,
 ) {
   const ephemeral = generateKeyPairSync("x25519");

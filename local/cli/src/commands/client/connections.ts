@@ -3,7 +3,7 @@ import {
   CONNECTION_INTENT_AGENT_GUIDANCE,
   connectionRequestInputSchema,
   connectionsSearchInputSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 
 interface RuntimeConnectionOptions {
   json?: boolean;

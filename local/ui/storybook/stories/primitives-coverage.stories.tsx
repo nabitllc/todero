@@ -86,9 +86,9 @@ type Story = StoryObj<typeof meta>;
 
 function StoryFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="paperclip-story">
-      <main className="paperclip-story__inner">
-        <section className="paperclip-story__frame p-6">{children}</section>
+    <div className="todero-story">
+      <main className="todero-story__inner">
+        <section className="todero-story__frame p-6">{children}</section>
       </main>
     </div>
   );
@@ -126,7 +126,7 @@ export const BreadcrumbTrail: Story = {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="#">Paperclip</BreadcrumbLink>
+            <BreadcrumbLink href="#">Todero</BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>

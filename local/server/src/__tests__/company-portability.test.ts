@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { CompanyPortabilityFileEntry } from "@paperclipai/shared";
+import type { CompanyPortabilityFileEntry } from "@todero/shared";
 
 const companySvc = {
   getById: vi.fn(),
@@ -174,7 +174,7 @@ function asTextFile(entry: CompanyPortabilityFileEntry | undefined) {
 }
 
 describe("company portability", () => {
-  const paperclipKey = "paperclipai/paperclip/paperclip";
+  const toderoKey = "nabitllc/todero/todero";
   const companyPlaybookKey = "company/company-1/company-playbook";
 
   beforeEach(() => {
@@ -200,7 +200,7 @@ describe("company portability", () => {
     companySvc.list.mockResolvedValue([]);
     companySvc.getById.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "Todero",
       description: null,
       issuePrefix: "PAP",
       logoAssetId: null,
@@ -209,7 +209,7 @@ describe("company portability", () => {
     });
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
       requireBoardApprovalForNewAgents: false,
     });
     agentSvc.list.mockResolvedValue([
@@ -225,8 +225,8 @@ describe("company portability", () => {
         adapterType: "claude_local",
         adapterConfig: {
           promptTemplate: "You are ClaudeCoder.",
-          paperclipSkillSync: {
-            desiredSkills: [paperclipKey],
+          toderoSkillSync: {
+            desiredSkills: [toderoKey],
           },
           instructionsFilePath: "/tmp/ignored.md",
           cwd: "/tmp/ignored",
@@ -360,13 +360,13 @@ describe("company portability", () => {
       {
         id: "skill-1",
         companyId: "company-1",
-        key: paperclipKey,
-        slug: "paperclip",
-        name: "paperclip",
-        description: "Paperclip coordination skill",
-        markdown: "---\nname: paperclip\ndescription: Paperclip coordination skill\n---\n\n# Paperclip\n",
+        key: toderoKey,
+        slug: "todero",
+        name: "todero",
+        description: "Todero coordination skill",
+        markdown: "---\nname: todero\ndescription: Todero coordination skill\n---\n\n# Todero\n",
         sourceType: "github",
-        sourceLocator: "https://github.com/paperclipai/paperclip/tree/master/skills/paperclip",
+        sourceLocator: "https://github.com/nabitllc/todero/tree/main/skills/todero",
         sourceRef: "0123456789abcdef0123456789abcdef01234567",
         trustLevel: "markdown_only",
         compatibility: "compatible",
@@ -376,11 +376,11 @@ describe("company portability", () => {
         ],
         metadata: {
           sourceKind: "github",
-          owner: "paperclipai",
-          repo: "paperclip",
+          owner: "todero",
+          repo: "todero",
           ref: "0123456789abcdef0123456789abcdef01234567",
           trackingRef: "master",
-          repoSkillDir: "skills/paperclip",
+          repoSkillDir: "skills/todero",
         },
       },
       {
@@ -427,7 +427,7 @@ describe("company portability", () => {
         path: relativePath,
         kind: relativePath === "SKILL.md" ? "skill" : "reference",
         content: relativePath === "SKILL.md"
-          ? "---\nname: paperclip\ndescription: Paperclip coordination skill\n---\n\n# Paperclip\n"
+          ? "---\nname: todero\ndescription: Todero coordination skill\n---\n\n# Todero\n"
           : "# API\n",
         language: "markdown",
         markdown: true,
@@ -495,10 +495,10 @@ describe("company portability", () => {
 
   it("parses canonical GitHub import URLs with explicit ref and package path", () => {
     expect(
-      parseGitHubSourceUrl("https://github.com/paperclipai/companies?ref=feature%2Fdemo&path=gstack"),
+      parseGitHubSourceUrl("https://github.com/todero/companies?ref=feature%2Fdemo&path=gstack"),
     ).toEqual({
       hostname: "github.com",
-      owner: "paperclipai",
+      owner: "todero",
       repo: "companies",
       ref: "feature/demo",
       basePath: "gstack",
@@ -509,11 +509,11 @@ describe("company portability", () => {
   it("parses canonical GitHub import URLs with explicit companyPath", () => {
     expect(
       parseGitHubSourceUrl(
-        "https://github.com/paperclipai/companies?ref=abc123&companyPath=gstack%2FCOMPANY.md",
+        "https://github.com/todero/companies?ref=abc123&companyPath=gstack%2FCOMPANY.md",
       ),
     ).toEqual({
       hostname: "github.com",
-      owner: "paperclipai",
+      owner: "todero",
       repo: "companies",
       ref: "abc123",
       basePath: "gstack",
@@ -521,7 +521,7 @@ describe("company portability", () => {
     });
   });
 
-  it("exports referenced skills as stubs by default with sanitized Paperclip extension data", async () => {
+  it("exports referenced skills as stubs by default with sanitized Todero extension data", async () => {
     const portability = companyPortabilityService({} as any);
 
     const exported = await portability.exportBundle("company-1", {
@@ -534,19 +534,19 @@ describe("company portability", () => {
       },
     });
 
-    expect(asTextFile(exported.files["COMPANY.md"])).toContain('name: "Paperclip"');
+    expect(asTextFile(exported.files["COMPANY.md"])).toContain('name: "Todero"');
     expect(asTextFile(exported.files["COMPANY.md"])).toContain('schema: "agentcompanies/v1"');
     expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain("You are ClaudeCoder.");
     expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain("skills:");
-    expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain(`- "${paperclipKey}"`);
+    expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain(`- "${toderoKey}"`);
     expect(asTextFile(exported.files["agents/cmo/AGENTS.md"])).not.toContain("skills:");
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain("metadata:");
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain('kind: "github-dir"');
-    expect(exported.files["skills/paperclipai/paperclip/paperclip/references/api.md"]).toBeUndefined();
+    expect(asTextFile(exported.files["skills/nabitllc/todero/todero/SKILL.md"])).toContain("metadata:");
+    expect(asTextFile(exported.files["skills/nabitllc/todero/todero/SKILL.md"])).toContain('kind: "github-dir"');
+    expect(exported.files["skills/nabitllc/todero/todero/references/api.md"]).toBeUndefined();
     expect(asTextFile(exported.files["skills/company/PAP/company-playbook/SKILL.md"])).toContain("# Company Playbook");
     expect(asTextFile(exported.files["skills/company/PAP/company-playbook/references/checklist.md"])).toContain("# Checklist");
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain('schema: "paperclip/v1"');
     expect(extension).not.toContain("promptTemplate");
     expect(extension).not.toContain("instructionsFilePath");
@@ -557,7 +557,7 @@ describe("company portability", () => {
     expect(extension).toContain("ANTHROPIC_API_KEY:");
     expect(extension).toContain('requirement: "optional"');
     expect(extension).toContain('default: ""');
-    expect(extension).not.toContain("paperclipSkillSync");
+    expect(extension).not.toContain("toderoSkillSync");
     expect(extension).not.toContain("PATH:");
     expect(extension).not.toContain("requireBoardApprovalForNewAgents: true");
     expect(extension).not.toContain("budgetMonthlyCents: 0");
@@ -581,10 +581,10 @@ describe("company portability", () => {
     expect(companySkillSvc.listFull).not.toHaveBeenCalled();
     expect(Object.keys(exported.files).some((filePath) => filePath.startsWith("skills/"))).toBe(false);
     expect(exported.manifest.skills).toEqual([]);
-    expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain(`- "${paperclipKey}"`);
+    expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain(`- "${toderoKey}"`);
   });
 
-  it("exports agent permission grants through the Paperclip extension and manifest", async () => {
+  it("exports agent permission grants through the Todero extension and manifest", async () => {
     const db = {
       select: vi.fn((selection: Record<string, unknown>) => ({
         from: vi.fn(() => ({
@@ -617,7 +617,7 @@ describe("company portability", () => {
       },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("permissionGrants:");
     expect(extension).toContain('permissionKey: "agents:suggest-changes"');
     expect(extension).toContain('permissionKey: "skills:create"');
@@ -638,7 +638,7 @@ describe("company portability", () => {
 
     companySvc.getById.mockResolvedValueOnce({
       id: "company-1",
-      name: "Paperclip",
+      name: "Todero",
       description: null,
       issuePrefix: "PAP",
       logoAssetId: null,
@@ -655,7 +655,7 @@ describe("company portability", () => {
       },
     });
 
-    expect(asTextFile(exported.files[".paperclip.yaml"])).toContain("requireBoardApprovalForNewAgents: true");
+    expect(asTextFile(exported.files[".todero.yaml"])).toContain("requireBoardApprovalForNewAgents: true");
   });
 
   it("exports legacy inline sensitive env values as declarations without values", async () => {
@@ -722,7 +722,7 @@ describe("company portability", () => {
     });
   });
 
-  it("exports default sidebar order into the Paperclip extension and manifest", async () => {
+  it("exports default sidebar order into the Todero extension and manifest", async () => {
     const portability = companyPortabilityService({} as any);
 
     projectSvc.list.mockResolvedValue([
@@ -765,7 +765,7 @@ describe("company portability", () => {
       },
     });
 
-    expect(asTextFile(exported.files[".paperclip.yaml"])).toContain([
+    expect(asTextFile(exported.files[".todero.yaml"])).toContain([
       "sidebar:",
       "  agents:",
       '    - "claudecoder"',
@@ -794,14 +794,14 @@ describe("company portability", () => {
       expandReferencedSkills: true,
     });
 
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain("# Paperclip");
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"])).toContain("metadata:");
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/paperclip/references/api.md"])).toContain("# API");
+    expect(asTextFile(exported.files["skills/nabitllc/todero/todero/SKILL.md"])).toContain("# Todero");
+    expect(asTextFile(exported.files["skills/nabitllc/todero/todero/SKILL.md"])).toContain("metadata:");
+    expect(asTextFile(exported.files["skills/nabitllc/todero/todero/references/api.md"])).toContain("# API");
   });
 
-  it("exports catalog skill provenance in portable Paperclip frontmatter", async () => {
+  it("exports catalog skill provenance in portable Todero frontmatter", async () => {
     const portability = companyPortabilityService({} as any);
-    const catalogKey = "paperclipai/bundled/software-development/review";
+    const catalogKey = "todero/bundled/software-development/review";
     const originHash = "sha256:catalog-origin";
     const catalogSkill = {
       id: "skill-catalog",
@@ -812,7 +812,7 @@ describe("company portability", () => {
       description: "Catalog review skill",
       markdown: "---\nname: review\ndescription: Catalog review skill\n---\n\n# Review\n",
       sourceType: "catalog",
-      sourceLocator: "/tmp/paperclip/catalog/review",
+      sourceLocator: "/tmp/todero/catalog/review",
       sourceRef: originHash,
       trustLevel: "markdown_only",
       compatibility: "compatible",
@@ -823,12 +823,12 @@ describe("company portability", () => {
       metadata: {
         sourceKind: "catalog",
         skillKey: catalogKey,
-        catalogId: "paperclipai:bundled:software-development:review",
+        catalogId: "todero:bundled:software-development:review",
         catalogKey,
         catalogKind: "bundled",
         catalogCategory: "software-development",
         catalogPath: "catalog/bundled/software-development/review",
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@todero/skills-catalog",
         packageVersion: "0.3.1",
         originHash,
         originVersion: "0.3.1",
@@ -866,15 +866,15 @@ describe("company portability", () => {
       expandReferencedSkills: true,
     });
 
-    const skillMarkdown = asTextFile(exported.files["skills/paperclipai/bundled/software-development/review/SKILL.md"]);
-    expect(skillMarkdown).toContain("paperclip:");
+    const skillMarkdown = asTextFile(exported.files["skills/todero/bundled/software-development/review/SKILL.md"]);
+    expect(skillMarkdown).toContain("todero:");
     expect(skillMarkdown).toContain("catalog:");
     expect(skillMarkdown).toContain(`sourceRef: "${originHash}"`);
-    expect(skillMarkdown).toContain('catalogId: "paperclipai:bundled:software-development:review"');
+    expect(skillMarkdown).toContain('catalogId: "todero:bundled:software-development:review"');
     expect(skillMarkdown).toContain(`catalogKey: "${catalogKey}"`);
     expect(skillMarkdown).toContain('catalogKind: "bundled"');
     expect(skillMarkdown).toContain('catalogPath: "catalog/bundled/software-development/review"');
-    expect(skillMarkdown).toContain('packageName: "@paperclipai/skills-catalog"');
+    expect(skillMarkdown).toContain('packageName: "@todero/skills-catalog"');
     expect(skillMarkdown).toContain('packageVersion: "0.3.1"');
     expect(skillMarkdown).toContain('installedHash: "sha256:installed"');
     expect(skillMarkdown).toContain('auditVerdict: "warning"');
@@ -887,11 +887,11 @@ describe("company portability", () => {
         sourceKind: "catalog",
         skillKey: catalogKey,
         originHash,
-        catalogId: "paperclipai:bundled:software-development:review",
+        catalogId: "todero:bundled:software-development:review",
         catalogKey,
         catalogKind: "bundled",
         catalogPath: "catalog/bundled/software-development/review",
-        packageName: "@paperclipai/skills-catalog",
+        packageName: "@todero/skills-catalog",
         packageVersion: "0.3.1",
         installedHash: "sha256:installed",
         auditCodes: ["local_modifications"],
@@ -914,7 +914,7 @@ describe("company portability", () => {
 
     expect(exported.files["skills/company/PAP/company-playbook/SKILL.md"]).toBeDefined();
     expect(asTextFile(exported.files["skills/company/PAP/company-playbook/SKILL.md"])).toContain("# Company Playbook");
-    expect(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"]).toBeUndefined();
+    expect(exported.files["skills/nabitllc/todero/todero/SKILL.md"]).toBeUndefined();
   });
 
   it("warns and exports all skills when skills filter matches nothing", async () => {
@@ -932,10 +932,10 @@ describe("company portability", () => {
 
     expect(exported.warnings).toContainEqual(expect.stringContaining("nonexistent-skill"));
     expect(exported.files["skills/company/PAP/company-playbook/SKILL.md"]).toBeDefined();
-    expect(exported.files["skills/paperclipai/paperclip/paperclip/SKILL.md"]).toBeDefined();
+    expect(exported.files["skills/nabitllc/todero/todero/SKILL.md"]).toBeDefined();
   });
 
-  it("exports the company logo into images/ and references it from .paperclip.yaml", async () => {
+  it("exports the company logo into images/ and references it from .todero.yaml", async () => {
     const storage = {
       getObject: vi.fn().mockResolvedValue({
         stream: Readable.from([Buffer.from("png-bytes")]),
@@ -943,7 +943,7 @@ describe("company portability", () => {
     };
     companySvc.getById.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "Todero",
       description: null,
       issuePrefix: "PAP",
       logoAssetId: "logo-1",
@@ -975,7 +975,7 @@ describe("company portability", () => {
       data: Buffer.from("png-bytes").toString("base64"),
       contentType: "image/png",
     });
-    expect(exported.files[".paperclip.yaml"]).toContain('logoPath: "images/company-logo.png"');
+    expect(exported.files[".todero.yaml"]).toContain('logoPath: "images/company-logo.png"');
   });
 
   it("exports duplicate skill slugs into readable namespaced paths", async () => {
@@ -1025,23 +1025,23 @@ describe("company portability", () => {
         },
       },
       {
-        id: "skill-paperclip",
+        id: "skill-todero",
         companyId: "company-1",
-        key: "paperclipai/paperclip/release-changelog",
+        key: "nabitllc/todero/release-changelog",
         slug: "release-changelog",
         name: "release-changelog",
         description: "Bundled release changelog skill",
         markdown: "---\nname: release-changelog\n---\n\n# Bundled Release Changelog\n",
         sourceType: "github",
-        sourceLocator: "https://github.com/paperclipai/paperclip/tree/master/skills/release-changelog",
+        sourceLocator: "https://github.com/nabitllc/todero/tree/main/skills/release-changelog",
         sourceRef: "0123456789abcdef0123456789abcdef01234567",
         trustLevel: "markdown_only",
         compatibility: "compatible",
         fileInventory: [{ path: "SKILL.md", kind: "skill" }],
         metadata: {
           sourceKind: "paperclip_bundled",
-          owner: "paperclipai",
-          repo: "paperclip",
+          owner: "todero",
+          repo: "todero",
           ref: "0123456789abcdef0123456789abcdef01234567",
           trackingRef: "master",
           repoSkillDir: "skills/release-changelog",
@@ -1060,8 +1060,8 @@ describe("company portability", () => {
     });
 
     expect(asTextFile(exported.files["skills/local/release-changelog/SKILL.md"])).toContain("# Local Release Changelog");
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/release-changelog/SKILL.md"])).toContain("metadata:");
-    expect(asTextFile(exported.files["skills/paperclipai/paperclip/release-changelog/SKILL.md"])).toContain("paperclipai/paperclip/release-changelog");
+    expect(asTextFile(exported.files["skills/nabitllc/todero/release-changelog/SKILL.md"])).toContain("metadata:");
+    expect(asTextFile(exported.files["skills/nabitllc/todero/release-changelog/SKILL.md"])).toContain("nabitllc/todero/release-changelog");
   });
 
   it("builds export previews without tasks by default", async () => {
@@ -1212,13 +1212,13 @@ describe("company portability", () => {
             projectId: "project-1",
             name: "Main Repo",
             sourceType: "git_repo",
-            cwd: "/Users/dotta/paperclip",
-            repoUrl: "https://github.com/paperclipai/paperclip.git",
+            cwd: "/Users/dotta/todero",
+            repoUrl: "https://github.com/nabitllc/todero.git",
             repoRef: "main",
             defaultRef: "main",
             visibility: "default",
             setupCommand: "pnpm install",
-            cleanupCommand: "rm -rf .paperclip-tmp",
+            cleanupCommand: "rm -rf .todero-tmp",
             remoteProvider: null,
             remoteWorkspaceRef: null,
             sharedWorkspaceKey: null,
@@ -1235,7 +1235,7 @@ describe("company portability", () => {
             projectId: "project-1",
             name: "Local Scratch",
             sourceType: "local_path",
-            cwd: "/tmp/paperclip-local",
+            cwd: "/tmp/todero-local",
             repoUrl: null,
             repoRef: null,
             defaultRef: null,
@@ -1283,20 +1283,20 @@ describe("company portability", () => {
       },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain('icon: "rocket"');
     expect(extension).toContain("workspaces:");
     expect(extension).toContain("main-repo:");
-    expect(extension).toContain('repoUrl: "https://github.com/paperclipai/paperclip.git"');
+    expect(extension).toContain('repoUrl: "https://github.com/nabitllc/todero.git"');
     expect(extension).toContain('defaultProjectWorkspaceKey: "main-repo"');
     expect(extension).toContain('projectWorkspaceKey: "main-repo"');
-    expect(extension).not.toContain("/Users/dotta/paperclip");
+    expect(extension).not.toContain("/Users/dotta/todero");
     expect(extension).not.toContain("workspace-1");
     expect(exported.warnings).toContain("Project launch workspace Local Scratch was omitted from export because it does not have a portable repoUrl.");
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
@@ -1352,7 +1352,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       collisionStrategy: "rename",
     }, "user-1");
@@ -1360,7 +1360,7 @@ describe("company portability", () => {
     expect(projectSvc.createWorkspace).toHaveBeenCalledWith("project-imported", expect.objectContaining({
       name: "Main Repo",
       sourceType: "git_repo",
-      repoUrl: "https://github.com/paperclipai/paperclip.git",
+      repoUrl: "https://github.com/nabitllc/todero.git",
       repoRef: "main",
       defaultRef: "main",
       visibility: "default",
@@ -1389,7 +1389,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
@@ -1404,7 +1404,7 @@ describe("company portability", () => {
       "COMPANY.md": [
         "---",
         'schema: "agentcompanies/v1"',
-        'name: "Imported Paperclip"',
+        'name: "Imported Todero"',
         "---",
         "",
       ].join("\n"),
@@ -1414,7 +1414,7 @@ describe("company portability", () => {
         "---",
         "",
       ].join("\n"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         'schema: "paperclip/v1"',
         "projects:",
         "  launch:",
@@ -1424,9 +1424,9 @@ describe("company portability", () => {
     };
 
     await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: false, projects: true, issues: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       collisionStrategy: "rename",
     }, "user-1");
 
@@ -1437,10 +1437,10 @@ describe("company portability", () => {
 
   it("infers portable git metadata from a local checkout without task warning fan-out", async () => {
     const portability = companyPortabilityService({} as any);
-    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-portability-git-"));
+    const repoDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-portability-git-"));
     execFileSync("git", ["init"], { cwd: repoDir, stdio: "ignore" });
     execFileSync("git", ["checkout", "-b", "main"], { cwd: repoDir, stdio: "ignore" });
-    execFileSync("git", ["remote", "add", "origin", "https://github.com/paperclipai/paperclip.git"], {
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/nabitllc/todero.git"], {
       cwd: repoDir,
       stdio: "ignore",
     });
@@ -1448,8 +1448,8 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([
       {
         id: "project-1",
-        name: "Paperclip App",
-        urlKey: "paperclip-app",
+        name: "Todero App",
+        urlKey: "todero-app",
         description: "Ship it",
         leadAgentId: null,
         targetDate: null,
@@ -1465,7 +1465,7 @@ describe("company portability", () => {
             id: "workspace-1",
             companyId: "company-1",
             projectId: "project-1",
-            name: "paperclip",
+            name: "todero",
             sourceType: "local_path",
             cwd: repoDir,
             repoUrl: null,
@@ -1513,9 +1513,9 @@ describe("company portability", () => {
       },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
-    expect(extension).toContain('repoUrl: "https://github.com/paperclipai/paperclip.git"');
-    expect(extension).toContain('projectWorkspaceKey: "paperclip"');
+    const extension = asTextFile(exported.files[".todero.yaml"]);
+    expect(extension).toContain('repoUrl: "https://github.com/nabitllc/todero.git"');
+    expect(extension).toContain('projectWorkspaceKey: "todero"');
     expect(exported.warnings).not.toContainEqual(expect.stringContaining("does not have a portable repoUrl"));
     expect(exported.warnings).not.toContainEqual(expect.stringContaining("reference workspace workspace-1"));
   });
@@ -1623,7 +1623,7 @@ describe("company portability", () => {
     expect(exported.warnings.filter((warning) => warning.includes("could not be exported portably"))).toHaveLength(1);
   });
 
-  it("reads env inputs back from .paperclip.yaml during preview import", async () => {
+  it("reads env inputs back from .todero.yaml during preview import", async () => {
     const portability = companyPortabilityService({} as any);
 
     const exported = await portability.exportBundle("company-1", {
@@ -1649,7 +1649,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -1713,7 +1713,7 @@ describe("company portability", () => {
             "# Coder",
             "",
           ].join("\n"),
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "agents:",
             "  coder:",
@@ -1821,7 +1821,7 @@ describe("company portability", () => {
             "# Coder",
             "",
           ].join("\n"),
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "agents:",
             "  coder:",
@@ -1899,7 +1899,7 @@ describe("company portability", () => {
             "# Coder",
             "",
           ].join("\n"),
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "agents:",
             "  coder:",
@@ -1964,7 +1964,7 @@ describe("company portability", () => {
             "# Coder",
             "",
           ].join("\n"),
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "agents:",
             "  coder:",
@@ -2017,7 +2017,7 @@ describe("company portability", () => {
         "# Coder",
         "",
       ].join("\n"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         "schema: paperclip/v1",
         "agents:",
         "  coder:",
@@ -2067,12 +2067,12 @@ describe("company portability", () => {
     await portability.importBundle({
       source: {
         type: "inline",
-        rootPath: "paperclip-demo",
+        rootPath: "todero-demo",
         files: {
           "COMPANY.md": [
             "---",
             'schema: "agentcompanies/v1"',
-            'name: "Imported Paperclip"',
+            'name: "Imported Todero"',
             "includes:",
             "  - agents/cto/AGENTS.md",
             "  - agents/qa/AGENTS.md",
@@ -2100,7 +2100,7 @@ describe("company portability", () => {
             "Verify engineering work.",
             "",
           ].join("\n"),
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             'schema: "paperclip/v1"',
             "agents:",
             "  cto:",
@@ -2167,7 +2167,7 @@ describe("company portability", () => {
       },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("OPENAI_API_KEY:");
     expect(extension).toContain("DOCS_MODE:");
     expect(extension).toContain("GITHUB_TOKEN:");
@@ -2179,7 +2179,7 @@ describe("company portability", () => {
     expect(extension).toContain('kind: "plain"');
   });
 
-  it("reads project env inputs back from .paperclip.yaml during preview import", async () => {
+  it("reads project env inputs back from .todero.yaml during preview import", async () => {
     const portability = companyPortabilityService({} as any);
 
     projectSvc.list.mockResolvedValue([
@@ -2227,7 +2227,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -2246,7 +2246,7 @@ describe("company portability", () => {
     });
   });
 
-  it("exports routines as recurring task packages with Paperclip routine extensions", async () => {
+  it("exports routines as recurring task packages with Todero routine extensions", async () => {
     const portability = companyPortabilityService({} as any);
 
     projectSvc.list.mockResolvedValue([
@@ -2351,7 +2351,7 @@ describe("company portability", () => {
     });
 
     expect(asTextFile(exported.files["tasks/monday-review/TASK.md"])).toContain('recurring: true');
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("routines:");
     expect(extension).toContain("monday-review:");
     expect(extension).toContain('cronExpression: "0 9 * * 1"');
@@ -2498,7 +2498,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2517,7 +2517,7 @@ describe("company portability", () => {
       "COMPANY.md": [
         "---",
         'schema: "agentcompanies/v1"',
-        'name: "Imported Paperclip"',
+        'name: "Imported Todero"',
         "---",
         "",
       ].join("\n"),
@@ -2546,7 +2546,7 @@ describe("company portability", () => {
         "Review pipeline health.",
         "",
       ].join("\n"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         'schema: "paperclip/v1"',
         "routines:",
         "  monday-review:",
@@ -2567,9 +2567,9 @@ describe("company portability", () => {
     };
 
     const preview = await portability.previewImport({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       agents: "all",
       collisionStrategy: "rename",
     });
@@ -2583,9 +2583,9 @@ describe("company portability", () => {
     ]);
 
     const result = await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
@@ -2624,22 +2624,22 @@ describe("company portability", () => {
     const portability = companyPortabilityService({} as any);
 
     companySvc.list.mockResolvedValue([
-      { name: "Imported Paperclip" },
+      { name: "Imported Todero" },
       // Case-insensitive: an existing "(2)" in any casing blocks that suffix.
-      { name: "imported paperclip (2)" },
+      { name: "imported todero (2)" },
     ]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip (3)",
+      name: "Imported Todero (3)",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
 
     const files = {
-      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
     };
 
     await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: false, projects: false, issues: false },
       // No newCompanyName: the manifest name is used and must be de-duplicated.
       target: { mode: "new_company" },
@@ -2647,27 +2647,27 @@ describe("company portability", () => {
     }, "user-1");
 
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip (3)",
+      name: "Imported Todero (3)",
     }));
   });
 
   it("skips name de-duplication for agent-safe imports so collisions stay unobservable", async () => {
     const portability = companyPortabilityService({} as any);
 
-    companySvc.list.mockResolvedValue([{ name: "Imported Paperclip" }]);
+    companySvc.list.mockResolvedValue([{ name: "Imported Todero" }]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.listActiveUserMemberships.mockResolvedValue([{ userId: "user-1" }]);
     accessSvc.copyActiveUserMemberships.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
     };
 
     await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: false, projects: false, issues: false },
       target: { mode: "new_company" },
       collisionStrategy: "rename",
@@ -2677,33 +2677,33 @@ describe("company portability", () => {
     // company-scoped agent, and no suffix may reflect a collision back.
     expect(companySvc.list).not.toHaveBeenCalled();
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     }));
   });
 
   it("honors an explicitly typed company name even when it collides", async () => {
     const portability = companyPortabilityService({} as any);
 
-    companySvc.list.mockResolvedValue([{ name: "Imported Paperclip" }]);
+    companySvc.list.mockResolvedValue([{ name: "Imported Todero" }]);
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
 
     const files = {
-      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ["---", 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
     };
 
     await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: false, projects: false, issues: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       collisionStrategy: "rename",
     }, "user-1");
 
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     }));
   });
 
@@ -2712,7 +2712,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2729,7 +2729,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
       "agents/claudecoder/AGENTS.md": ['---', 'name: "ClaudeCoder"', "---", "", "You write code.", ""].join("\n"),
       "projects/launch/PROJECT.md": ['---', 'name: "Launch"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
@@ -2743,7 +2743,7 @@ describe("company portability", () => {
         "Review pipeline health.",
         "",
       ].join("\n"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         'schema: "paperclip/v1"',
         "routines:",
         "  monday-review:",
@@ -2756,9 +2756,9 @@ describe("company portability", () => {
     };
 
     const result = await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1", { pauseAutomations: true });
@@ -2784,7 +2784,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2800,7 +2800,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
       "agents/claudecoder/AGENTS.md": ['---', 'name: "ClaudeCoder"', "---", "", "You write code.", ""].join("\n"),
       "projects/launch/PROJECT.md": ['---', 'name: "Launch"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
@@ -2814,7 +2814,7 @@ describe("company portability", () => {
         "Review pipeline health.",
         "",
       ].join("\n"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         'schema: "paperclip/v1"',
         "routines:",
         "  monday-review:",
@@ -2827,9 +2827,9 @@ describe("company portability", () => {
     };
 
     const result = await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
@@ -2853,7 +2853,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2869,7 +2869,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
       "agents/claudecoder/AGENTS.md": ['---', 'name: "ClaudeCoder"', "---", "", "You write code.", ""].join("\n"),
       "projects/launch/PROJECT.md": ['---', 'name: "Launch"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
@@ -2893,9 +2893,9 @@ describe("company portability", () => {
     };
 
     const preview = await portability.previewImport({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       agents: "all",
       collisionStrategy: "rename",
     });
@@ -2907,9 +2907,9 @@ describe("company portability", () => {
     }));
 
     await portability.importBundle({
-      source: { type: "inline", rootPath: "paperclip-demo", files },
+      source: { type: "inline", rootPath: "todero-demo", files },
       include: { company: true, agents: true, projects: true, issues: true, skills: false },
-      target: { mode: "new_company", newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company", newCompanyName: "Imported Todero" },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
@@ -2927,14 +2927,14 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.list.mockResolvedValue([]);
     projectSvc.list.mockResolvedValue([]);
 
     const files = {
-      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Paperclip"', "---", ""].join("\n"),
+      "COMPANY.md": ['---', 'schema: "agentcompanies/v1"', 'name: "Imported Todero"', "---", ""].join("\n"),
       "tasks/monday-review/TASK.md": [
         "---",
         'name: "Monday Review"',
@@ -2946,9 +2946,9 @@ describe("company portability", () => {
       ].join("\n"),
     };
     const request = {
-      source: { type: "inline" as const, rootPath: "paperclip-demo", files },
+      source: { type: "inline" as const, rootPath: "todero-demo", files },
       include: { company: true, agents: false, projects: false, issues: true, skills: false },
-      target: { mode: "new_company" as const, newCompanyName: "Imported Paperclip" },
+      target: { mode: "new_company" as const, newCompanyName: "Imported Todero" },
       collisionStrategy: "rename" as const,
     };
 
@@ -2969,12 +2969,12 @@ describe("company portability", () => {
     );
   });
 
-  it("imports a vendor-neutral package without .paperclip.yaml", async () => {
+  it("imports a vendor-neutral package without .todero.yaml", async () => {
     const portability = companyPortabilityService({} as any);
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -2985,16 +2985,16 @@ describe("company portability", () => {
     const preview = await portability.previewImport({
       source: {
         type: "inline",
-        rootPath: "paperclip-demo",
+        rootPath: "todero-demo",
         files: {
           "COMPANY.md": [
             "---",
             'schema: "agentcompanies/v1"',
-            'name: "Imported Paperclip"',
+            'name: "Imported Todero"',
             'description: "Portable company package"',
             "---",
             "",
-            "# Imported Paperclip",
+            "# Imported Todero",
             "",
           ].join("\n"),
           "agents/claudecoder/AGENTS.md": [
@@ -3018,14 +3018,14 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
     });
 
     expect(preview.errors).toEqual([]);
-    expect(preview.manifest.company?.name).toBe("Imported Paperclip");
+    expect(preview.manifest.company?.name).toBe("Imported Todero");
     expect(preview.manifest.agents).toEqual([
       expect.objectContaining({
         slug: "claudecoder",
@@ -3038,16 +3038,16 @@ describe("company portability", () => {
     await portability.importBundle({
       source: {
         type: "inline",
-        rootPath: "paperclip-demo",
+        rootPath: "todero-demo",
         files: {
           "COMPANY.md": [
             "---",
             'schema: "agentcompanies/v1"',
-            'name: "Imported Paperclip"',
+            'name: "Imported Todero"',
             'description: "Portable company package"',
             "---",
             "",
-            "# Imported Paperclip",
+            "# Imported Todero",
             "",
           ].join("\n"),
           "agents/claudecoder/AGENTS.md": [
@@ -3071,14 +3071,14 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
     }, "user-1");
 
     expect(companySvc.create).toHaveBeenCalledWith(expect.objectContaining({
-      name: "Imported Paperclip",
+      name: "Imported Todero",
       description: "Portable company package",
     }));
     expect(agentSvc.create).toHaveBeenCalledWith("company-imported", expect.objectContaining({
@@ -3178,7 +3178,7 @@ describe("company portability", () => {
       },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("APIKEY:");
     expect(extension).toContain("GITHUBAUTH:");
     expect(extension).toContain("PRIVATEKEY:");
@@ -3193,7 +3193,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -3203,14 +3203,14 @@ describe("company portability", () => {
     companySkillSvc.importPackageFiles.mockResolvedValueOnce([{
       skill: {
         id: "skill-imported",
-        key: paperclipKey,
-        slug: "paperclip",
+        key: toderoKey,
+        slug: "todero",
       },
       action: "renamed",
-      originalKey: "paperclip",
-      originalSlug: "paperclip",
-      requestedRefs: ["paperclip"],
-      reason: "Existing skill matched; renamed to paperclip-2.",
+      originalKey: "todero",
+      originalSlug: "todero",
+      requestedRefs: ["todero"],
+      reason: "Existing skill matched; renamed to todero-2.",
     }]);
 
     const exported = await portability.exportBundle("company-1", {
@@ -3238,7 +3238,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3249,18 +3249,18 @@ describe("company portability", () => {
       onConflict: "rename",
     });
     expect(result.skills).toEqual([{
-      originalKey: "paperclip",
-      originalSlug: "paperclip",
-      key: paperclipKey,
-      slug: "paperclip",
+      originalKey: "todero",
+      originalSlug: "todero",
+      key: toderoKey,
+      slug: "todero",
       id: "skill-imported",
       action: "renamed",
-      reason: "Existing skill matched; renamed to paperclip-2.",
+      reason: "Existing skill matched; renamed to todero-2.",
     }]);
     expect(agentSvc.create).toHaveBeenCalledWith("company-imported", expect.objectContaining({
       adapterConfig: expect.objectContaining({
-        paperclipSkillSync: {
-          desiredSkills: [paperclipKey],
+        toderoSkillSync: {
+          desiredSkills: [toderoKey],
         },
       }),
     }));
@@ -3279,12 +3279,12 @@ describe("company portability", () => {
     };
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
       logoAssetId: null,
     });
     companySvc.update.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
       logoAssetId: "asset-created",
     });
     agentSvc.create.mockResolvedValue({
@@ -3310,10 +3310,10 @@ describe("company portability", () => {
     // Declare the packaged logo in the bundle's company block. The exported
     // company map is empty for this fixture, so the block is appended rather
     // than patched into an existing one.
-    const paperclipYaml = `${exported.files[".paperclip.yaml"]}`;
-    expect(paperclipYaml).not.toContain("company:");
-    exported.files[".paperclip.yaml"] =
-      `${paperclipYaml}company:\n  logoPath: "images/company-logo.png"\n`;
+    const toderoYaml = `${exported.files[".todero.yaml"]}`;
+    expect(toderoYaml).not.toContain("company:");
+    exported.files[".todero.yaml"] =
+      `${toderoYaml}company:\n  logoPath: "images/company-logo.png"\n`;
 
     agentSvc.list.mockResolvedValue([]);
 
@@ -3331,7 +3331,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3359,7 +3359,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     agentSvc.create.mockResolvedValue({
       id: "agent-created",
@@ -3391,7 +3391,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3414,7 +3414,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
       id: `agent-${String(input.name).toLowerCase()}`,
@@ -3448,7 +3448,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3481,7 +3481,7 @@ describe("company portability", () => {
     projectSvc.list.mockResolvedValue([]);
     companySvc.getById.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "Todero",
       description: "Existing company",
       requireBoardApprovalForNewAgents: false,
     });
@@ -3558,7 +3558,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -3591,7 +3591,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: "all",
       collisionStrategy: "rename",
@@ -3638,7 +3638,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockImplementation(async (_companyId: string, input: Record<string, unknown>) => ({
@@ -3673,7 +3673,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -3698,7 +3698,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -3767,7 +3767,7 @@ describe("company portability", () => {
       include: { company: true, agents: false, projects: true, issues: true },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("labels:");
     expect(extension).toContain('"bug"');
     expect(extension).toContain('"urgent"');
@@ -3903,7 +3903,7 @@ describe("company portability", () => {
             "Legacy labelled task.",
             "",
           ].join("\n"),
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             'schema: "paperclip/v1"',
             "tasks:",
             "  kickoff:",
@@ -4072,7 +4072,7 @@ describe("company portability", () => {
     });
 
     expect(asTextFile(exported.files["tasks/pap-1/documents/spec.md"])).toBe("# Spec\n\nDetails.");
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("blockedBy:");
     expect(extension).toContain('"pap-1"');
     expect(extension).toContain("workProducts:");
@@ -4209,7 +4209,7 @@ describe("company portability", () => {
       target: { mode: "new_company", newCompanyName: "Imported" },
       agents: "all",
       collisionStrategy: "rename",
-      selectedFiles: ["COMPANY.md", ".paperclip.yaml", "tasks/pap-2/TASK.md"],
+      selectedFiles: ["COMPANY.md", ".todero.yaml", "tasks/pap-2/TASK.md"],
     }, "user-1");
 
     expect(issueSvc.importIssues.mock.calls[0]![1]).toHaveLength(1);
@@ -4294,7 +4294,7 @@ describe("company portability", () => {
       include: { company: true, agents: false, projects: false, issues: true },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("schemaVersion: 7");
     expect(extension).toContain('parent: "pap-1"');
     expect(extension).toContain('createdAt: "2026-01-01T00:00:00.000Z"');
@@ -4376,7 +4376,7 @@ describe("company portability", () => {
       "tasks/task-a/TASK.md": taskFile("Task A"),
       "tasks/task-b/TASK.md": taskFile("Task B"),
       "tasks/task-c/TASK.md": taskFile("Task C"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         'schema: "paperclip/v1"',
         "schemaVersion: 7",
         "tasks:",
@@ -4637,7 +4637,7 @@ describe("company portability", () => {
       "Skipped 2 attachments on task pap-1 because storage is unavailable.",
     );
     expect(Object.keys(exported.files).some((filePath) => filePath.startsWith("blobs/"))).toBe(false);
-    expect(asTextFile(exported.files[".paperclip.yaml"])).not.toContain("attachments:");
+    expect(asTextFile(exported.files[".todero.yaml"])).not.toContain("attachments:");
   });
 
   it("skips all attachment imports with one warning when the target has no storage", async () => {
@@ -4942,7 +4942,7 @@ describe("company portability", () => {
 
     expect(Object.keys(exported.files).some((filePath) => filePath.startsWith("blobs/"))).toBe(false);
     expect(storage.getObject).not.toHaveBeenCalled();
-    expect(asTextFile(exported.files[".paperclip.yaml"])).not.toContain("embeddedAssets:");
+    expect(asTextFile(exported.files[".todero.yaml"])).not.toContain("embeddedAssets:");
     expect(exported.manifest.embeddedAssets).toEqual([]);
     expect(exported.warnings).toContain(
       "2 embedded image references point at assets that do not belong to this company or no longer exist; their images were not exported.",
@@ -4991,17 +4991,17 @@ describe("company portability", () => {
 
     const kept = await portability.exportBundle("company-1", {
       include: { company: true, agents: false, projects: false, issues: true },
-      selectedFiles: ["COMPANY.md", ".paperclip.yaml", "tasks/pap-1/TASK.md", "tasks/pap-1/documents/spec.md", `blobs/${sha}`],
+      selectedFiles: ["COMPANY.md", ".todero.yaml", "tasks/pap-1/TASK.md", "tasks/pap-1/documents/spec.md", `blobs/${sha}`],
     });
-    expect(asTextFile(kept.files[".paperclip.yaml"])).toContain("embeddedAssets:");
+    expect(asTextFile(kept.files[".todero.yaml"])).toContain("embeddedAssets:");
     expect(kept.files[`blobs/${sha}`]).toBeDefined();
 
     const pruned = await portability.exportBundle("company-1", {
       include: { company: true, agents: false, projects: false, issues: true },
-      selectedFiles: ["COMPANY.md", ".paperclip.yaml"],
+      selectedFiles: ["COMPANY.md", ".todero.yaml"],
     });
     expect(Object.keys(pruned.files).some((filePath) => filePath.startsWith("blobs/"))).toBe(false);
-    const prunedYaml = asTextFile(pruned.files[".paperclip.yaml"]);
+    const prunedYaml = asTextFile(pruned.files[".todero.yaml"]);
     expect(prunedYaml).not.toContain("embeddedAssets:");
     expect(prunedYaml).not.toContain("blobs:");
     expect(pruned.manifest.embeddedAssets).toEqual([]);
@@ -5024,7 +5024,7 @@ describe("company portability", () => {
         "Legacy task.",
         "",
       ].join("\n"),
-      ".paperclip.yaml": [
+      ".todero.yaml": [
         'schema: "paperclip/v1"',
         ...extensionLines,
         "tasks:",
@@ -5122,7 +5122,7 @@ describe("company portability", () => {
     );
   });
 
-  it("rejects packages produced by a newer Paperclip", async () => {
+  it("rejects packages produced by a newer Todero", async () => {
     const portability = companyPortabilityService({} as any);
 
     await expect(portability.importBundle({
@@ -5131,7 +5131,7 @@ describe("company portability", () => {
       target: { mode: "new_company", newCompanyName: "Future Import" },
       agents: "all",
       collisionStrategy: "rename",
-    }, "user-1")).rejects.toThrow(/newer Paperclip/);
+    }, "user-1")).rejects.toThrow(/newer Todero/);
     expect(issueSvc.importIssues).not.toHaveBeenCalled();
   });
 
@@ -5170,7 +5170,7 @@ describe("company portability", () => {
         authorType: "system",
         authorAgentId: null,
         authorUserId: null,
-        body: "Paperclip needs a disposition before this issue can continue.",
+        body: "Todero needs a disposition before this issue can continue.",
         presentation,
         metadata,
         createdAt: new Date("2026-05-04T12:00:00.000Z"),
@@ -5182,7 +5182,7 @@ describe("company portability", () => {
       include: { company: true, agents: false, projects: false, issues: true },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain("comments:");
     expect(extension).toContain("system_notice");
     expect(extension).toContain("successful_run_missing_state");
@@ -5203,7 +5203,7 @@ describe("company portability", () => {
 
     expect(issueSvc.addImportedComments).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({
-        body: "Paperclip needs a disposition before this issue can continue.",
+        body: "Todero needs a disposition before this issue can continue.",
         authorType: "system",
         authorAgentId: null,
         authorUserId: null,
@@ -5256,7 +5256,7 @@ describe("company portability", () => {
       include: { company: true, agents: false, projects: false, issues: true },
     });
 
-    const extension = asTextFile(exported.files[".paperclip.yaml"]);
+    const extension = asTextFile(exported.files[".todero.yaml"]);
     expect(extension).toContain('authorType: "user"');
     expect(extension).not.toContain("authorUserId: local-board");
   });
@@ -5338,7 +5338,7 @@ describe("company portability", () => {
 
     companySvc.create.mockResolvedValue({
       id: "company-imported",
-      name: "Imported Paperclip",
+      name: "Imported Todero",
     });
     accessSvc.ensureMembership.mockResolvedValue(undefined);
     agentSvc.create.mockResolvedValue({
@@ -5378,7 +5378,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -5460,14 +5460,14 @@ describe("company portability", () => {
         files: {
           "COMPANY.md": "---\nname: Import\nincludes:\n  - projects/app/PROJECT.md\n---\n",
           "projects/app/PROJECT.md": "---\nname: App\nslug: app\n---\n\n# App\n",
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "projects:",
             "  app:",
             "    workspaces:",
             "      default:",
             "        name: App",
-            "        repoUrl: https://github.com/paperclipai/paperclip",
+            "        repoUrl: https://github.com/nabitllc/todero",
             "        setupCommand: pnpm install",
             "",
           ].join("\n"),
@@ -5502,7 +5502,7 @@ describe("company portability", () => {
         files: {
           "COMPANY.md": "---\nname: Import\nincludes:\n  - projects/app/PROJECT.md\n---\n",
           "projects/app/PROJECT.md": "---\nname: App\nslug: app\n---\n\n# App\n",
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "projects:",
             "  app:",
@@ -5550,7 +5550,7 @@ describe("company portability", () => {
           "agents/ceo/AGENTS.md": "---\nname: CEO\nslug: ceo\nrole: ceo\n---\n\nLead.",
           "projects/app/PROJECT.md": "---\nname: App\nslug: app\n---\n\n# App\n",
           "tasks/review/TASK.md": "---\nname: Review\nslug: review\nproject: app\nassignee: ceo\nrecurring: true\n---\n\nReview.",
-          ".paperclip.yaml": [
+          ".todero.yaml": [
             "schema: paperclip/v1",
             "tasks:",
             "  review:",
@@ -5631,7 +5631,7 @@ describe("company portability", () => {
       },
       target: {
         mode: "new_company",
-        newCompanyName: "Imported Paperclip",
+        newCompanyName: "Imported Todero",
       },
       agents: ["claudecoder"],
       collisionStrategy: "rename",
@@ -5916,17 +5916,17 @@ describe("company portability", () => {
 
 describe("dedupeImportedCompanyName", () => {
   it("returns the base name when nothing collides", () => {
-    expect(dedupeImportedCompanyName("Paperclip", ["Other Co"])).toBe("Paperclip");
-    expect(dedupeImportedCompanyName("Paperclip", [])).toBe("Paperclip");
+    expect(dedupeImportedCompanyName("Todero", ["Other Co"])).toBe("Todero");
+    expect(dedupeImportedCompanyName("Todero", [])).toBe("Todero");
   });
 
   it("suffixes past every taken candidate, case-insensitively", () => {
-    expect(dedupeImportedCompanyName("Paperclip", ["paperclip"])).toBe("Paperclip (2)");
-    expect(dedupeImportedCompanyName("Paperclip", ["Paperclip", "Paperclip (2)"])).toBe("Paperclip (3)");
-    expect(dedupeImportedCompanyName("Paperclip", ["PAPERCLIP", "paperclip (2)"])).toBe("Paperclip (3)");
+    expect(dedupeImportedCompanyName("Todero", ["todero"])).toBe("Todero (2)");
+    expect(dedupeImportedCompanyName("Todero", ["Todero", "Todero (2)"])).toBe("Todero (3)");
+    expect(dedupeImportedCompanyName("Todero", ["TODERO", "todero (2)"])).toBe("Todero (3)");
   });
 
   it("ignores surrounding whitespace in existing names", () => {
-    expect(dedupeImportedCompanyName("Paperclip", ["  Paperclip  "])).toBe("Paperclip (2)");
+    expect(dedupeImportedCompanyName("Todero", ["  Todero  "])).toBe("Todero (2)");
   });
 });

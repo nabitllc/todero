@@ -19,7 +19,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { initPluginBridge } from "./plugins/bridge-init";
 import { PluginLauncherProvider } from "./plugins/launchers";
 import { startPerfMeasureReaper } from "./lib/perf-measure-reaper";
-import { getOrCreatePaperclipReactRoot } from "./lib/react-root";
+import { getOrCreateToderoReactRoot } from "./lib/react-root";
 import { startServiceWorkerUpdates } from "./lib/service-worker-updates";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
@@ -60,7 +60,7 @@ function CompanyAwareBreadcrumbProvider({ children }: { children: React.ReactNod
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Todero root element is missing");
 
-getOrCreatePaperclipReactRoot(window, rootElement).render(
+getOrCreateToderoReactRoot(window, rootElement).render(
   <StrictMode>
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>

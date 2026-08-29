@@ -1,11 +1,11 @@
 {
-  "schema": "paperclip.fake_harness.script.v1",
+  "schema": "todero.fake_harness.script.v1",
   "name": "permission-input",
   "steps": [
     {
       "kind": "request",
       "request": {
-        "schema": "paperclip.runtime_request.v1",
+        "schema": "todero.runtime_request.v1",
         "requestKind": "runtime",
         "requestId": "request_local_runner_permission",
         "type": "permission",
@@ -21,7 +21,7 @@
     {
       "kind": "request",
       "request": {
-        "schema": "paperclip.runtime_request.v1",
+        "schema": "todero.runtime_request.v1",
         "requestKind": "runtime",
         "requestId": "request_local_runner_input",
         "type": "input",
@@ -50,7 +50,7 @@
     {
       "kind": "result",
       "payload": {
-        "schema": "paperclip.run_result.v1",
+        "schema": "todero.run_result.v1",
         "reportedWorkDisposition": "done",
         "summary": "The permission and input flow completed.",
         "completionClaim": {
@@ -72,7 +72,7 @@
     {
       "kind": "terminal",
       "payload": {
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": "completed",
         "runTerminalState": "succeeded",
         "reportedWorkDisposition": "done"

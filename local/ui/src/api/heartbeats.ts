@@ -2,7 +2,7 @@ import type {
   HeartbeatRun,
   HeartbeatRunEvent,
   WorkspaceOperation,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { api } from "./client";
 
 export interface RunLivenessFields {

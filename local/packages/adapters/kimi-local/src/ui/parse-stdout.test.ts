@@ -53,14 +53,14 @@ describe("parseKimiStdoutLine", () => {
     const line = JSON.stringify({
       role: "tool",
       tool_call_id: "tool_8c1OWyRBe68OMTbWY6NqnkMm",
-      content: "1\thello paperclip",
+      content: "1\thello todero",
     });
     expect(parseKimiStdoutLine(line, ts)).toEqual([
       {
         kind: "tool_result",
         ts,
         toolUseId: "tool_8c1OWyRBe68OMTbWY6NqnkMm",
-        content: "1\thello paperclip",
+        content: "1\thello todero",
         isError: false,
       },
     ]);

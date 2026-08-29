@@ -13,10 +13,10 @@ export interface BridgeLeaseConfig {
   normalizeId: boolean;
 }
 
-export const DEFAULT_REMOTE_CWD = "/workspace/paperclip";
-export const DEFAULT_SESSION_ID = "paperclip";
+export const DEFAULT_REMOTE_CWD = "/workspace/todero";
+export const DEFAULT_SESSION_ID = "todero";
 export const DEFAULT_TIMEOUT_MS = 300_000;
-export const LEASE_SENTINEL_FILE = ".paperclip-lease.json";
+export const LEASE_SENTINEL_FILE = ".todero-lease.json";
 
 export function toJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

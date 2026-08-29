@@ -101,7 +101,7 @@ pub fn normalize_codex_notification(method: &str, params: &Value) -> Vec<Normali
             "context.compacted",
             EventPriority::P1,
             json!({
-                "schema": "paperclip.context.compacted.v1",
+                "schema": "todero.context.compacted.v1",
                 "compactionId": stable_id(string(params.get("threadId")), "codex-compaction"),
                 "reason": "provider",
                 "preTokens": Value::Null,
@@ -179,7 +179,7 @@ pub fn normalize_codex_notification(method: &str, params: &Value) -> Vec<Normali
                 "plan.updated",
                 EventPriority::P1,
                 json!({
-                    "schema": "paperclip.plan.updated.v1",
+                    "schema": "todero.plan.updated.v1",
                     "planId": plan_id,
                     "revision": params.get("revision").and_then(Value::as_u64).filter(|value| *value > 0).unwrap_or(1),
                     "explanation": params.get("explanation").and_then(Value::as_str).map(|value| bounded_text(value, MAX_TEXT_CHARS)),
@@ -220,7 +220,7 @@ pub fn normalize_codex_notification(method: &str, params: &Value) -> Vec<Normali
             "provider.notice.recorded",
             EventPriority::P0,
             json!({
-                "schema": "paperclip.provider.notice.v1",
+                "schema": "todero.provider.notice.v1",
                 "noticeId": stable_id(&format!("codex-{method}"), "codex-notice"),
                 "severity": if method == "error" { "error" } else { "warning" },
                 "category": method.replace('/', "_"),
@@ -250,7 +250,7 @@ pub fn normalize_codex_notification(method: &str, params: &Value) -> Vec<Normali
             let completed = method == "item/completed";
             if matches!(item_type, "commandExecution" | "mcpToolCall") {
                 let mut payload = json!({
-                    "schema": "paperclip.tool.execution.v1",
+                    "schema": "todero.tool.execution.v1",
                     "executionId": item_id,
                     "transport": if item_type == "mcpToolCall" { "mcp" } else { "process" },
                     "operation": if item_type == "commandExecution" { "execute" } else { "unknown" },

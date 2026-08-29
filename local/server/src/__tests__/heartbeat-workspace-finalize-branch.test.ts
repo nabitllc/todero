@@ -29,7 +29,7 @@ import {
   projects,
   projectWorkspaces,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -83,10 +83,10 @@ async function runGit(cwd: string, args: string[]) {
 }
 
 async function createGitRepo() {
-  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-finalize-branch-repo-"));
+  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "todero-finalize-branch-repo-"));
   await runGit(repoRoot, ["init"]);
-  await runGit(repoRoot, ["config", "user.email", "paperclip-test@example.com"]);
-  await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+  await runGit(repoRoot, ["config", "user.email", "todero-test@example.com"]);
+  await runGit(repoRoot, ["config", "user.name", "Todero Test"]);
   await writeFile(path.join(repoRoot, "README.md"), "finalization branch guard\n", "utf8");
   await runGit(repoRoot, ["add", "README.md"]);
   await runGit(repoRoot, ["commit", "-m", "initial"]);
@@ -135,7 +135,7 @@ async function deleteHeartbeatRowsAfterActivityLogDrains(db: Db) {
 
 function readAdapterWorkspace(input: unknown) {
   const context = (input as { context?: Record<string, unknown> }).context ?? {};
-  const workspace = context.paperclipWorkspace as Record<string, unknown> | undefined;
+  const workspace = context.toderoWorkspace as Record<string, unknown> | undefined;
   const cwd = typeof workspace?.cwd === "string" ? workspace.cwd : null;
   const branchName = typeof workspace?.branchName === "string" ? workspace.branchName : null;
   const executionWorkspaceId =
@@ -262,7 +262,7 @@ describeEmbeddedPostgres("heartbeat workspace finalization branch guard", () => 
   const tempRoots: string[] = [];
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-finalize-branch-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-finalize-branch-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 

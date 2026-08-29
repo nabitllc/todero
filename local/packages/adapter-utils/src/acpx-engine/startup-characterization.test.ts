@@ -3,23 +3,23 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpRuntimeOptions } from "acpx/runtime";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@todero/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 
 // Wrap the staging seam + both sandbox bridges in call-recording spies that
 // still delegate to the real implementations. This copies the execute.test.ts
 // harness verbatim so a startup test asserts the exact staging args and bridge
 // hand-off the engine threads without changing any real behavior.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@todero/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@todero/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
-    startAdapterExecutionTargetPaperclipBridge: vi.fn(actual.startAdapterExecutionTargetPaperclipBridge),
+    startAdapterExecutionTargetToderoBridge: vi.fn(actual.startAdapterExecutionTargetToderoBridge),
     startAdapterExecutionTargetProcessSessionBridge: vi.fn(actual.startAdapterExecutionTargetProcessSessionBridge),
   };
 });
@@ -29,7 +29,7 @@ import { runChildProcess } from "../server-utils.js";
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-acpx-skills-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-acpx-skills-"));
   tempRoots.push(root);
   return root;
 }
@@ -253,7 +253,7 @@ describe("ACPX engine startup characterization", () => {
         { authToken: "real-run-jwt", executionTarget },
       );
 
-      // The launch payload carries the MERGED paperclip bridge env: the queue
+      // The launch payload carries the MERGED todero bridge env: the queue
       // transport mode, a loopback bridge base URL, and a minted bridge token.
       const payloadEnv = ((launchPayload as Record<string, unknown> | null)?.env ?? {}) as Record<
         string,
@@ -312,7 +312,7 @@ describe("ACPX engine startup characterization", () => {
   describe("session fingerprint and session key", () => {
     beforeEach(() => vi.clearAllMocks());
 
-    it("forms the session key as paperclip:company:agent:taskKey:fingerprint and embeds the fingerprint", async () => {
+    it("forms the session key as todero:company:agent:taskKey:fingerprint and embeds the fingerprint", async () => {
       const root = await makeTempRoot();
       const { result } = await runExecutor({
         agent: "custom",
@@ -326,7 +326,7 @@ describe("ACPX engine startup characterization", () => {
       expect(fp).toBeTruthy();
       // No taskId/issueId/workspaceId in the default context, so taskKey is "default".
       const sessionKey = (result.sessionParams as { sessionKey?: string }).sessionKey;
-      expect(sessionKey).toBe(`paperclip:company-1:agent-1:default:${fp}`);
+      expect(sessionKey).toBe(`todero:company-1:agent-1:default:${fp}`);
     });
 
     it("keeps the fingerprint stable across two identical runs and a same-config new wake", async () => {
@@ -401,7 +401,7 @@ describe("ACPX engine startup characterization", () => {
               context: {
                 taskId: "issue-1",
                 wakeReason: "issue_assigned",
-                paperclipSecrets: {
+                toderoSecrets: {
                   manifest: [
                     {
                       configPath: "env.API_TOKEN",
@@ -428,7 +428,7 @@ describe("ACPX engine startup characterization", () => {
               context: {
                 taskId: "issue-1",
                 wakeReason: "issue_assigned",
-                paperclipWorkspace: {
+                toderoWorkspace: {
                   cwd,
                   realization: {
                     additional: [
@@ -529,15 +529,15 @@ describe("ACPX engine startup characterization", () => {
       );
 
       // The process-session bridge receives its launch env as a DEFERRED thunk, the
-      // seam that lets its env-independent setup overlap the paperclip bridge start.
+      // seam that lets its env-independent setup overlap the todero bridge start.
       const processArgs = vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mock.calls[0]![0];
       expect(typeof processArgs.env).toBe("function");
 
       // Both bridges receive the SAME real (non-null) runtimeRootDir from staging.
-      const paperclipArgs = vi.mocked(startAdapterExecutionTargetPaperclipBridge).mock.calls[0]![0];
-      expect(paperclipArgs.runtimeRootDir).toBeTruthy();
-      expect(String(paperclipArgs.runtimeRootDir)).toContain(".paperclip-runtime");
-      expect(processArgs.runtimeRootDir).toBe(paperclipArgs.runtimeRootDir);
+      const toderoArgs = vi.mocked(startAdapterExecutionTargetToderoBridge).mock.calls[0]![0];
+      expect(toderoArgs.runtimeRootDir).toBeTruthy();
+      expect(String(toderoArgs.runtimeRootDir)).toContain(".todero-runtime");
+      expect(processArgs.runtimeRootDir).toBe(toderoArgs.runtimeRootDir);
 
       // The ACP runtime + session/new both bind to the in-sandbox workspace cwd,
       // which the run resolves only after the bridges bring the sandbox up.
@@ -554,10 +554,10 @@ describe("ACPX engine startup characterization", () => {
 
     it("create_runtime failure: settles an error result, stops both bridges, releases the lease", async () => {
       const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-      const paperclipStop = vi.fn(async () => {});
+      const toderoStop = vi.fn(async () => {});
       const processStop = vi.fn(async () => {});
-      vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(
-        async () => ({ env: {}, stop: paperclipStop }) as never,
+      vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(
+        async () => ({ env: {}, stop: toderoStop }) as never,
       );
       vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(
         async () => ({ agentCommand: null, stop: processStop }) as never,
@@ -589,7 +589,7 @@ describe("ACPX engine startup characterization", () => {
       expect(result.exitCode).toBe(1);
       expect(result.resultJson?.phase).toBe("create_runtime");
       // Both live bridges stop exactly once and the per-session lease releases.
-      expect(paperclipStop).toHaveBeenCalledTimes(1);
+      expect(toderoStop).toHaveBeenCalledTimes(1);
       expect(processStop).toHaveBeenCalledTimes(1);
       expect(stagingLocks.size).toBe(0);
     });
@@ -597,8 +597,8 @@ describe("ACPX engine startup characterization", () => {
     it("partial-bridge failure: throws and stops the concurrently-started bridge exactly once", async () => {
       const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
       const stop = vi.fn(async () => {});
-      vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementationOnce(async () => {
-        throw new Error("paperclip bridge boom");
+      vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementationOnce(async () => {
+        throw new Error("todero bridge boom");
       });
       vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementationOnce(
         async () => ({ agentCommand: null, stop }) as never,
@@ -623,7 +623,7 @@ describe("ACPX engine startup characterization", () => {
           onMeta: async () => {},
           onEvent: async () => {},
         } as never),
-      ).rejects.toThrow("paperclip bridge boom");
+      ).rejects.toThrow("todero bridge boom");
 
       // The concurrently-started process-session bridge was stopped exactly once.
       expect(stop).toHaveBeenCalledTimes(1);
@@ -816,7 +816,7 @@ describe("ACPX engine startup characterization", () => {
       });
 
       expect(vi.mocked(prepareAdapterExecutionTargetRuntime)).not.toHaveBeenCalled();
-      expect(vi.mocked(startAdapterExecutionTargetPaperclipBridge)).not.toHaveBeenCalled();
+      expect(vi.mocked(startAdapterExecutionTargetToderoBridge)).not.toHaveBeenCalled();
       expect(vi.mocked(startAdapterExecutionTargetProcessSessionBridge)).not.toHaveBeenCalled();
       expect(sessionInputs[0]?.cwd).toBe(localCwd);
       expect(runtimeOptions[0]?.cwd).toBe(localCwd);

@@ -1,14 +1,14 @@
 {
-  "name": "@paperclipai/adapter-codex-local",
-  "version": "0.3.1",
+  "name": "@todero/adapter-codex-local",
+  "version": "0.1.0",
   "license": "MIT",
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/nabitllc/todero",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/nabitllc/todero/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/nabitllc/todero",
     "directory": "packages/adapters/codex-local"
   },
   "type": "module",
@@ -53,8 +53,8 @@
   },
   "dependencies": {
     "@agentclientprotocol/codex-acp": "^1.6.2",
-    "@paperclipai/adapter-utils": "workspace:*",
-    "@paperclipai/shared": "workspace:*",
+    "@todero/adapter-utils": "workspace:*",
+    "@todero/shared": "workspace:*",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {

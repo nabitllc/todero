@@ -34,4 +34,4 @@ export type {
   AdapterConfigSchema,
   AdapterRuntimeCommandSpec,
   ServerAdapterModule,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";

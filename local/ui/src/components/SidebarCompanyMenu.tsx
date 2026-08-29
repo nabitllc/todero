@@ -20,7 +20,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { hidesCompanyPage, type Company } from "@paperclipai/shared";
+import { hidesCompanyPage, type Company } from "@todero/shared";
 import { Link, useLocation, useNavigate } from "@/lib/router";
 import { authApi } from "@/api/auth";
 import { cloudApi, type CloudStackSummary } from "@/api/cloud";
@@ -230,7 +230,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
     userId: currentUserId,
   });
 
-  // In Paperclip Cloud the switcher lists the signed-in user's stacks
+  // In Todero Cloud the switcher lists the signed-in user's stacks
   // (organizations) instead of the instance's companies: a cloud instance holds
   // exactly one company, and switching means leaving this tenant host entirely.
   const cloud = useCloudInstance();

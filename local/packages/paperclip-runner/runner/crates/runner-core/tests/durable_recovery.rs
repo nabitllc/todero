@@ -32,7 +32,7 @@ fn config(state_dir: PathBuf) -> DurableRunnerConfig {
 
 fn command() -> Command {
     Command {
-        schema: "paperclip.prp.command.v1".to_owned(),
+        schema: "todero.prp.command.v1".to_owned(),
         command_id: "command_1".to_owned(),
         controller_seq: 1,
         command_type: "session.open".to_owned(),

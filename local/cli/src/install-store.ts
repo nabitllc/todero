@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { resolvePaperclipHomeDir } from "./config/home.js";
+import { resolveToderoHomeDir } from "./config/home.js";
 
 export const INSTALL_MANIFEST_VERSION = 1;
-export const MANAGED_SHIM_MARKER = "paperclipai managed install shim v1";
-export const MANAGED_STORE_MARKER = "paperclipai managed install store v1\n";
-export const PATH_BLOCK_START = "# >>> paperclipai managed PATH >>>";
-export const PATH_BLOCK_END = "# <<< paperclipai managed PATH <<<";
+export const MANAGED_SHIM_MARKER = "todero managed install shim v1";
+export const MANAGED_STORE_MARKER = "todero managed install store v1\n";
+export const PATH_BLOCK_START = "# >>> todero managed PATH >>>";
+export const PATH_BLOCK_END = "# <<< todero managed PATH <<<";
 
 export type InstallSource = "npm" | "git";
 export type InstallChannel = "latest" | "canary" | "pinned";
@@ -28,7 +28,7 @@ export type InstallManifest = InstallRecord & {
 };
 
 export type InstallStorePaths = {
-  paperclipHome: string;
+  toderoHome: string;
   cliRoot: string;
   installsRoot: string;
   manifestPath: string;
@@ -68,21 +68,21 @@ function writeFileAtomic(filePath: string, contents: string, mode: number): void
 }
 
 export function resolveInstallStorePaths(options: {
-  paperclipHome?: string;
+  toderoHome?: string;
   homeDir?: string;
 } = {}): InstallStorePaths {
-  const paperclipHome = path.resolve(options.paperclipHome ?? resolvePaperclipHomeDir());
-  const homeDir = path.resolve(options.homeDir ?? process.env.HOME ?? path.dirname(paperclipHome));
-  const cliRoot = path.join(paperclipHome, "cli");
+  const toderoHome = path.resolve(options.toderoHome ?? resolveToderoHomeDir());
+  const homeDir = path.resolve(options.homeDir ?? process.env.HOME ?? path.dirname(toderoHome));
+  const cliRoot = path.join(toderoHome, "cli");
   return {
-    paperclipHome,
+    toderoHome,
     cliRoot,
     installsRoot: path.join(cliRoot, "installs"),
     manifestPath: path.join(cliRoot, "install.json"),
     markerPath: path.join(cliRoot, ".managed-install"),
     lockPath: path.join(cliRoot, ".install.lock"),
     currentPath: path.join(cliRoot, "current"),
-    shimPath: path.join(homeDir, ".local", "bin", "paperclipai"),
+    shimPath: path.join(homeDir, ".local", "bin", "todero"),
   };
 }
 
@@ -398,7 +398,7 @@ export function writeManagedShim(paths = resolveInstallStorePaths()): void {
   fs.mkdirSync(localDir, { recursive: true, mode: 0o755 });
   fs.mkdirSync(path.dirname(paths.shimPath), { recursive: true, mode: 0o755 });
   assertManagedShimWritable(paths);
-  const entrypoint = path.join(paths.currentPath, "node_modules", "paperclipai", "dist", "index.js");
+  const entrypoint = path.join(paths.currentPath, "node_modules", "todero", "dist", "index.js");
   const contents = `#!/bin/sh\n# ${MANAGED_SHIM_MARKER}\nset -eu\nexec ${shellQuote(process.execPath)} ${shellQuote(entrypoint)} "\$@"\n`;
   writeFileAtomic(paths.shimPath, contents, 0o755);
 }

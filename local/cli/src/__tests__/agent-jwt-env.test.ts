@@ -4,9 +4,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ensureAgentJwtSecret,
-  mergePaperclipEnvEntries,
+  mergeToderoEnvEntries,
   readAgentJwtSecretFromEnv,
-  readPaperclipEnvEntries,
+  readToderoEnvEntries,
   resolveAgentJwtEnvFile,
 } from "../config/env.js";
 import { agentJwtSecretCheck } from "../checks/agent-jwt-secret-check.js";
@@ -14,7 +14,7 @@ import { agentJwtSecretCheck } from "../checks/agent-jwt-secret-check.js";
 const ORIGINAL_ENV = { ...process.env };
 
 function tempConfigPath(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-jwt-env-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "todero-jwt-env-"));
   const configDir = path.join(dir, "custom");
   fs.mkdirSync(configDir, { recursive: true });
   return path.join(configDir, "config.json");
@@ -65,7 +65,7 @@ describe("agent jwt env helpers", () => {
     const configPath = tempConfigPath();
     const envPath = resolveAgentJwtEnvFile(configPath);
 
-    mergePaperclipEnvEntries(
+    mergeToderoEnvEntries(
       {
         PAPERCLIP_WORKTREE_COLOR: "#439edb",
       },
@@ -74,7 +74,7 @@ describe("agent jwt env helpers", () => {
 
     const contents = fs.readFileSync(envPath, "utf-8");
     expect(contents).toContain('PAPERCLIP_WORKTREE_COLOR="#439edb"');
-    expect(readPaperclipEnvEntries(envPath).PAPERCLIP_WORKTREE_COLOR).toBe("#439edb");
+    expect(readToderoEnvEntries(envPath).PAPERCLIP_WORKTREE_COLOR).toBe("#439edb");
   });
 
   it("preserves operator content and CRLF while updating only managed entries", () => {
@@ -82,7 +82,7 @@ describe("agent jwt env helpers", () => {
     const envPath = resolveAgentJwtEnvFile(configPath);
     const original = [
       "# operator comment",
-      "DATABASE_URL='postgres://operator:encoded@localhost/paperclip'",
+      "DATABASE_URL='postgres://operator:encoded@localhost/todero'",
       "",
       "export PAPERCLIP_HOME = '/old path'  # managed path",
       "PAPERCLIP_DUPLICATE=stale",
@@ -92,12 +92,12 @@ describe("agent jwt env helpers", () => {
     ].join("\r\n");
     fs.writeFileSync(envPath, original, { mode: 0o600 });
 
-    mergePaperclipEnvEntries(
+    mergeToderoEnvEntries(
       {
         PAPERCLIP_HOME: "/new path",
         PAPERCLIP_DUPLICATE: "current",
         PAPERCLIP_WORKTREE_COLOR: "#439edb",
-        DATABASE_URL: "postgres://paperclip-must-not-overwrite",
+        DATABASE_URL: "postgres://todero-must-not-overwrite",
       },
       envPath,
     );
@@ -105,7 +105,7 @@ describe("agent jwt env helpers", () => {
     const updated = fs.readFileSync(envPath, "utf8");
     expect(updated).toBe([
       "# operator comment",
-      "DATABASE_URL='postgres://operator:encoded@localhost/paperclip'",
+      "DATABASE_URL='postgres://operator:encoded@localhost/todero'",
       "",
       'export PAPERCLIP_HOME = "/new path"  # managed path',
       "PAPERCLIP_DUPLICATE=current",
@@ -129,7 +129,7 @@ describe("agent jwt env helpers", () => {
     fs.writeFileSync(envPath, original, { mode: 0o600 });
     const previousInode = fs.statSync(envPath).ino;
 
-    mergePaperclipEnvEntries({ PAPERCLIP_HOME: "/same path" }, envPath);
+    mergeToderoEnvEntries({ PAPERCLIP_HOME: "/same path" }, envPath);
 
     expect(fs.readFileSync(envPath, "utf8")).toBe(original);
     expect(fs.statSync(envPath).ino).toBe(previousInode);

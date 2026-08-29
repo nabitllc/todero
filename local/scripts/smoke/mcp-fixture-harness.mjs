@@ -18,18 +18,18 @@ const httpServerPath = resolve(repoRoot, "scripts/mcp-fixtures/servers/http-fixt
 
 function parseArgs(argv) {
   const args = {
-    paperclipUrl: process.env.PAPERCLIP_API_URL ?? "http://127.0.0.1:3100/api",
-    requirePaperclip: false,
+    toderoUrl: process.env.PAPERCLIP_API_URL ?? "http://127.0.0.1:3100/api",
+    requireTodero: false,
     json: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--") continue;
-    if (arg === "--paperclip-url") args.paperclipUrl = argv[++i];
-    else if (arg === "--require-paperclip") args.requirePaperclip = true;
+    if (arg === "--todero-url") args.toderoUrl = argv[++i];
+    else if (arg === "--require-todero") args.requireTodero = true;
     else if (arg === "--json") args.json = true;
     else if (arg === "--help") {
-      console.log(`Usage: node scripts/smoke/mcp-fixture-harness.mjs [--paperclip-url URL] [--require-paperclip] [--json]`);
+      console.log(`Usage: node scripts/smoke/mcp-fixture-harness.mjs [--todero-url URL] [--require-todero] [--json]`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -38,7 +38,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function normalizePaperclipUrl(raw) {
+function normalizeToderoUrl(raw) {
   const url = new URL(raw);
   if (url.pathname.endsWith("/api")) {
     url.pathname = url.pathname.slice(0, -4) || "/";
@@ -46,15 +46,15 @@ function normalizePaperclipUrl(raw) {
   return url.toString().replace(/\/$/, "");
 }
 
-async function checkPaperclipHealth(rawUrl, required) {
-  const baseUrl = normalizePaperclipUrl(rawUrl);
+async function checkToderoHealth(rawUrl, required) {
+  const baseUrl = normalizeToderoUrl(rawUrl);
   try {
     const response = await fetch(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(1500) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return { ok: true, baseUrl };
   } catch (error) {
     if (required) {
-      throw new Error(`Paperclip health check failed at ${baseUrl}/api/health: ${error.message}`);
+      throw new Error(`Todero health check failed at ${baseUrl}/api/health: ${error.message}`);
     }
     return { ok: false, baseUrl, skippedReason: error.message };
   }
@@ -298,7 +298,7 @@ function assert(condition, message) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const paperclip = await checkPaperclipHealth(args.paperclipUrl, args.requirePaperclip);
+  const todero = await checkToderoHealth(args.toderoUrl, args.requireTodero);
   const stdioClient = new StdioFixtureClient();
   const httpClient = new HttpFixtureClient();
   const results = [];
@@ -401,7 +401,7 @@ async function main() {
 
     const summary = {
       ok: results.every((result) => result.ok),
-      paperclip,
+      todero,
       results,
       auditEvents: harness.audit.length,
       profiles: fixtureProfiles.map((profile) => profile.id),
@@ -411,7 +411,7 @@ async function main() {
       console.log(JSON.stringify(summary, null, 2));
     } else {
       console.log(`MCP fixture smoke: ${summary.ok ? "PASS" : "FAIL"}`);
-      console.log(`Paperclip health: ${paperclip.ok ? "ok" : `skipped (${paperclip.skippedReason})`}`);
+      console.log(`Todero health: ${todero.ok ? "ok" : `skipped (${todero.skippedReason})`}`);
       for (const result of results) {
         console.log(`${result.ok ? "PASS" : "FAIL"} ${result.name}${result.error ? ` - ${result.error}` : ""}`);
       }

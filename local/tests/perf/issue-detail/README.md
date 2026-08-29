@@ -6,7 +6,7 @@ Run the repeatable baseline from the repository root:
 pnpm exec playwright test --config tests/perf/issue-detail/playwright.config.ts
 ```
 
-The rig starts an isolated seeded Paperclip instance, runs five samples for each scenario/profile, and writes median-ready raw data plus a Markdown table to `test-results/issue-detail-perf/`.
+The rig starts an isolated seeded Todero instance, runs five samples for each scenario/profile, and writes median-ready raw data plus a Markdown table to `test-results/issue-detail-perf/`.
 
 Scenarios:
 

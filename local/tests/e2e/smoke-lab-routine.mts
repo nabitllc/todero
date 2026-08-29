@@ -28,7 +28,7 @@
  *   SMOKE_BUDGET_MS=600000             hard timeout for the browser run
  *
  * Control plane where failure issues + amber notes are recorded (the REAL
- * Paperclip company — provided in every routine run's env):
+ * Todero company — provided in every routine run's env):
  *   PAPERCLIP_API_URL, PAPERCLIP_API_KEY, PAPERCLIP_COMPANY_ID, PAPERCLIP_RUN_ID
  *   ROUTINE_ISSUE_ID=<uuid>            issue to record against (default PAPERCLIP_TASK_ID)
  *   SMOKE_OWNER_DEFAULT / SMOKE_OWNER_UI / SMOKE_OWNER_CTO  owner overrides
@@ -96,7 +96,7 @@ async function cp(method: string, apiPath: string, body?: Json): Promise<any> {
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${CP_KEY}`,
-      "x-paperclip-run-id": CP_RUN,
+      "x-todero-run-id": CP_RUN,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -148,7 +148,7 @@ async function cpUploadAsset(file: string): Promise<string | null> {
     form.append("namespace", "smoke-lab");
     const res = await fetch(`${CP_BASE}/api/companies/${CP_COMPANY}/assets/images`, {
       method: "POST",
-      headers: { authorization: `Bearer ${CP_KEY}`, "x-paperclip-run-id": CP_RUN },
+      headers: { authorization: `Bearer ${CP_KEY}`, "x-todero-run-id": CP_RUN },
       body: form as any,
     });
     if (!res.ok) {
@@ -174,7 +174,7 @@ async function cpAttach(issueId: string, file: string): Promise<boolean> {
     form.append("file", new Blob([buf], { type: "image/png" }), path.basename(file));
     const res = await fetch(`${CP_BASE}/api/companies/${CP_COMPANY}/issues/${issueId}/attachments`, {
       method: "POST",
-      headers: { authorization: `Bearer ${CP_KEY}`, "x-paperclip-run-id": CP_RUN },
+      headers: { authorization: `Bearer ${CP_KEY}`, "x-todero-run-id": CP_RUN },
       body: form as any,
     });
     if (!res.ok) {

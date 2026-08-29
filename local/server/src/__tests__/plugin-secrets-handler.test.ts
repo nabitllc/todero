@@ -13,7 +13,7 @@ import {
   createDb,
   plugins,
   secretAccessEvents,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import {
   createPluginSecretsHandler,
@@ -77,7 +77,7 @@ describeEmbeddedPostgres("createPluginSecretsHandler shared vault integration", 
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-plugin-secrets-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-plugin-secrets-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
@@ -123,18 +123,18 @@ describeEmbeddedPostgres("createPluginSecretsHandler shared vault integration", 
   async function seedPlugin() {
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.plugin-secrets-test",
-      packageName: "@paperclipai/plugin-secrets-test",
+      pluginKey: "todero.plugin-secrets-test",
+      packageName: "@todero/plugin-secrets-test",
       version: "0.0.1",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.plugin-secrets-test",
+        id: "todero.plugin-secrets-test",
         apiVersion: 1,
         version: "0.0.1",
         displayName: "Plugin Secrets Test",
         description: "Test plugin",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: [],
         entrypoints: { worker: "./dist/worker.js" },

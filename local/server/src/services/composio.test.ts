@@ -68,7 +68,7 @@ describe("Composio REST client", () => {
       authConfigId: "ac_1",
       userId: "user-1",
       alias: "primary",
-      callbackUrl: "https://paperclip.test/callback",
+      callbackUrl: "https://todero.test/callback",
     });
     await client.listConnectedAccounts({
       cursor: "account-page",
@@ -101,7 +101,7 @@ describe("Composio REST client", () => {
           auth_config_id: "ac_1",
           user_id: "user-1",
           alias: "primary",
-          callback_url: "https://paperclip.test/callback",
+          callback_url: "https://todero.test/callback",
         },
       },
       {

@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 
 use super::{DurableRunnerConfig, DurableRunnerError, PROTOCOL, PROTOCOL_VERSION};
 
-const STATE_SCHEMA: &str = "paperclip.runner.durable.state.v1";
+const STATE_SCHEMA: &str = "todero.runner.durable.state.v1";
 const STATE_FILE: &str = "runner-state.json";
 const MAX_RECENT_COMMANDS: usize = 128;
 const MAX_DIAGNOSTICS: usize = 32;
@@ -59,9 +59,9 @@ pub struct Command {
 
 impl Command {
     pub fn validate(&self) -> Result<(), DurableRunnerError> {
-        if self.schema != "paperclip.prp.command.v1" {
+        if self.schema != "todero.prp.command.v1" {
             return Err(DurableRunnerError::invalid(
-                "command requires the paperclip.prp.command.v1 schema",
+                "command requires the todero.prp.command.v1 schema",
             ));
         }
         if self.command_id.is_empty()
@@ -265,7 +265,7 @@ impl DurableState {
             ));
         }
         let mut hasher = Sha256::new();
-        hasher.update(b"paperclip.executor-event.v1\0");
+        hasher.update(b"todero.executor-event.v1\0");
         hasher.update(self.runner_instance_id.as_bytes());
         hasher.update(b"\0");
         hasher.update(executor_event_id.as_bytes());
@@ -379,7 +379,7 @@ impl DurableState {
             "turnId": self.turn_id,
             "itemId": self.item_id,
             "payload": {
-                "schema": "paperclip.prp.event.v1",
+                "schema": "todero.prp.event.v1",
                 "sourceEventId": source_event_id,
                 "sourceSeq": source_seq,
                 "sourceInstanceId": self.runner_instance_id,
@@ -1198,7 +1198,7 @@ mod tests {
 
     fn command(id: &str, sequence: u64) -> Command {
         Command {
-            schema: "paperclip.prp.command.v1".to_owned(),
+            schema: "todero.prp.command.v1".to_owned(),
             command_id: id.to_owned(),
             controller_seq: sequence,
             command_type: "session.open".to_owned(),

@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 
 const PORT = Number(process.env.PAPERCLIP_ISSUE_PERF_PORT ?? 3201);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const PAPERCLIP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-issue-perf-home-"));
+const PAPERCLIP_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "todero-issue-perf-home-"));
 const PAPERCLIP_INSTANCE_ID = "playwright-issue-perf";
 const PAPERCLIP_CONFIG = path.join(PAPERCLIP_HOME, "instances", PAPERCLIP_INSTANCE_ID, "config.json");
 
@@ -24,7 +24,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: "pnpm paperclipai onboard --yes --run",
+    command: "pnpm todero onboard --yes --run",
     url: `${BASE_URL}/api/health`,
     reuseExistingServer: false,
     timeout: 120_000,

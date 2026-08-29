@@ -16,7 +16,7 @@ import {
   type DeploymentMode,
   type SecretProvider,
   type StorageProvider,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   backupInvalidConfig,
   configExists,
@@ -25,8 +25,8 @@ import {
   writeConfig,
 } from "../config/store.js";
 import {
-  findPaperclipConfigKeyWarnings,
-  type PaperclipConfig,
+  findToderoConfigKeyWarnings,
+  type ToderoConfig,
 } from "../config/schema.js";
 import { ensureAgentJwtSecret, resolveAgentJwtEnvFile } from "../config/env.js";
 import { ensureLocalSecretsKeyFile } from "../config/secrets-key.js";
@@ -43,10 +43,10 @@ import {
   resolveDefaultBackupDir,
   resolveDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir,
-  resolvePaperclipInstanceId,
+  resolveToderoInstanceId,
 } from "../config/home.js";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
-import { printPaperclipCliBanner } from "../utils/banner.js";
+import { printToderoCliBanner } from "../utils/banner.js";
 import {
   getTelemetryClient,
   trackInstallStarted,
@@ -70,7 +70,7 @@ type OnboardOptions = {
   installService?: boolean;
 };
 
-type OnboardDefaults = Pick<PaperclipConfig, "database" | "logging" | "server" | "auth" | "storage" | "secrets">;
+type OnboardDefaults = Pick<ToderoConfig, "database" | "logging" | "server" | "auth" | "storage" | "secrets">;
 
 const TAILNET_BIND_WARNING =
   "No Tailscale address was detected during setup. The saved config will stay on loopback until Tailscale is available or PAPERCLIP_TAILNET_BIND_HOST is set.";
@@ -132,7 +132,7 @@ function resolvePathFromEnv(rawValue: string | undefined): string | null {
   return path.resolve(expandHomePrefix(rawValue.trim()));
 }
 
-function describeServerBinding(server: Pick<PaperclipConfig["server"], "bind" | "customBindHost" | "host" | "port">): string {
+function describeServerBinding(server: Pick<ToderoConfig["server"], "bind" | "customBindHost" | "host" | "port">): string {
   const bind = server.bind ?? inferBindModeFromHost(server.host);
   const detail =
     bind === "custom"
@@ -149,7 +149,7 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
   ignoredEnvKeys: Array<{ key: string; reason: string }>;
 } {
   const preferTrustedLocal = opts?.preferTrustedLocal ?? false;
-  const instanceId = resolvePaperclipInstanceId();
+  const instanceId = resolveToderoInstanceId();
   const defaultStorage = defaultStorageConfig();
   const defaultSecrets = defaultSecretsConfig();
   const databaseUrl = process.env.DATABASE_URL?.trim() || undefined;
@@ -334,7 +334,7 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
   return { defaults, usedEnvKeys, ignoredEnvKeys };
 }
 
-function canCreateBootstrapInviteImmediately(config: Pick<PaperclipConfig, "database" | "server">): boolean {
+function canCreateBootstrapInviteImmediately(config: Pick<ToderoConfig, "database" | "server">): boolean {
   return config.server.deploymentMode === "authenticated" && config.database.mode !== "embedded-postgres";
 }
 
@@ -349,7 +349,7 @@ function printManagedInstallHint(): void {
   if (manifest && isManagedExecutable(process.argv[1], manifest)) return;
   if (!isEphemeralNpxExecution()) return;
   p.log.info(
-    `This npx run is temporary. Use ${pc.cyan("paperclipai install")} for atomic updates, rollback, and service support.`,
+    `This npx run is temporary. Use ${pc.cyan("todero install")} for atomic updates, rollback, and service support.`,
   );
 }
 
@@ -358,24 +358,24 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     throw new Error(`Unsupported bind preset for onboard: ${opts.bind}. Use loopback, lan, or tailnet.`);
   }
 
-  printPaperclipCliBanner();
-  p.intro(pc.bgCyan(pc.black(" paperclipai onboard ")));
+  printToderoCliBanner();
+  p.intro(pc.bgCyan(pc.black(" todero onboard ")));
   const configPath = resolveConfigPath(opts.config);
-  const instance = describeLocalInstancePaths(resolvePaperclipInstanceId());
+  const instance = describeLocalInstancePaths(resolveToderoInstanceId());
   p.log.message(
     pc.dim(
       `Local home: ${instance.homeDir} | instance: ${instance.instanceId} | config: ${configPath}`,
     ),
   );
 
-  let existingConfig: PaperclipConfig | null = null;
+  let existingConfig: ToderoConfig | null = null;
   let invalidBackupPath: string | undefined;
   if (configExists(opts.config)) {
     p.log.message(pc.dim(`${configPath} exists`));
 
     try {
       existingConfig = readConfig(opts.config);
-      for (const warning of findPaperclipConfigKeyWarnings(existingConfig)) {
+      for (const warning of findToderoConfigKeyWarnings(existingConfig)) {
         p.log.warn(`Unknown config key ${warning.path}; did you mean ${warning.suggestion}? It will be preserved.`);
       }
     } catch (err) {
@@ -413,9 +413,9 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
   if (existingConfig) {
     p.log.message(
-      pc.dim("Existing Paperclip install detected; keeping the current configuration unchanged."),
+      pc.dim("Existing Todero install detected; keeping the current configuration unchanged."),
     );
-    p.log.message(pc.dim(`Use ${pc.cyan("paperclipai configure")} if you want to change settings.`));
+    p.log.message(pc.dim(`Use ${pc.cyan("todero configure")} if you want to change settings.`));
 
     const jwtSecret = ensureAgentJwtSecret(configPath);
     const envFilePath = resolveAgentJwtEnvFile(configPath);
@@ -452,9 +452,9 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
     p.note(
       [
-        `Run: ${pc.cyan("paperclipai run")}`,
-        `Reconfigure later: ${pc.cyan("paperclipai configure")}`,
-        `Diagnose setup: ${pc.cyan("paperclipai doctor")}`,
+        `Run: ${pc.cyan("todero run")}`,
+        `Reconfigure later: ${pc.cyan("todero configure")}`,
+        `Diagnose setup: ${pc.cyan("todero doctor")}`,
       ].join("\n"),
       "Next commands",
     );
@@ -468,7 +468,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     let shouldRunNow = !serviceInstalled && (opts.run === true || opts.yes === true);
     if (shouldOfferForegroundStart({ serviceInstalled, startAlreadyDecided: shouldRunNow, invokedByRun: opts.invokedByRun === true, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) })) {
       const answer = await p.confirm({
-        message: "Start Paperclip now?",
+        message: "Start Todero now?",
         initialValue: true,
       });
       if (!p.isCancel(answer)) {
@@ -482,7 +482,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       return;
     }
 
-    p.outro("Existing Paperclip setup is ready.");
+    p.outro("Existing Todero setup is ready.");
     return;
   }
 
@@ -522,7 +522,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   const tc = getTelemetryClient();
   if (tc) trackInstallStarted(tc);
 
-  let llm: PaperclipConfig["llm"] | undefined;
+  let llm: ToderoConfig["llm"] | undefined;
   const { defaults: derivedDefaults, usedEnvKeys, ignoredEnvKeys } = quickstartDefaultsFromEnv({
     preferTrustedLocal: opts.yes === true && !opts.bind,
   });
@@ -556,12 +556,12 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
       const s = p.spinner();
       s.start("Testing database connection...");
       try {
-        const { createDb } = await import("@paperclipai/db");
+        const { createDb } = await import("@todero/db");
         const db = createDb(database.connectionString);
         await db.execute("SELECT 1");
         s.stop("Database connection successful");
       } catch {
-        s.stop(pc.yellow("Could not connect to database — you can fix this later with `paperclipai doctor`"));
+        s.stop(pc.yellow("Could not connect to database — you can fix this later with `todero doctor`"));
       }
     }
 
@@ -664,7 +664,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
   }
 
-  const config: PaperclipConfig = {
+  const config: ToderoConfig = {
     $meta: {
       version: 1,
       updatedAt: new Date().toISOString(),
@@ -714,9 +714,9 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
 
   p.note(
     [
-      `Run: ${pc.cyan("paperclipai run")}`,
-      `Reconfigure later: ${pc.cyan("paperclipai configure")}`,
-      `Diagnose setup: ${pc.cyan("paperclipai doctor")}`,
+      `Run: ${pc.cyan("todero run")}`,
+      `Reconfigure later: ${pc.cyan("todero configure")}`,
+      `Diagnose setup: ${pc.cyan("todero doctor")}`,
     ].join("\n"),
     "Next commands",
   );
@@ -736,7 +736,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   let shouldRunNow = !serviceInstalled && (opts.run === true || opts.yes === true);
   if (shouldOfferForegroundStart({ serviceInstalled, startAlreadyDecided: shouldRunNow, invokedByRun: opts.invokedByRun === true, interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY) })) {
     const answer = await p.confirm({
-      message: "Start Paperclip now?",
+      message: "Start Todero now?",
       initialValue: true,
     });
     if (!p.isCancel(answer)) {
@@ -754,8 +754,8 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     p.log.info(
       [
         "Bootstrap CEO invite will be created after the server starts.",
-        `Next: ${pc.cyan("paperclipai run")}`,
-        `Then: ${pc.cyan("paperclipai auth bootstrap-ceo")}`,
+        `Next: ${pc.cyan("todero run")}`,
+        `Then: ${pc.cyan("todero auth bootstrap-ceo")}`,
       ].join("\n"),
     );
   }

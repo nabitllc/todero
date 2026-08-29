@@ -7,24 +7,24 @@ import type {
   AdapterEnvironmentTestResult,
   AdapterExecutionContext,
   AdapterExecutionResult,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   ensureAdapterExecutionTargetCommandResolvable,
   readAdapterExecutionTarget,
   resolveAdapterExecutionTargetCwd,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 import {
   DEFAULT_ACP_ENGINE_MODE,
   DEFAULT_ACP_ENGINE_NON_INTERACTIVE_PERMISSIONS,
   DEFAULT_ACP_ENGINE_PERMISSION_MODE,
   DEFAULT_ACP_ENGINE_WARM_HANDLE_IDLE_MS,
-} from "@paperclipai/adapter-utils/acpx-engine/constants";
-import type { AcpxEngineExecutorOptions } from "@paperclipai/adapter-utils/acpx-engine/execute";
+} from "@todero/adapter-utils/acpx-engine/constants";
+import type { AcpxEngineExecutorOptions } from "@todero/adapter-utils/acpx-engine/execute";
 import {
   asNumber,
   asString,
   parseObject,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 import { DEFAULT_KIMI_LOCAL_MODEL } from "../index.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -73,7 +73,7 @@ export async function resolveKimiExecutionEngineForRun(
 }
 
 export function formatKimiAcpFallbackMessage(reason: string): string {
-  return `[paperclip] Kimi ACP default unavailable; falling back to Kimi CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`;
+  return `[todero] Kimi ACP default unavailable; falling back to Kimi CLI. ${reason} Set engine=acp to require ACP or engine=cli to silence this fallback.\n`;
 }
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
@@ -146,7 +146,7 @@ export function createKimiAcpExecutor(options: KimiAcpExecutorOptions = {}): Kim
   return async (ctx) => {
     let currentExecutor = executor;
     if (!currentExecutor) {
-      const { createAcpxEngineExecutor } = await import("@paperclipai/adapter-utils/acpx-engine/execute");
+      const { createAcpxEngineExecutor } = await import("@todero/adapter-utils/acpx-engine/execute");
       currentExecutor = createAcpxEngineExecutor(withKimiAcpDefaults(options));
       executor = currentExecutor;
     }
@@ -296,7 +296,7 @@ export async function testKimiAcpEnvironment(
       code: "kimi_acp_remote_target",
       level: "info",
       message: "Kimi ACP will run against the remote execution environment.",
-      hint: "Remote ACP requires a bidirectional process target such as SSH or Paperclip's sandbox process-session bridge.",
+      hint: "Remote ACP requires a bidirectional process target such as SSH or Todero's sandbox process-session bridge.",
     });
   }
 

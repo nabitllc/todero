@@ -25,7 +25,7 @@ import {
   routines,
   routineTriggers,
   secretAccessEvents,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -51,7 +51,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-routines-service-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-routines-service-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -123,7 +123,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId,
       requireBoardApprovalForNewAgents: false,
@@ -1638,7 +1638,7 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
 
     const run = await svc.runRoutine(variableRoutine.id, {
       source: "manual",
-      variables: { repo: "paperclip" },
+      variables: { repo: "todero" },
     });
 
     const storedIssue = await db
@@ -1652,11 +1652,11 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
       .where(eq(routineRuns.id, run.id))
       .then((rows) => rows[0] ?? null);
 
-    expect(storedIssue?.title).toBe("repo triage for paperclip");
-    expect(storedIssue?.description).toBe("Review paperclip for high bugs");
+    expect(storedIssue?.title).toBe("repo triage for todero");
+    expect(storedIssue?.description).toBe("Review todero for high bugs");
     expect(storedRun?.triggerPayload).toEqual({
       variables: {
-        repo: "paperclip",
+        repo: "todero",
         priority: "high",
       },
     });

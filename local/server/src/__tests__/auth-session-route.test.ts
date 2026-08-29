@@ -1,7 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { activityLog, companies, companyMemberships, instanceUserRoles } from "@paperclipai/db";
+import { activityLog, companies, companyMemberships, instanceUserRoles } from "@todero/db";
 import {
   actorMiddleware,
   humanizeCloudStackSlug,
@@ -115,14 +115,14 @@ describe("actorMiddleware authenticated session profile", () => {
 
     const res = await request(app)
       .get("/actor")
-      .set("x-paperclip-cloud-tenant-token", "tenant-token")
-      .set("x-paperclip-cloud-user-id", "global-user-1")
-      .set("x-paperclip-cloud-user-email", "owner@example.com")
-      .set("x-paperclip-cloud-user-name", "Stack Owner")
-      .set("x-paperclip-cloud-stack-id", "stack-alpha")
-      .set("x-paperclip-cloud-paperclip-company-id", "paperclip-stack-alpha")
-      .set("x-paperclip-cloud-paperclip-company-name", "Purple Rain")
-      .set("x-paperclip-cloud-stack-role", "owner");
+      .set("x-todero-cloud-tenant-token", "tenant-token")
+      .set("x-todero-cloud-user-id", "global-user-1")
+      .set("x-todero-cloud-user-email", "owner@example.com")
+      .set("x-todero-cloud-user-name", "Stack Owner")
+      .set("x-todero-cloud-stack-id", "stack-alpha")
+      .set("x-todero-cloud-todero-company-id", "todero-stack-alpha")
+      .set("x-todero-cloud-todero-company-name", "Purple Rain")
+      .set("x-todero-cloud-stack-role", "owner");
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
@@ -204,11 +204,11 @@ describe("actorMiddleware authenticated session profile", () => {
     app.use(errorHandler);
 
     const cloudHeaders = {
-      "x-paperclip-cloud-tenant-token": "tenant-token",
-      "x-paperclip-cloud-user-id": "global-user-1",
-      "x-paperclip-cloud-user-email": "owner@example.com",
-      "x-paperclip-cloud-stack-id": "stack-alpha",
-      "x-paperclip-cloud-stack-role": "member",
+      "x-todero-cloud-tenant-token": "tenant-token",
+      "x-todero-cloud-user-id": "global-user-1",
+      "x-todero-cloud-user-email": "owner@example.com",
+      "x-todero-cloud-stack-id": "stack-alpha",
+      "x-todero-cloud-stack-role": "member",
     };
 
     // Reads and writes both reach the imported company through the real
@@ -254,7 +254,7 @@ describe("actorMiddleware authenticated session profile", () => {
           where: () =>
             Promise.resolve(
               table === companies
-                ? [{ name: "paperclip-stack-purple-rain" }]
+                ? [{ name: "todero-stack-purple-rain" }]
                 : [],
             ),
         }),
@@ -292,16 +292,16 @@ describe("actorMiddleware authenticated session profile", () => {
 
     const res = await request(app)
       .get("/actor")
-      .set("x-paperclip-cloud-tenant-token", "tenant-token")
-      .set("x-paperclip-cloud-user-id", "global-user-1")
-      .set("x-paperclip-cloud-user-email", "owner@example.com")
-      .set("x-paperclip-cloud-stack-id", "stack-purple-rain")
+      .set("x-todero-cloud-tenant-token", "tenant-token")
+      .set("x-todero-cloud-user-id", "global-user-1")
+      .set("x-todero-cloud-user-email", "owner@example.com")
+      .set("x-todero-cloud-stack-id", "stack-purple-rain")
       .set(
-        "x-paperclip-cloud-paperclip-company-id",
-        "paperclip-stack-purple-rain",
+        "x-todero-cloud-todero-company-id",
+        "todero-stack-purple-rain",
       )
-      .set("x-paperclip-cloud-paperclip-company-name", "Purple Rain")
-      .set("x-paperclip-cloud-stack-role", "owner");
+      .set("x-todero-cloud-todero-company-name", "Purple Rain")
+      .set("x-todero-cloud-stack-role", "owner");
 
     expect(res.status).toBe(200);
     expect(updates).toHaveLength(1);
@@ -315,7 +315,7 @@ describe("actorMiddleware authenticated session profile", () => {
         entityType: "company",
         details: expect.objectContaining({
           reason: "legacy_machine_name_repair",
-          previousName: "paperclip-stack-purple-rain",
+          previousName: "todero-stack-purple-rain",
           name: "Purple Rain",
         }),
       }),
@@ -383,11 +383,11 @@ describe("actorMiddleware authenticated session profile", () => {
     // One trusted-header authentication purges the stale grant.
     const cloud = await request(app)
       .get("/actor")
-      .set("x-paperclip-cloud-tenant-token", "tenant-token")
-      .set("x-paperclip-cloud-user-id", "global-user-1")
-      .set("x-paperclip-cloud-user-email", "owner@example.com")
-      .set("x-paperclip-cloud-stack-id", "stack-alpha")
-      .set("x-paperclip-cloud-stack-role", "owner");
+      .set("x-todero-cloud-tenant-token", "tenant-token")
+      .set("x-todero-cloud-user-id", "global-user-1")
+      .set("x-todero-cloud-user-email", "owner@example.com")
+      .set("x-todero-cloud-stack-id", "stack-alpha")
+      .set("x-todero-cloud-stack-role", "owner");
     expect(cloud.body).toMatchObject({ source: "cloud_tenant", isInstanceAdmin: false });
     expect(state.staleInstanceAdminRow).toBe(false);
 
@@ -404,12 +404,12 @@ describe("actorMiddleware authenticated session profile", () => {
 describe("Cloud tenant company naming", () => {
   const ids = {
     companyId: "11111111-1111-4111-8111-111111111111",
-    paperclipCompanyId: "paperclip-stack-purple-rain",
+    toderoCompanyId: "todero-stack-purple-rain",
   };
 
   it.each([
-    "paperclip-stack-purple-rain",
-    "stack-purple-rain Paperclip",
+    "todero-stack-purple-rain",
+    "stack-purple-rain Todero",
     ids.companyId,
   ])("repairs the known-bad machine name %s", (name) => {
     expect(isKnownBadCloudCompanyName(name, ids)).toBe(true);
@@ -417,15 +417,15 @@ describe("Cloud tenant company naming", () => {
 
   it.each([
     "Purple Rain",
-    "Paperclip Stack Purple Rain",
-    "The Purple Rain Paperclip",
+    "Todero Stack Purple Rain",
+    "The Purple Rain Todero",
   ])("preserves the genuine company name %s", (name) => {
     expect(isKnownBadCloudCompanyName(name, ids)).toBe(false);
   });
 
   it("humanizes the stack slug for old harnesses without a name header", () => {
     expect(humanizeCloudStackSlug("stack-purple-rain")).toBe("Purple Rain");
-    expect(humanizeCloudStackSlug("paperclip-stack-purple-rain")).toBe(
+    expect(humanizeCloudStackSlug("todero-stack-purple-rain")).toBe(
       "Purple Rain",
     );
   });

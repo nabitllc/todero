@@ -224,7 +224,7 @@ export function resolveConnectionMethodServerUrl(
 }
 
 export function recommendedDefaultsForApp(app: AppDefinition, methodKey?: string | null): Record<string, unknown> {
-  const normalizedMethodKey = app.slug === "gmail" && methodKey === "paperclip-id-oauth" ? "paperclip-draft" : methodKey;
+  const normalizedMethodKey = app.slug === "gmail" && methodKey === "todero-id-oauth" ? "todero-draft" : methodKey;
   const method = normalizedMethodKey
     ? app.methods.find((candidate) => candidate.key === normalizedMethodKey) ?? null
     : getAvailableConnectionMethod(app, null);

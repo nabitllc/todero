@@ -12,7 +12,7 @@ import {
   CODEX_LOCAL_FAST_MODE_SUPPORTED_MODELS,
   isCodexLocalFastModeSupported,
   isCodexLocalManualModel,
-} from "@paperclipai/adapter-codex-local";
+} from "@todero/adapter-codex-local";
 
 const inputClass =
   "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
@@ -36,7 +36,7 @@ export function CodexLocalConfigFields({
   // The execution engine picks which binary runs on the execution host, and the
   // ACP sub-fields below name host paths. The platform-managed environment owns
   // both, so the managed-sandbox-only policy hides them the same way
-  // `runnerManaged` already does for the Paperclip Runner.
+  // `runnerManaged` already does for the Todero Runner.
   const hideEngineChoice = runnerManaged || managedSandboxOnly === true;
   const rawEngine = runnerManaged ? "cli" : isCreate
     ? values!.codexEngine ?? "auto"
@@ -58,7 +58,7 @@ export function CodexLocalConfigFields({
     ? "Fast mode will be passed through for this manual model. If Codex rejects it, turn the toggle off."
     : fastModeSupported
       ? "Fast mode consumes credits/tokens much faster than standard Codex runs."
-      : `Fast mode currently only works on ${supportedModelsLabel} or manual model IDs. Paperclip will ignore this toggle until the model is switched.`;
+      : `Fast mode currently only works on ${supportedModelsLabel} or manual model IDs. Todero will ignore this toggle until the model is switched.`;
 
   return (
     <>
@@ -79,7 +79,7 @@ export function CodexLocalConfigFields({
         </select>
       </Field>}
       {runnerManaged && (
-        <Field label="Provider" hint="Paperclip Runner currently supports Codex through app-server.">
+        <Field label="Provider" hint="Todero Runner currently supports Codex through app-server.">
           <select className={inputClass} value="codex" disabled>
             <option value="codex">Codex</option>
           </select>
@@ -153,7 +153,7 @@ export function CodexLocalConfigFields({
           {!managedSandboxOnly && (
             <Field
               label="ACP state directory"
-              hint="Optional ACP session state directory. Defaults to Paperclip-managed organization/agent scoped storage."
+              hint="Optional ACP session state directory. Defaults to Todero-managed organization/agent scoped storage."
             >
               <div className="flex items-center gap-2">
                 <DraftInput

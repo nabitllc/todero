@@ -3,15 +3,15 @@ import type { IncomingHttpHeaders } from "node:http";
 import { betterAuth, type Auth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { toNodeHandler } from "better-auth/node";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   authAccounts,
   authSessions,
   authUsers,
   authVerifications,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { Config } from "../config.js";
-import { resolvePaperclipInstanceId } from "../home-paths.js";
+import { resolveToderoInstanceId } from "../home-paths.js";
 import {
   workspaceLoginHandoffPlugin,
   type WorkspaceHandoffExpectedIdentity,
@@ -49,12 +49,12 @@ type BetterAuthInstance = BetterAuthHandlerTarget & BetterAuthSessionResolver;
 const AUTH_COOKIE_PREFIX_FALLBACK = "default";
 const AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE = /[^a-zA-Z0-9_-]+/g;
 
-export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()): string {
+export function deriveAuthCookiePrefix(instanceId = resolveToderoInstanceId()): string {
   const scopedInstanceId = instanceId
     .trim()
     .replace(AUTH_COOKIE_PREFIX_INVALID_SEGMENTS_RE, "-")
     .replace(/^-+|-+$/g, "") || AUTH_COOKIE_PREFIX_FALLBACK;
-  return `paperclip-${scopedInstanceId}`;
+  return `todero-${scopedInstanceId}`;
 }
 
 export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {
@@ -231,7 +231,7 @@ export function resolveWorkspaceHandoffIdentity(
       : null);
   return {
     key,
-    instanceId: resolvePaperclipInstanceId(),
+    instanceId: resolveToderoInstanceId(),
     executionWorkspaceId: resolveWorkspaceHandoffLocalWorkspaceId(env),
     companyId: resolveWorkspaceHandoffLocalCompanyId(env),
     origin: configuredOrigin,
@@ -246,7 +246,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
   if (!secret) {
     throw new Error(
       "BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) must be set. " +
-      "For local development, set BETTER_AUTH_SECRET=paperclip-dev-secret in your .env file.",
+      "For local development, set BETTER_AUTH_SECRET=todero-dev-secret in your .env file.",
     );
   }
   const disableSecureCookies = shouldDisableSecureAuthCookies({

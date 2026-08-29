@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext } from "@todero/adapter-utils";
 
 const ensureRuntimeInstalledMock = vi.hoisted(() => vi.fn(async () => {}));
 const ensureCommandMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -13,7 +13,7 @@ const prepareRuntimeMock = vi.hoisted(() => vi.fn(async () => ({
 const resolveCommandForLogsMock = vi.hoisted(() => vi.fn(async () => "grok"));
 const runProcessMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@paperclipai/adapter-utils/execution-target", () => ({
+vi.mock("@todero/adapter-utils/execution-target", () => ({
   adapterExecutionTargetIsRemote: () => false,
   adapterExecutionTargetRemoteCwd: (_target: unknown, cwd: string) => cwd,
   overrideAdapterExecutionTargetRemoteCwd: (target: unknown, _cwd: string) => target,
@@ -35,7 +35,7 @@ import { resolveManagedGrokHomeDir } from "./grok-home.js";
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-grok-local-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-grok-local-"));
   tempRoots.push(root);
   return root;
 }
@@ -60,11 +60,11 @@ describe("grok_local execute", () => {
   it("stages Grok-native instructions and skills into the workspace for the run and cleans them up afterward", async () => {
     const root = await makeTempRoot();
     const instructionsPath = path.join(root, "managed", "AGENTS.md");
-    const skillSource = path.join(root, "runtime-skills", "paperclip");
+    const skillSource = path.join(root, "runtime-skills", "todero");
     await fs.mkdir(path.dirname(instructionsPath), { recursive: true });
     await fs.writeFile(instructionsPath, "You are Grok.\n", "utf8");
     await fs.mkdir(skillSource, { recursive: true });
-    await fs.writeFile(path.join(skillSource, "SKILL.md"), "---\nname: paperclip\ndescription: test\n---\n", "utf8");
+    await fs.writeFile(path.join(skillSource, "SKILL.md"), "---\nname: todero\ndescription: test\n---\n", "utf8");
 
     runProcessMock.mockImplementation(async (_runId, _target, _command, args, options) => {
       expect(args).toEqual(
@@ -78,7 +78,7 @@ describe("grok_local execute", () => {
       // so no permission mode may be passed unless explicitly configured.
       expect(args).not.toContain("--permission-mode");
       expect(await fs.readFile(path.join(root, "Agents.md"), "utf8")).toContain("You are Grok.");
-      expect(await pathExists(path.join(root, ".claude", "skills", "paperclip", "SKILL.md"))).toBe(true);
+      expect(await pathExists(path.join(root, ".claude", "skills", "todero", "SKILL.md"))).toBe(true);
       await options.onLog?.("stdout", '{"type":"text","data":"done"}\n');
       return {
         exitCode: 0,
@@ -111,13 +111,13 @@ describe("grok_local execute", () => {
       config: {
         cwd: root,
         instructionsFilePath: instructionsPath,
-        paperclipRuntimeSkills: [{
-          key: "paperclip",
-          runtimeName: "paperclip",
+        toderoRuntimeSkills: [{
+          key: "todero",
+          runtimeName: "todero",
           source: skillSource,
           required: false,
         }],
-        paperclipSkillSync: { desiredSkills: ["paperclip"] },
+        toderoSkillSync: { desiredSkills: ["todero"] },
       },
       context: {},
       authToken: "run-token",
@@ -136,7 +136,7 @@ describe("grok_local execute", () => {
       sessionDisplayId: "sess-1",
     });
     expect(await pathExists(path.join(root, "Agents.md"))).toBe(false);
-    expect(await pathExists(path.join(root, ".claude", "skills", "paperclip"))).toBe(false);
+    expect(await pathExists(path.join(root, ".claude", "skills", "todero"))).toBe(false);
     expect(logs.map((entry) => entry.chunk)).not.toEqual([]);
   });
 
@@ -291,11 +291,11 @@ describe("grok_local execute", () => {
   it("cleans up staged assets when setup fails before the Grok process starts", async () => {
     const root = await makeTempRoot();
     const instructionsPath = path.join(root, "managed", "AGENTS.md");
-    const skillSource = path.join(root, "runtime-skills", "paperclip");
+    const skillSource = path.join(root, "runtime-skills", "todero");
     await fs.mkdir(path.dirname(instructionsPath), { recursive: true });
     await fs.writeFile(instructionsPath, "You are Grok.\n", "utf8");
     await fs.mkdir(skillSource, { recursive: true });
-    await fs.writeFile(path.join(skillSource, "SKILL.md"), "---\nname: paperclip\ndescription: test\n---\n", "utf8");
+    await fs.writeFile(path.join(skillSource, "SKILL.md"), "---\nname: todero\ndescription: test\n---\n", "utf8");
     ensureCommandMock.mockRejectedValueOnce(new Error("grok not installed"));
 
     const ctx: AdapterExecutionContext = {
@@ -316,13 +316,13 @@ describe("grok_local execute", () => {
       config: {
         cwd: root,
         instructionsFilePath: instructionsPath,
-        paperclipRuntimeSkills: [{
-          key: "paperclip",
-          runtimeName: "paperclip",
+        toderoRuntimeSkills: [{
+          key: "todero",
+          runtimeName: "todero",
           source: skillSource,
           required: false,
         }],
-        paperclipSkillSync: { desiredSkills: ["paperclip"] },
+        toderoSkillSync: { desiredSkills: ["todero"] },
       },
       context: {},
       authToken: "run-token",
@@ -332,6 +332,6 @@ describe("grok_local execute", () => {
     await expect(execute(ctx)).rejects.toThrow("grok not installed");
     expect(runProcessMock).not.toHaveBeenCalled();
     expect(await pathExists(path.join(root, "Agents.md"))).toBe(false);
-    expect(await pathExists(path.join(root, ".claude", "skills", "paperclip"))).toBe(false);
+    expect(await pathExists(path.join(root, ".claude", "skills", "todero"))).toBe(false);
   });
 });

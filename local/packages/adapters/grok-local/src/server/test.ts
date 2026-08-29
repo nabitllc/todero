@@ -2,24 +2,24 @@ import type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestContext,
   AdapterEnvironmentTestResult,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   asNumber,
   asString,
   asStringArray,
   ensurePathInEnv,
   parseObject,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 import {
   describeAdapterExecutionTarget,
   ensureAdapterExecutionTargetCommandResolvable,
   ensureAdapterExecutionTargetDirectory,
   resolveAdapterExecutionTargetCwd,
   runAdapterExecutionTargetProcess,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 import { DEFAULT_GROK_LOCAL_MODEL } from "../index.js";
 import { parseGrokJsonl } from "./parse.js";
-import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "@paperclipai/shared";
+import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "@todero/shared";
 
 export interface GrokModelsProbe {
   authenticated: boolean;

@@ -1,9 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import { Router } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { heartbeatRuns, instanceUserRoles, invites } from "@paperclipai/db";
-import type { DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import { heartbeatRuns, instanceUserRoles, invites } from "@todero/db";
+import type { DeploymentExposure, DeploymentMode } from "@todero/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus, writeDevServerRestartRequest } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
 import { getServerInfoSnapshot, type ServerInfoSnapshot } from "../server-info.js";
@@ -91,7 +91,7 @@ function getCloudHealthStatus(env: CloudInstanceEnv) {
 
   return {
     managed: true as const,
-    managedBy: "paperclip-cloud" as const,
+    managedBy: "todero-cloud" as const,
     stackSlug: context.stackSlug,
     cloudBaseUrl: context.cloudOrigin,
   };
@@ -175,7 +175,7 @@ export function healthRoutes(
     // can read which commit this server is running without authenticating.
     const commit = serverInfo.git.available ? serverInfo.git.fullSha : null;
     const exposeDevServerDetails =
-      exposeFullDetails || hasDevServerStatusToken(req.get("x-paperclip-dev-server-status-token"));
+      exposeFullDetails || hasDevServerStatusToken(req.get("x-todero-dev-server-status-token"));
     // Workspace readiness names the instance and execution workspace that
     // answered, so it rides the protected responses only. Public health stays
     // redacted: an anonymous caller still learns liveness and nothing else.

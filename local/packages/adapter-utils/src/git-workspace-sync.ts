@@ -76,9 +76,9 @@ export const GIT_ARCHIVE_EXCLUDES = [".git", ".git/*"] as const;
  */
 export const GIT_SYNC_COMMIT_IDENTITY_ARGS = [
   "-c",
-  "user.name=Paperclip",
+  "user.name=Todero",
   "-c",
-  "user.email=noreply@paperclip.ing",
+  "user.email=noreply@todero.vercel.app",
 ] as const;
 
 function shellQuote(value: string) {
@@ -492,8 +492,8 @@ export async function withShallowGitWorkspaceClone<T>(
   },
   fn: (cloneDir: string) => Promise<T>,
 ): Promise<T> {
-  const cloneDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-git-workspace-"));
-  const tempRef = `refs/paperclip/git-sync/import/${randomUUID()}`;
+  const cloneDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-git-workspace-"));
+  const tempRef = `refs/todero/git-sync/import/${randomUUID()}`;
   try {
     const originUrl = await readSanitizedOriginRemoteUrl(input.localDir);
     await runLocalGit(input.localDir, ["update-ref", tempRef, input.snapshot.headCommit], {
@@ -546,11 +546,11 @@ export async function withShallowGitWorkspaceClone<T>(
 }
 
 export function createImportedGitRef(scope = "remote"): string {
-  return `refs/paperclip/git-sync/imported/${scope}/${randomUUID()}`;
+  return `refs/todero/git-sync/imported/${scope}/${randomUUID()}`;
 }
 
 export function createRemoteGitExportRef(scope = "remote"): string {
-  return `refs/paperclip/git-sync/export/${scope}/${randomUUID()}`;
+  return `refs/todero/git-sync/export/${scope}/${randomUUID()}`;
 }
 
 export async function deleteLocalGitRef(input: {
@@ -790,7 +790,7 @@ export async function integrateImportedGitHead(input: {
         localDir: input.localDir,
         currentHead,
         importedHead: input.importedHead,
-        syncLabel: "Paperclip remote git sync",
+        syncLabel: "Todero remote git sync",
       });
       try {
         await runLocalGit(input.localDir, ["update-ref", headRef, graftCommit, currentHead], {
@@ -832,7 +832,7 @@ export async function integrateImportedGitHead(input: {
         "-p",
         input.importedHead,
         "-m",
-        `Paperclip remote git sync merge ${input.importedHead.slice(0, 12)}`,
+        `Todero remote git sync merge ${input.importedHead.slice(0, 12)}`,
       ],
       {
         timeout: 60_000,
@@ -892,7 +892,7 @@ export async function resetLocalGitIndexToHead(input: {
   });
   if (workingTreeDiff.stdout.trim().length > 0) {
     console.warn(
-      "[paperclip] Workspace restore preserved local working tree changes after clean sandbox restore.",
+      "[todero] Workspace restore preserved local working tree changes after clean sandbox restore.",
     );
   }
 }

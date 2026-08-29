@@ -75,13 +75,13 @@ describe("parseKimiJsonl", () => {
   it("collects tool results keyed by tool_call_id", () => {
     const stdout = [
       '{"role":"assistant","tool_calls":[{"type":"function","id":"tool_8c1OWyRBe68OMTbWY6NqnkMm","function":{"name":"Read","arguments":"{\\"path\\":\\"probe.txt\\"}"}}]}',
-      '{"role":"tool","tool_call_id":"tool_8c1OWyRBe68OMTbWY6NqnkMm","content":"1\\thello paperclip"}',
+      '{"role":"tool","tool_call_id":"tool_8c1OWyRBe68OMTbWY6NqnkMm","content":"1\\thello todero"}',
     ].join("\n");
 
     const parsed = parseKimiJsonl(stdout);
 
     expect(parsed.toolResults).toEqual([
-      { toolCallId: "tool_8c1OWyRBe68OMTbWY6NqnkMm", content: "1\thello paperclip" },
+      { toolCallId: "tool_8c1OWyRBe68OMTbWY6NqnkMm", content: "1\thello todero" },
     ]);
   });
 

@@ -191,14 +191,14 @@ describe("SearchableSelect", () => {
           {
             key: "all:path-only",
             value: "path-only",
-            label: "Paperclip app",
-            searchText: "/srv/paperclip/mobile-checkout",
+            label: "Todero app",
+            searchText: "/srv/todero/mobile-checkout",
           },
           {
             key: "all:mobile",
             value: "mobile",
             label: "Mobile agent chat",
-            searchText: "/srv/paperclip/agent-chat",
+            searchText: "/srv/todero/agent-chat",
           },
         ],
       },
@@ -394,9 +394,9 @@ describe("SearchableSelect", () => {
     const onValueChange = vi.fn();
     const groups = buildWorkspaceSelectGroups([
       workspace({
-        id: "workspace-paperclip",
-        name: "Paperclip app",
-        cwd: "/srv/paperclip/home/paperclipai/paperclip/.paperclip/worktrees/PAP-11722-new-existing-workspace-selector",
+        id: "workspace-todero",
+        name: "Todero app",
+        cwd: "/srv/todero/home/nabitllc/todero/.todero/worktrees/PAP-11722-new-existing-workspace-selector",
         branchName: "feature/reusable-workspaces",
         status: "running",
         lastUsedAt: "2026-06-24T10:00:00.000Z",
@@ -404,7 +404,7 @@ describe("SearchableSelect", () => {
       workspace({
         id: "workspace-marketing",
         name: "Marketing site",
-        cwd: "/srv/paperclip/home/marketing-site",
+        cwd: "/srv/todero/home/marketing-site",
         branchName: "landing-refresh",
         status: "idle",
         lastUsedAt: "2026-06-20T10:00:00.000Z",
@@ -443,21 +443,21 @@ describe("SearchableSelect", () => {
     setInputValue(input!, "pclip reusable");
     await flush();
 
-    expect(container.textContent).toContain("Paperclip app");
+    expect(container.textContent).toContain("Todero app");
     expect(container.textContent).not.toContain("Marketing site");
 
     const selectedOptionKey = () => (
       container.querySelector("[cmdk-item][aria-selected='true'] [data-option-key]")?.getAttribute("data-option-key")
     );
 
-    expect(selectedOptionKey()).toBe("recent:workspace-paperclip");
+    expect(selectedOptionKey()).toBe("recent:workspace-todero");
     keyDown(input!, "ArrowDown");
     await flush();
-    expect(selectedOptionKey()).toBe("all:workspace-paperclip");
+    expect(selectedOptionKey()).toBe("all:workspace-todero");
 
     keyDown(input!, "ArrowUp");
     await flush();
-    expect(selectedOptionKey()).toBe("recent:workspace-paperclip");
+    expect(selectedOptionKey()).toBe("recent:workspace-todero");
 
     keyDown(input!, "ArrowDown");
     await flush();
@@ -465,11 +465,11 @@ describe("SearchableSelect", () => {
     await flush();
 
     expect(onValueChange).toHaveBeenCalledWith(
-      "workspace-paperclip",
+      "workspace-todero",
       expect.objectContaining({
-        key: "all:workspace-paperclip",
-        value: "workspace-paperclip",
-        workspaceId: "workspace-paperclip",
+        key: "all:workspace-todero",
+        value: "workspace-todero",
+        workspaceId: "workspace-todero",
       }),
     );
     expect(container.querySelector("input[placeholder='Search workspaces...']")).toBeNull();

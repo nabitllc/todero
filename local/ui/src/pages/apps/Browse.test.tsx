@@ -36,7 +36,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Paperclip" },
+    selectedCompany: { id: "company-1", name: "Todero" },
   }),
 }));
 
@@ -115,7 +115,7 @@ describe("Browse store door (PAP-13254 door 1)", () => {
           tagline: "Search and draft email.",
           availability: {
             available: false,
-            reason: "Gmail is not available on this Paperclip instance yet.",
+            reason: "Gmail is not available on this Todero instance yet.",
           },
         }),
         galleryEntry({
@@ -245,7 +245,7 @@ describe("Browse store door (PAP-13254 door 1)", () => {
     expect(byoCard?.disabled).toBe(false);
     expect(tile?.textContent).toContain("Unavailable");
     expect(container.textContent).toContain(
-      "Gmail is not available on this Paperclip instance yet.",
+      "Gmail is not available on this Todero instance yet.",
     );
     expect(container.textContent).not.toContain("Coming soon");
     expect(zapierTiles[0]?.textContent).toContain("Connect");

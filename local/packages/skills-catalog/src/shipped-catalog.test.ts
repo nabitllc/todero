@@ -5,26 +5,26 @@ import { describe, expect, it } from "vitest";
 import { catalogManifest, catalogSkills, resolveCatalogSkillRef } from "./index.js";
 
 const EXPECTED_BUNDLED_KEYS = [
-  "paperclipai/bundled/docs/doc-maintenance",
-  "paperclipai/bundled/paperclip-operations/issue-triage",
-  "paperclipai/bundled/paperclip-operations/reflection-coach",
-  "paperclipai/bundled/paperclip-operations/status-card-query",
-  "paperclipai/bundled/paperclip-operations/summarize-status",
-  "paperclipai/bundled/paperclip-operations/task-planning",
-  "paperclipai/bundled/product/paperclip-capsules",
-  "paperclipai/bundled/product/wireframe",
-  "paperclipai/bundled/quality/qa-acceptance",
-  "paperclipai/bundled/software-development/github-pr-workflow",
+  "todero/bundled/docs/doc-maintenance",
+  "todero/bundled/todero-operations/issue-triage",
+  "todero/bundled/todero-operations/reflection-coach",
+  "todero/bundled/todero-operations/status-card-query",
+  "todero/bundled/todero-operations/summarize-status",
+  "todero/bundled/todero-operations/task-planning",
+  "todero/bundled/product/todero-capsules",
+  "todero/bundled/product/wireframe",
+  "todero/bundled/quality/qa-acceptance",
+  "todero/bundled/software-development/github-pr-workflow",
 ];
 
 const EXPECTED_OPTIONAL_KEYS = [
-  "paperclipai/optional/browser/agent-browser",
-  "paperclipai/optional/content/release-announcement",
-  "paperclipai/optional/content/simplified-english",
-  "paperclipai/optional/finance/ramp",
-  "paperclipai/optional/product/design-critique",
-  "paperclipai/optional/research/last30days",
-  "paperclipai/optional/software-development/prepare-mcp-integration",
+  "todero/optional/browser/agent-browser",
+  "todero/optional/content/release-announcement",
+  "todero/optional/content/simplified-english",
+  "todero/optional/finance/ramp",
+  "todero/optional/product/design-critique",
+  "todero/optional/research/last30days",
+  "todero/optional/software-development/prepare-mcp-integration",
 ];
 
 const MAX_FRONTMATTER_DESCRIPTION_LENGTH = 300;
@@ -74,7 +74,7 @@ describe("shipped skills catalog", () => {
     const skill = readFileSync(
       path.join(
         REPO_ROOT,
-        "packages/skills-catalog/catalog/bundled/paperclip-operations/summarize-status/SKILL.md",
+        "packages/skills-catalog/catalog/bundled/todero-operations/summarize-status/SKILL.md",
       ),
       "utf8",
     );
@@ -128,7 +128,7 @@ describe("shipped skills catalog", () => {
     // carry the "assets" trust level and are installable.
     const scriptBearing = catalogSkills.filter((skill) => skill.trustLevel === "scripts_executables");
     expect(scriptBearing.map((skill) => skill.key)).toEqual([
-      "paperclipai/optional/research/last30days",
+      "todero/optional/research/last30days",
     ]);
   });
 
@@ -151,11 +151,11 @@ describe("shipped skills catalog", () => {
     expect(issues).toEqual([]);
   });
 
-  it("uses canonical paperclipai keys derived from kind/category/slug", () => {
+  it("uses canonical todero keys derived from kind/category/slug", () => {
     const violations: string[] = [];
     for (const skill of catalogSkills) {
-      const expectedKey = `paperclipai/${skill.kind}/${skill.category}/${skill.slug}`;
-      const expectedId = `paperclipai:${skill.kind}:${skill.category}:${skill.slug}`;
+      const expectedKey = `todero/${skill.kind}/${skill.category}/${skill.slug}`;
+      const expectedId = `todero:${skill.kind}:${skill.category}:${skill.slug}`;
       if (skill.key !== expectedKey) violations.push(`${skill.key} should be ${expectedKey}`);
       if (skill.id !== expectedId) violations.push(`${skill.id} should be ${expectedId}`);
     }
@@ -164,12 +164,12 @@ describe("shipped skills catalog", () => {
 
   it("exposes a stable manifest header for downstream consumers", () => {
     expect(catalogManifest.schemaVersion).toBe(1);
-    expect(catalogManifest.packageName).toBe("@paperclipai/skills-catalog");
+    expect(catalogManifest.packageName).toBe("@todero/skills-catalog");
     expect(catalogSkills.length).toBe(EXPECTED_BUNDLED_KEYS.length + EXPECTED_OPTIONAL_KEYS.length);
   });
 
   it("resolves shipped skills by id, key, and unique slug", () => {
-    const sample = catalogSkills.find((skill) => skill.key === "paperclipai/bundled/software-development/github-pr-workflow");
+    const sample = catalogSkills.find((skill) => skill.key === "todero/bundled/software-development/github-pr-workflow");
     expect(sample, "expected github-pr-workflow to ship in the bundled catalog").toBeDefined();
     if (!sample) return;
 
@@ -182,7 +182,7 @@ describe("shipped skills catalog", () => {
     const rampSkill = readFileSync(new URL("../catalog/optional/finance/ramp/SKILL.md", import.meta.url), "utf8");
 
     expect(rampSkill).toContain("mixes Official and Community playbooks");
-    expect(rampSkill).toContain("do not execute them inside Paperclip unless a Paperclip approval explicitly names the playbook");
+    expect(rampSkill).toContain("do not execute them inside Todero unless a Todero approval explicitly names the playbook");
     expect(rampSkill).toContain("third-party browser automation, MCP server, CLI, or connector");
   });
 

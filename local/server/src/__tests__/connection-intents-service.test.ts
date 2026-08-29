@@ -20,7 +20,7 @@ import {
   toolProfileBindings,
   toolProfiles,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { RuntimeToolsTokenClaims } from "../runtime-tools-token.js";
 import { wakeConnectionIntentAfterResolution } from "../routes/connection-intents.js";
 import { connectionIntentService } from "../services/connection-intents.js";
@@ -71,7 +71,7 @@ describeEmbeddedPostgres("connectionIntentService", () => {
   let runId!: string;
 
   beforeAll(async () => {
-    const tempDb = await startEmbeddedPostgresTestDatabase("paperclip-connection-intents-");
+    const tempDb = await startEmbeddedPostgresTestDatabase("todero-connection-intents-");
     cleanup = tempDb.cleanup;
     connectionString = tempDb.connectionString;
     db = createDb(connectionString);

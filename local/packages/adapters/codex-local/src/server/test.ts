@@ -2,12 +2,12 @@ import type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestContext,
   AdapterEnvironmentTestResult,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   asString,
   parseObject,
   ensurePathInEnv,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 import {
   ensureAdapterExecutionTargetCommandResolvable,
   ensureAdapterExecutionTargetDirectory,
@@ -16,7 +16,7 @@ import {
   describeAdapterExecutionTarget,
   resolveAdapterExecutionTargetCwd,
   prepareAdapterExecutionTargetRuntime,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -104,7 +104,7 @@ async function prepareCodexHelloProbe(input: {
     // streaming all of it into the sandbox made the environment Test probe take
     // many minutes and look like it hung. The hello probe only needs auth.
     probeHomeLocalDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), `paperclip-codex-probe-home-${input.runId}-`),
+      path.join(os.tmpdir(), `todero-codex-probe-home-${input.runId}-`),
     );
     let seededAuth = false;
     for (const file of ["auth.json", "config.toml"]) {
@@ -131,7 +131,7 @@ async function prepareCodexHelloProbe(input: {
     }
 
     preparedRuntimeWorkspaceLocalDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), `paperclip-codex-envtest-${input.runId}-`),
+      path.join(os.tmpdir(), `todero-codex-envtest-${input.runId}-`),
     );
     preparedRuntime = await prepareAdapterExecutionTargetRuntime({
       runId: input.runId,
@@ -140,7 +140,7 @@ async function prepareCodexHelloProbe(input: {
       workspaceLocalDir: preparedRuntimeWorkspaceLocalDir,
       // Pass `input.cwd` as the base (not a pre-built per-run subdir).
       // `prepareRemoteManagedRuntime` itself appends
-      // `.paperclip-runtime/runs/<runId>/workspace` to whatever it gets, so
+      // `.todero-runtime/runs/<runId>/workspace` to whatever it gets, so
       // pre-building a per-run path here would double-nest the run ID.
       workspaceRemoteDir: input.cwd,
       installCommand: SANDBOX_INSTALL_COMMAND,
@@ -166,8 +166,8 @@ async function prepareCodexHelloProbe(input: {
 
   if (input.probeApiKey) {
     const probeHome = input.targetIsRemote
-      ? path.posix.join(input.cwd, ".paperclip-runtime", "codex", `probe-home-${input.runId}`)
-      : path.join(os.tmpdir(), `paperclip-codex-probe-${input.runId}`);
+      ? path.posix.join(input.cwd, ".todero-runtime", "codex", `probe-home-${input.runId}`)
+      : path.join(os.tmpdir(), `todero-codex-probe-${input.runId}`);
     return {
       command: "sh",
       args: [
@@ -421,7 +421,7 @@ export async function testEnvironment(
             ...(detail ? { detail } : {}),
             hint: probeApiKey
               ? "OPENAI_API_KEY was provided but Codex still rejected the request. Verify the key is valid for the OpenAI Responses API (e.g. `curl -H \"Authorization: Bearer $OPENAI_API_KEY\" https://api.openai.com/v1/models`), or run `codex login` and seed `~/.codex/auth.json`."
-              : "Codex CLI does not read OPENAI_API_KEY from the environment; set OPENAI_API_KEY in this adapter's config (so Paperclip writes it to `$CODEX_HOME/auth.json`) or run `codex login` on the host first.",
+              : "Codex CLI does not read OPENAI_API_KEY from the environment; set OPENAI_API_KEY in this adapter's config (so Todero writes it to `$CODEX_HOME/auth.json`) or run `codex login` on the host first.",
           });
           if (targetIsSandbox) {
             // Emit the neutral canonical check so the user interface can decide

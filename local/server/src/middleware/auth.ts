@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   activityLog,
   agentApiKeys,
@@ -11,7 +11,7 @@ import {
   companyMemberships,
   heartbeatRuns,
   instanceUserRoles,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   MAX_ISSUE_PREFIX_ATTEMPTS,
   deriveIssuePrefixBase,
@@ -21,7 +21,7 @@ import {
   rekeyCompanyIssueIdentifiers,
 } from "../services/issue-prefix.js";
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
-import { isUuidLike, normalizeAgentApiKeyScope, type DeploymentMode } from "@paperclipai/shared";
+import { isUuidLike, normalizeAgentApiKeyScope, type DeploymentMode } from "@todero/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "./logger.js";
 import { boardAuthService } from "../services/board-auth.js";
@@ -228,7 +228,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           }
         : { type: "none", source: "none" };
 
-    const runIdHeader = req.header("x-paperclip-run-id");
+    const runIdHeader = req.header("x-todero-run-id");
 
     const authHeader = req.header("authorization");
     const hasBearerCredentials = /^bearer(?:\s|$)/i.test(authHeader ?? "");
@@ -370,7 +370,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           url: req.originalUrl,
         });
         next(
-          unprocessable("X-Paperclip-Run-Id does not match signed agent JWT run_id", {
+          unprocessable("X-Todero-Run-Id does not match signed agent JWT run_id", {
             code: "agent_jwt_run_id_mismatch",
             claimRunId: claims.run_id,
             headerRunId: normalizedRunIdHeader,
@@ -519,23 +519,23 @@ export async function resolveCloudTenantActor(
   const expectedToken = process.env.PAPERCLIP_CLOUD_TENANT_SERVER_TOKEN?.trim();
   if (!expectedToken) return null;
 
-  const token = req.header("x-paperclip-cloud-tenant-token")?.trim();
+  const token = req.header("x-todero-cloud-tenant-token")?.trim();
   if (!token || !constantTimeStringEqual(token, expectedToken)) return null;
 
-  const userId = requiredCloudHeader(req, "x-paperclip-cloud-user-id");
-  const userEmail = requiredCloudHeader(req, "x-paperclip-cloud-user-email").toLowerCase();
-  const stackId = requiredCloudHeader(req, "x-paperclip-cloud-stack-id");
-  const stackRole = stackMembershipRole(req.header("x-paperclip-cloud-stack-role"));
-  const userName = req.header("x-paperclip-cloud-user-name")?.trim() || userEmail;
-  const paperclipCompanyId = req.header("x-paperclip-cloud-paperclip-company-id")?.trim();
-  const paperclipCompanyName = req
-    .header("x-paperclip-cloud-paperclip-company-name")
+  const userId = requiredCloudHeader(req, "x-todero-cloud-user-id");
+  const userEmail = requiredCloudHeader(req, "x-todero-cloud-user-email").toLowerCase();
+  const stackId = requiredCloudHeader(req, "x-todero-cloud-stack-id");
+  const stackRole = stackMembershipRole(req.header("x-todero-cloud-stack-role"));
+  const userName = req.header("x-todero-cloud-user-name")?.trim() || userEmail;
+  const toderoCompanyId = req.header("x-todero-cloud-todero-company-id")?.trim();
+  const toderoCompanyName = req
+    .header("x-todero-cloud-todero-company-name")
     ?.trim();
   const companyId = cloudTenantCompanyId(stackId);
-  const companyName = paperclipCompanyName || humanizeCloudStackSlug(stackId);
+  const companyName = toderoCompanyName || humanizeCloudStackSlug(stackId);
   const now = new Date();
   const membershipRole = stackRole === "owner" || stackRole === "admin" ? "owner" : stackRole;
-  const syncFingerprint = [userEmail, userName, stackId, stackRole, paperclipCompanyId ?? ""].join(":");
+  const syncFingerprint = [userEmail, userName, stackId, stackRole, toderoCompanyId ?? ""].join(":");
   const cloudTenantWriteDebounce = cloudTenantWriteDebounceFor(db);
   pruneCloudTenantWriteDebounce(cloudTenantWriteDebounce, now.getTime());
   const previousSync = cloudTenantWriteDebounce.get(userId);
@@ -579,11 +579,11 @@ export async function resolveCloudTenantActor(
 
   if (shouldSync) await insertCloudTenantCompany(db, { companyId, companyName, now });
 
-  if (shouldSync && paperclipCompanyName) {
+  if (shouldSync && toderoCompanyName) {
     await repairCloudTenantCompanyName(db, {
       companyId,
-      paperclipCompanyId,
-      paperclipCompanyName,
+      toderoCompanyId,
+      toderoCompanyName,
       now,
     });
   }
@@ -707,7 +707,7 @@ function constantTimeStringEqual(left: string, right: string): boolean {
 }
 
 function cloudTenantCompanyId(stackId: string): string {
-  const bytes = createHash("sha256").update(`paperclip-cloud-tenant-company:${stackId}`).digest();
+  const bytes = createHash("sha256").update(`todero-cloud-tenant-company:${stackId}`).digest();
   bytes[6] = (bytes[6] & 0x0f) | 0x50;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = bytes.subarray(0, 16).toString("hex");
@@ -717,7 +717,7 @@ function cloudTenantCompanyId(stackId: string): string {
 export function humanizeCloudStackSlug(stackId: string): string {
   const slug = stackId
     .trim()
-    .replace(/^paperclip-stack-/i, "")
+    .replace(/^todero-stack-/i, "")
     .replace(/^stack-/i, "");
   const displayName = slug
     .split(/[-_]+/)
@@ -729,15 +729,15 @@ export function humanizeCloudStackSlug(stackId: string): string {
 
 export function isKnownBadCloudCompanyName(
   name: string,
-  ids: { companyId: string; paperclipCompanyId?: string },
+  ids: { companyId: string; toderoCompanyId?: string },
 ): boolean {
   const normalized = name.trim();
   return (
-    /^paperclip-stack-.+/i.test(normalized) ||
-    /^stack-.+\s+paperclip$/i.test(normalized) ||
+    /^todero-stack-.+/i.test(normalized) ||
+    /^stack-.+\s+todero$/i.test(normalized) ||
     normalized === ids.companyId ||
-    (ids.paperclipCompanyId !== undefined &&
-      normalized === ids.paperclipCompanyId)
+    (ids.toderoCompanyId !== undefined &&
+      normalized === ids.toderoCompanyId)
   );
 }
 
@@ -745,8 +745,8 @@ async function repairCloudTenantCompanyName(
   db: Db,
   input: {
     companyId: string;
-    paperclipCompanyId?: string;
-    paperclipCompanyName: string;
+    toderoCompanyId?: string;
+    toderoCompanyName: string;
     now: Date;
   },
 ): Promise<void> {
@@ -760,7 +760,7 @@ async function repairCloudTenantCompanyName(
       !existing ||
       !isKnownBadCloudCompanyName(existing.name, {
         companyId: input.companyId,
-        paperclipCompanyId: input.paperclipCompanyId,
+        toderoCompanyId: input.toderoCompanyId,
       })
     ) {
       return;
@@ -768,7 +768,7 @@ async function repairCloudTenantCompanyName(
     await db.transaction(async (tx) => {
       const [updated] = await tx
         .update(companies)
-        .set({ name: input.paperclipCompanyName, updatedAt: input.now })
+        .set({ name: input.toderoCompanyName, updatedAt: input.now })
         .where(
           and(
             eq(companies.id, input.companyId),
@@ -792,7 +792,7 @@ async function repairCloudTenantCompanyName(
           source: "cloud_tenant_auth",
           reason: "legacy_machine_name_repair",
           previousName: existing.name,
-          name: input.paperclipCompanyName,
+          name: input.toderoCompanyName,
         },
       });
     });
@@ -854,7 +854,7 @@ function legacyProvisionedIssuePrefix(stackId: string): string {
 }
 
 /** The placeholder description that pre-name-derivation builds wrote. */
-const LEGACY_PROVISIONED_DESCRIPTION_PREFIX = "Provisioned by Paperclip Cloud for stack ";
+const LEGACY_PROVISIONED_DESCRIPTION_PREFIX = "Provisioned by Todero Cloud for stack ";
 
 /**
  * One-time repair for companies claimed by a pre-name-derivation build.

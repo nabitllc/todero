@@ -8,8 +8,8 @@ import type {
   ClaudeOAuthTokenStatusResponse,
   Environment,
   InstanceSettings,
-} from "@paperclipai/shared";
-import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@paperclipai/shared";
+} from "@todero/shared";
+import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@todero/shared";
 import { AdapterLoginPanel } from "./AgentConfigForm";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
@@ -63,11 +63,11 @@ import {
   selectReusableOnboardingProject,
 } from "../lib/onboarding-launch";
 import { buildNewAgentRuntimeConfig } from "../lib/new-agent-runtime-config";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_KIMI_LOCAL_MODEL } from "@paperclipai/adapter-kimi-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@paperclipai/adapter-opencode-local";
+import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@todero/adapter-codex-local";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@todero/adapter-cursor-local";
+import { DEFAULT_GEMINI_LOCAL_MODEL } from "@todero/adapter-gemini-local";
+import { DEFAULT_KIMI_LOCAL_MODEL } from "@todero/adapter-kimi-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL, isValidOpenCodeModelId } from "@todero/adapter-opencode-local";
 import {
   canGoBackFromOnboardingStep,
   canJumpToOnboardingStep,
@@ -164,9 +164,9 @@ function adapterConfigHasAnthropicApiKey(config: Record<string, unknown>): boole
 
 // Exported so tests write/read the exact key the component uses, instead of
 // duplicating the literal and silently drifting from it if it's ever renamed.
-export const ONBOARDING_STORAGE_KEY = "paperclip-onboarding-state";
-const DEFAULT_TASK_TITLE = "Paperclip onboarding";
-const DEFAULT_TASK_DESCRIPTION = `You are the Paperclip agent. This is your first task. Your job here is to
+export const ONBOARDING_STORAGE_KEY = "todero-onboarding-state";
+const DEFAULT_TASK_TITLE = "Todero onboarding";
+const DEFAULT_TASK_DESCRIPTION = `You are the Todero agent. This is your first task. Your job here is to
 understand what the user wants and turn it into a concrete plan — not to
 start building yet.
 
@@ -749,7 +749,7 @@ function OnboardingWizardInner({
     isFetching: adapterModelsFetching
   } = useQuery({
     // The wizard doesn't expose an environment selector, so models always
-    // resolve against the local Paperclip host (environmentId = null).
+    // resolve against the local Todero host (environmentId = null).
     queryKey: createdCompanyId
       ? queryKeys.agents.adapterModels(createdCompanyId, adapterType, null)
       : ["agents", "none", "adapter-models", adapterType, null],
@@ -1992,7 +1992,7 @@ function OnboardingWizardInner({
                 <div className="mx-auto w-full max-w-md space-y-6">
                   <OnboardingHeading
                     title="What is the name of your organization?"
-                    lede="This will be the name of your Paperclip organization — choose something your team will recognize."
+                    lede="This will be the name of your Todero organization — choose something your team will recognize."
                   />
                   <div className="group">
                     <label

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   applyManagedExperimentalOverlay,
   instanceSettingsService,
@@ -75,8 +75,8 @@ describe("applyManagedExperimentalOverlay", () => {
     // unmanaged keys keep their stored/default values
     expect(experimental.enableCases).toBe(false);
     expect(managedKeys).toEqual({
-      enableApps: { managed: true, managedBy: "paperclip-cloud" },
-      enablePipelines: { managed: true, managedBy: "paperclip-cloud" },
+      enableApps: { managed: true, managedBy: "todero-cloud" },
+      enablePipelines: { managed: true, managedBy: "todero-cloud" },
     });
     // input is not mutated
     expect(stored.enableApps).toBe(true);
@@ -99,8 +99,8 @@ describe("instanceSettingsService managed overlay", () => {
     expect(experimental.enableApps).toBe(false);
     expect(experimental.enablePipelines).toBe(true);
     expect(experimental.managedKeys).toEqual({
-      enableApps: { managed: true, managedBy: "paperclip-cloud" },
-      enablePipelines: { managed: true, managedBy: "paperclip-cloud" },
+      enableApps: { managed: true, managedBy: "todero-cloud" },
+      enablePipelines: { managed: true, managedBy: "todero-cloud" },
     });
   });
 
@@ -112,7 +112,7 @@ describe("instanceSettingsService managed overlay", () => {
     expect(settings.experimental.enableApps).toBe(false);
     expect(settings.experimental.managedKeys?.enableApps).toEqual({
       managed: true,
-      managedBy: "paperclip-cloud",
+      managedBy: "todero-cloud",
     });
   });
 
@@ -150,7 +150,7 @@ describe("instanceSettingsService managed overlay", () => {
     expect(updated.experimental.enablePipelines).toBe(true);
     expect(updated.experimental.managedKeys?.enableApps).toEqual({
       managed: true,
-      managedBy: "paperclip-cloud",
+      managedBy: "todero-cloud",
     });
   });
 

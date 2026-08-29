@@ -18,7 +18,7 @@ use crate::durable::{
 };
 use crate::provider_events::{normalize_codex_notification, NormalizedProviderEvent};
 
-const PROVIDER_STATE_SCHEMA: &str = "paperclip.runner.codex-provider-state.v1";
+const PROVIDER_STATE_SCHEMA: &str = "todero.runner.codex-provider-state.v1";
 const PROVIDER_STATE_FILE: &str = "codex-provider-state.json";
 const MAX_PROVIDER_STATE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_EVENTS_PER_POLL: usize = 128;
@@ -99,7 +99,7 @@ fn terminal_events(state: &CodexProviderState, event_type: &str) -> Vec<Normaliz
         })
         .collect::<Vec<_>>();
     let result = json!({
-        "schema": "paperclip.run_result.v1",
+        "schema": "todero.run_result.v1",
         "reportedWorkDisposition": disposition,
         "summary": summary,
         "completionClaim": {
@@ -130,7 +130,7 @@ fn terminal_events(state: &CodexProviderState, event_type: &str) -> Vec<Normaliz
         "failed"
     };
     let terminal = json!({
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": turn_terminal_state,
         "runTerminalState": if succeeded { "succeeded" } else if cancelled { "cancelled" } else { "failed" },
         "reportedWorkDisposition": disposition,
@@ -794,7 +794,7 @@ impl CodexCommandExecutor {
                             priority: EventPriority::P0,
                             payload: json!({
                                 "request": {
-                                    "schema": "paperclip.runtime_request.v2",
+                                    "schema": "todero.runtime_request.v2",
                                     "requestKind": "runtime",
                                     "requestId": request_id,
                                     "type": "input",

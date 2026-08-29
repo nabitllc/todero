@@ -1,15 +1,15 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
-import { resolvePaperclipInstanceRootForAdapter } from "@paperclipai/adapter-utils/server-utils";
+import type { AdapterExecutionContext } from "@todero/adapter-utils";
+import { resolveToderoInstanceRootForAdapter } from "@todero/adapter-utils/server-utils";
 import { readSubscriptionAccountId } from "./codex-auth-cache.js";
 
 const TRUTHY_ENV_RE = /^(1|true|yes|on)$/i;
 const COPIED_SHARED_FILES = ["config.json", "config.toml", "instructions.md"] as const;
 const SYMLINKED_SHARED_FILES = ["auth.json"] as const;
-const MANAGED_MCP_BLOCK_START = "# BEGIN PAPERCLIP MANAGED MCP";
-const MANAGED_MCP_BLOCK_END = "# END PAPERCLIP MANAGED MCP";
+const MANAGED_MCP_BLOCK_START = "# BEGIN TODERO MANAGED MCP";
+const MANAGED_MCP_BLOCK_END = "# END TODERO MANAGED MCP";
 
 /**
  * The allowlist of managed `CODEX_HOME` entries that the codex-local adapter
@@ -107,7 +107,7 @@ export function resolveManagedCodexHomeDir(
   env: NodeJS.ProcessEnv,
   companyId?: string,
 ): string {
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,
@@ -118,11 +118,11 @@ export function resolveManagedCodexHomeDir(
 }
 
 /**
- * True when `homePath` lives under the Paperclip-managed company tree
+ * True when `homePath` lives under the Todero-managed company tree
  * (`<instanceRoot>/companies/<companyId>/...`). This covers both the shared
  * company `codex-home` and the per-agent `agents/<agentId>/codex-home` set by
  * the server-side isolation guard. A path outside that tree is a genuine
- * external/user-supplied override that Paperclip must not seed or overwrite.
+ * external/user-supplied override that Todero must not seed or overwrite.
  */
 export function isManagedCodexHomePath(
   env: NodeJS.ProcessEnv,
@@ -130,7 +130,7 @@ export function isManagedCodexHomePath(
   homePath: string,
 ): boolean {
   if (!companyId) return false;
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,
@@ -203,15 +203,15 @@ export async function ensureSymlink(target: string, source: string): Promise<voi
   }
 
   if (!existing.isSymbolicLink()) {
-    // A previous Paperclip version copied this file into the managed home
+    // A previous Todero version copied this file into the managed home
     // instead of symlinking it. Codex refresh tokens rotate and are
     // single-use, so a stale copy fails with refresh_token_reused on the next
     // run (#5028). Replace the regular file with a symlink so the CLI follows
     // the live source. Safe to delete: target is always under the
-    // Paperclip-managed company home, never the user's real ~/.codex.
+    // Todero-managed company home, never the user's real ~/.codex.
     // Directories are left alone — `fs.unlink` would throw EISDIR on Unix
     // (and behave inconsistently on Windows). A directory at this path is not
-    // a Paperclip-written stale copy and warrants operator inspection rather
+    // a Todero-written stale copy and warrants operator inspection rather
     // than silent removal.
     if (existing.isDirectory()) return;
     await fs.unlink(target);
@@ -271,21 +271,21 @@ function buildManagedMcpBlock(input: {
   const usedNames = new Set<string>();
   const lines = [
     MANAGED_MCP_BLOCK_START,
-    "# Written by Paperclip for governed MCP gateway access. Do not edit this block by hand.",
+    "# Written by Todero for governed MCP gateway access. Do not edit this block by hand.",
   ];
   input.gateways.forEach((gateway, index) => {
     const baseName = sanitizeMcpServerName(gateway.name, `gateway-${index + 1}`);
     const directOverlap = input.existingNames.has(gateway.name) || input.existingNames.has(baseName);
-    let managedName = directOverlap ? `paperclip-${baseName}` : baseName;
+    let managedName = directOverlap ? `todero-${baseName}` : baseName;
     let suffix = 2;
     while (usedNames.has(managedName) || input.existingNames.has(managedName)) {
-      managedName = `paperclip-${baseName}-${suffix}`;
+      managedName = `todero-${baseName}-${suffix}`;
       suffix += 1;
     }
     usedNames.add(managedName);
     if (directOverlap) {
       warnings.push(
-        `Found unmanaged Codex MCP server "${gateway.name}" overlapping a Paperclip-governed gateway; leaving the direct entry in place and adding managed gateway "${managedName}". Paperclip cannot enforce policies for that direct entry.`,
+        `Found unmanaged Codex MCP server "${gateway.name}" overlapping a Todero-governed gateway; leaving the direct entry in place and adding managed gateway "${managedName}". Todero cannot enforce policies for that direct entry.`,
       );
     }
     const url = new URL(gateway.endpointPath, input.apiBaseUrl).toString();
@@ -431,7 +431,7 @@ async function stageContainedSubtree(
  * leaving `0644` documents and `0755` scripts group/other-readable in the staged
  * asset; here all regular files are normalized to `0600` regardless of source mode.
  *
- * `sourceDir`'s *direct* children are the Paperclip-injected skill symlinks that
+ * `sourceDir`'s *direct* children are the Todero-injected skill symlinks that
  * intentionally point into a shared skill store *outside* `CODEX_HOME/skills/`,
  * so each child is allowed to resolve anywhere — and when it resolves to a
  * directory it becomes the containment root for its own subtree. Everything
@@ -553,7 +553,7 @@ export async function stageCodexHomeForSync(
 ): Promise<string> {
   const runIdPart = nonEmpty(options.runId ?? undefined);
   const stagedHome = await fs.mkdtemp(
-    path.join(os.tmpdir(), `paperclip-codex-home-sync-${runIdPart ? `${runIdPart}-` : ""}`),
+    path.join(os.tmpdir(), `todero-codex-home-sync-${runIdPart ? `${runIdPart}-` : ""}`),
   );
   try {
     for (const entry of CODEX_SYNC_ALLOWLIST) {
@@ -569,7 +569,7 @@ export async function stageCodexHomeForSync(
 }
 
 /**
- * Seeds auth/config into an explicit Paperclip-managed `targetHome`. Symlinks
+ * Seeds auth/config into an explicit Todero-managed `targetHome`. Symlinks
  * `auth.json` from the shared source home (so ChatGPT-subscription credentials
  * stay live and single-use refresh tokens are not copied), copies the static
  * shared config files, and — when an API key is supplied — writes an API-key
@@ -647,14 +647,14 @@ export async function seedManagedCodexHome(
           // the same-identity symlink heal this call could not decide.
           await onLog(
             "stdout",
-            `[paperclip] Keeping the existing subscription auth.json in Codex home "${targetHome}" (shared source read failed: ${sourceReadErrorCode}); the next seed with a readable source reconciles it.\n`,
+            `[todero] Keeping the existing subscription auth.json in Codex home "${targetHome}" (shared source read failed: ${sourceReadErrorCode}); the next seed with a readable source reconciles it.\n`,
           );
         }
       }
       if (keepPromotedAuth) {
         await onLog(
           "stdout",
-          `[paperclip] Keeping the promoted subscription auth.json in Codex home "${targetHome}".\n`,
+          `[todero] Keeping the promoted subscription auth.json in Codex home "${targetHome}".\n`,
         );
       } else {
         await fs.rm(authPath, { force: true });
@@ -680,7 +680,7 @@ export async function seedManagedCodexHome(
 
     await onLog(
       "stdout",
-      `[paperclip] Using ${isWorktreeMode(env) ? "worktree-isolated" : "Paperclip-managed"} Codex home "${targetHome}" (seeded from "${sourceHome}").\n`,
+      `[todero] Using ${isWorktreeMode(env) ? "worktree-isolated" : "Todero-managed"} Codex home "${targetHome}" (seeded from "${sourceHome}").\n`,
     );
   }
 
@@ -688,7 +688,7 @@ export async function seedManagedCodexHome(
     await writeApiKeyAuthJson(targetHome, apiKey);
     await onLog(
       "stdout",
-      `[paperclip] Wrote API-key auth.json into Codex home "${targetHome}" from configured OPENAI_API_KEY.\n`,
+      `[todero] Wrote API-key auth.json into Codex home "${targetHome}" from configured OPENAI_API_KEY.\n`,
     );
   }
 }
@@ -799,7 +799,7 @@ export interface CodexCredentialReadinessInput {
 }
 
 export interface CodexCredentialReadiness {
-  /** True when Paperclip owns the effective home and is responsible for its auth. */
+  /** True when Todero owns the effective home and is responsible for its auth. */
   managed: boolean;
   authMode: CodexCredentialAuthMode;
   /** True when a run launched now would be able to authenticate. */
@@ -817,7 +817,7 @@ export interface CodexCredentialReadiness {
  * of dispatching a run that is guaranteed to fail with "no Codex credentials".
  *
  * - An external/user-supplied `CODEX_HOME` override manages its own auth, so it
- *   is always treated as ready (Paperclip must not seed or inspect it).
+ *   is always treated as ready (Todero must not seed or inspect it).
  * - A non-empty resolved `OPENAI_API_KEY` means API-key auth, always ready.
  * - Otherwise (subscription mode) the run needs a usable `auth.json`. Because a
  *   managed home symlinks `auth.json` from the shared source home at seed time,
@@ -839,7 +839,7 @@ export async function evaluateCodexCredentialReadiness(
   const effectiveHome = configuredCodexHome ?? resolveManagedCodexHomeDir(env, input.companyId);
 
   if (!effectiveHomeIsManaged) {
-    // Genuine external override: Paperclip never seeds or inspects it.
+    // Genuine external override: Todero never seeds or inspects it.
     return {
       managed: false,
       authMode: configuredApiKey ? "api" : "subscription",

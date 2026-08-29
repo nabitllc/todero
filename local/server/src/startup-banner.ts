@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolvePaperclipConfigPath, resolvePaperclipEnvPath } from "./paths.js";
-import type { BindMode, DeploymentExposure, DeploymentMode } from "@paperclipai/shared";
+import { resolveToderoConfigPath, resolveToderoEnvPath } from "./paths.js";
+import type { BindMode, DeploymentExposure, DeploymentMode } from "@todero/shared";
 
 import { parse as parseEnvFileContents } from "dotenv";
 
@@ -93,7 +93,7 @@ function resolveAgentJwtSecretStatus(
 
   return {
     status: "warn",
-    message: "missing (run `npx paperclipai onboard`)",
+    message: "missing (run `npx todero onboard`)",
   };
 }
 
@@ -102,8 +102,8 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
   const baseUrl = `http://${baseHost}:${opts.listenPort}`;
   const apiUrl = `${baseUrl}/api`;
   const uiUrl = opts.uiMode === "none" ? "disabled" : baseUrl;
-  const configPath = resolvePaperclipConfigPath();
-  const envFilePath = resolvePaperclipEnvPath();
+  const configPath = resolveToderoConfigPath();
+  const envFilePath = resolveToderoEnvPath();
   const agentJwtSecret = resolveAgentJwtSecretStatus(envFilePath);
 
   const dbMode =

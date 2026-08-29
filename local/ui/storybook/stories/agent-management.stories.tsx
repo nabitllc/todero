@@ -9,7 +9,7 @@ import {
   type CompanySecret,
   type EnvBinding,
   type Environment,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { ActiveAgentsPanel } from "@/components/ActiveAgentsPanel";
 import { AgentConfigForm, type CreateConfigValues } from "@/components/AgentConfigForm";
 import { defaultCreateValues } from "@/components/agent-config-defaults";
@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { storybookAgents, storybookIssues } from "../fixtures/paperclipData";
+import { storybookAgents, storybookIssues } from "../fixtures/toderoData";
 
 const COMPANY_ID = "company-storybook";
 const now = new Date("2026-04-20T12:00:00.000Z");
@@ -54,9 +54,9 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="paperclip-story__frame overflow-hidden">
+    <section className="todero-story__frame overflow-hidden">
       <div className="border-b border-border px-5 py-4">
-        <div className="paperclip-story__label">{eyebrow}</div>
+        <div className="todero-story__label">{eyebrow}</div>
         <h2 className="mt-1 text-xl font-semibold">{title}</h2>
       </div>
       <div className="p-5">{children}</div>
@@ -206,7 +206,7 @@ const agentManagementAgents: Agent[] = [
     pausedAt: null,
     adapterConfig: {
       webhookUrl: "https://ops.internal.example/heartbeat",
-      payloadTemplateJson: JSON.stringify({ channel: "paperclip-storybook", priority: "normal" }, null, 2),
+      payloadTemplateJson: JSON.stringify({ channel: "todero-storybook", priority: "normal" }, null, 2),
       env: {
         OPS_WEBHOOK_TOKEN: { type: "secret_ref", secretId: "secret-ops-webhook", version: 3 },
       } satisfies Record<string, EnvBinding>,
@@ -305,8 +305,8 @@ const storybookSecrets: CompanySecret[] = [
 	    scope: "company",
 	    ownerUserId: null,
 	    userSecretDefinitionId: null,
-	    key: "/paperclip-cloud/prod/database/url",
-	    name: "/paperclip-cloud/prod/database/url",
+	    key: "/todero-cloud/prod/database/url",
+	    name: "/todero-cloud/prod/database/url",
 	    provider: "local_encrypted",
 	    status: "active",
 	    managedMode: "paperclip_managed",
@@ -714,12 +714,12 @@ function ConfigPrimitivesStory() {
 function AgentManagementStories() {
   return (
     <StorybookQueryFixtures>
-      <div className="paperclip-story">
-        <main className="paperclip-story__inner space-y-6">
-          <section className="paperclip-story__frame p-6">
+      <div className="todero-story">
+        <main className="todero-story__inner space-y-6">
+          <section className="todero-story__frame p-6">
             <div className="flex flex-wrap items-start justify-between gap-5">
               <div>
-                <div className="paperclip-story__label">Agent management</div>
+                <div className="todero-story__label">Agent management</div>
                 <h1 className="mt-2 text-3xl font-semibold tracking-tight">Agent details, controls, and config surfaces</h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-muted-foreground">
                   Management stories exercise the dense pieces of the agent lifecycle: status detail panels,
@@ -825,7 +825,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Agent management stories cover detail, configuration, icon, action, live-run, and config primitive states using extended Paperclip fixtures.",
+          "Agent management stories cover detail, configuration, icon, action, live-run, and config primitive states using extended Todero fixtures.",
       },
     },
   },
@@ -853,7 +853,7 @@ const managedKubernetesEnvironment: Environment = {
     egressMode: "cilium",
   },
   envVars: {},
-  metadata: { managedByPaperclip: true, managedKubernetesSandbox: true },
+  metadata: { managedByTodero: true, managedKubernetesSandbox: true },
   createdAt: recent(2_000),
   updatedAt: recent(60),
 };

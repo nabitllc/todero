@@ -180,7 +180,7 @@ describe("resolveServerVersion", () => {
         buildCommit: "0123456789abcdef0123456789abcdef01234567",
         packageVersion: "2026.707.0-canary.12",
         debugLog,
-        packageRoot: "/tmp/npm/_npx/example/node_modules/@paperclipai/server",
+        packageRoot: "/tmp/npm/_npx/example/node_modules/@todero/server",
       }),
     ).toBe("2026.707.0-canary.12");
 
@@ -200,8 +200,8 @@ describe("resolveServerVersion", () => {
         packageVersion: "2026.707.0-canary.12",
         debugLog,
         gitDescribeCommand,
-        packageRoot: "/tmp/node_modules/source/paperclip/server",
-        pathExists: (path) => path === "/tmp/node_modules/source/paperclip/.git",
+        packageRoot: "/tmp/node_modules/source/todero/server",
+        pathExists: (path) => path === "/tmp/node_modules/source/todero/.git",
         realpath: (path) => path,
       }),
     ).toBe("2026.626.0+58.git.518fc71ce");

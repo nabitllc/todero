@@ -17,8 +17,8 @@ import type {
   InstalledCatalogTeam,
   CompanyPortabilityAdapterOverride,
   CompanyPortabilityCollisionStrategy,
-} from "@paperclipai/shared";
-import { AGENT_ADAPTER_TYPES } from "@paperclipai/shared";
+} from "@todero/shared";
+import { AGENT_ADAPTER_TYPES } from "@todero/shared";
 import { teamCatalogApi } from "../api/teamCatalog";
 import { agentsApi } from "../api/agents";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";

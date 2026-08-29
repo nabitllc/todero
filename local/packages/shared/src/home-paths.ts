@@ -13,13 +13,13 @@ export function expandHomePrefix(value: string): string {
   return value;
 }
 
-export function resolvePaperclipHomeDir(homeOverride?: string): string {
+export function resolveToderoHomeDir(homeOverride?: string): string {
   const raw = homeOverride?.trim() || process.env.PAPERCLIP_HOME?.trim();
   if (raw) return path.resolve(expandHomePrefix(raw));
-  return path.resolve(os.homedir(), ".paperclip");
+  return path.resolve(os.homedir(), ".todero");
 }
 
-export function resolvePaperclipInstanceId(instanceIdOverride?: string): string {
+export function resolveToderoInstanceId(instanceIdOverride?: string): string {
   const raw = instanceIdOverride?.trim() || process.env.PAPERCLIP_INSTANCE_ID?.trim() || DEFAULT_PAPERCLIP_INSTANCE_ID;
   if (!PATH_SEGMENT_RE.test(raw)) {
     throw new Error(`Invalid PAPERCLIP_INSTANCE_ID '${raw}'.`);
@@ -27,28 +27,28 @@ export function resolvePaperclipInstanceId(instanceIdOverride?: string): string 
   return raw;
 }
 
-export function resolvePaperclipInstanceRoot(input: {
+export function resolveToderoInstanceRoot(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipHomeDir(input.homeDir), "instances", resolvePaperclipInstanceId(input.instanceId));
+  return path.resolve(resolveToderoHomeDir(input.homeDir), "instances", resolveToderoInstanceId(input.instanceId));
 }
 
-export function resolvePaperclipInstanceConfigPath(input: {
+export function resolveToderoInstanceConfigPath(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), PAPERCLIP_CONFIG_BASENAME);
+  return path.resolve(resolveToderoInstanceRoot(input), PAPERCLIP_CONFIG_BASENAME);
 }
 
-export function resolvePaperclipConfigPathForInstance(input: {
+export function resolveToderoConfigPathForInstance(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return resolvePaperclipInstanceConfigPath(input);
+  return resolveToderoInstanceConfigPath(input);
 }
 
-export function resolvePaperclipEnvPathForConfig(configPath: string): string {
+export function resolveToderoEnvPathForConfig(configPath: string): string {
   return path.resolve(path.dirname(configPath), PAPERCLIP_ENV_FILENAME);
 }
 
@@ -56,35 +56,35 @@ export function resolveDefaultEmbeddedPostgresDir(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "db");
+  return path.resolve(resolveToderoInstanceRoot(input), "db");
 }
 
 export function resolveDefaultLogsDir(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "logs");
+  return path.resolve(resolveToderoInstanceRoot(input), "logs");
 }
 
 export function resolveDefaultSecretsKeyFilePath(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "secrets", "master.key");
+  return path.resolve(resolveToderoInstanceRoot(input), "secrets", "master.key");
 }
 
 export function resolveDefaultStorageDir(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "data", "storage");
+  return path.resolve(resolveToderoInstanceRoot(input), "data", "storage");
 }
 
 export function resolveDefaultBackupDir(input: {
   homeDir?: string;
   instanceId?: string;
 } = {}): string {
-  return path.resolve(resolvePaperclipInstanceRoot(input), "data", "backups");
+  return path.resolve(resolveToderoInstanceRoot(input), "data", "backups");
 }
 
 export function resolveHomeAwarePath(value: string): string {

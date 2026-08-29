@@ -7,11 +7,11 @@ import type {
   AgentRuntimeState,
   BudgetOverview,
   HeartbeatRun,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { AgentDetail } from "@/pages/AgentDetail";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
-import { storybookAgentMap, storybookAgents, storybookIssues } from "../fixtures/paperclipData";
+import { storybookAgentMap, storybookAgents, storybookIssues } from "../fixtures/toderoData";
 
 const COMPANY_ID = "company-storybook";
 const AGENT_ID = "agent-codex";

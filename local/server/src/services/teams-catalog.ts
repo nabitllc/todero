@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import type {
   CatalogManifest,
   CatalogTeam,
@@ -19,9 +19,9 @@ import type {
   CompanyPortabilityPreview,
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
-} from "@paperclipai/shared";
-import { normalizeAgentUrlKey } from "@paperclipai/shared";
-import { parseFrontmatterMarkdown } from "@paperclipai/shared/frontmatter";
+} from "@todero/shared";
+import { normalizeAgentUrlKey } from "@todero/shared";
+import { parseFrontmatterMarkdown } from "@todero/shared/frontmatter";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
 import { companyPortabilityService } from "./company-portability.js";
@@ -164,7 +164,7 @@ async function statCatalogManifest() {
     }
   }
   throw new Error(
-    `Teams catalog manifest not found. Checked: ${catalogPackageRootCandidates.map((root) => path.join(root, "generated/catalog.json")).join(", ")}. Run pnpm --filter @paperclipai/teams-catalog build:manifest.`,
+    `Teams catalog manifest not found. Checked: ${catalogPackageRootCandidates.map((root) => path.join(root, "generated/catalog.json")).join(", ")}. Run pnpm --filter @todero/teams-catalog build:manifest.`,
   );
 }
 
@@ -246,8 +246,8 @@ export function readCatalogTeamProvenance(
   metadata: Record<string, unknown> | null | undefined,
 ): CatalogTeamProvenance | null {
   if (!isPlainRecord(metadata)) return null;
-  const paperclip = isPlainRecord(metadata.paperclip) ? metadata.paperclip : null;
-  const catalogTeam = paperclip && isPlainRecord(paperclip.catalogTeam) ? paperclip.catalogTeam : null;
+  const todero = isPlainRecord(metadata.paperclip) ? metadata.paperclip : null;
+  const catalogTeam = todero && isPlainRecord(todero.catalogTeam) ? todero.catalogTeam : null;
   if (!catalogTeam) return null;
   const catalogId = readNonEmptyString(catalogTeam.catalogId);
   if (!catalogId) return null;
@@ -465,7 +465,7 @@ async function renderCatalogProvenanceYaml(team: CatalogTeam, targetManager: Cat
         }
       : {}),
     metadata: {
-      paperclip: {
+      todero: {
         catalogTeam: {
           catalogId: provenance.catalogId,
           catalogKey: provenance.catalogKey,
@@ -792,11 +792,11 @@ export function teamsCatalogService(db: Db) {
     const targetManager = await resolveTargetManagerReference(companyId, options);
     const files = await readCatalogTeamSourceFiles(team);
     const existingExtension =
-      typeof files[".paperclip.yaml"] === "string"
-        ? parseYamlDocument(files[".paperclip.yaml"])
+      typeof files[".todero.yaml"] === "string"
+        ? parseYamlDocument(files[".todero.yaml"])
         : {};
     const generatedExtension = parseYamlDocument(await renderCatalogProvenanceYaml(team, targetManager));
-    files[".paperclip.yaml"] = renderYamlFile(mergePlainRecords(existingExtension, generatedExtension));
+    files[".todero.yaml"] = renderYamlFile(mergePlainRecords(existingExtension, generatedExtension));
     rewriteAgentCatalogSkillRefs(team, files);
 
     return {

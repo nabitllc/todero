@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { WorkTimelineResult } from "@paperclipai/shared";
+import type { WorkTimelineResult } from "@todero/shared";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { Timeline } from "@/pages/Timeline";
 import {
@@ -55,7 +55,7 @@ function FullPageTimelineHarness() {
   const { selectedCompanyId, setSelectedCompanyId } = useCompany();
 
   useEffect(() => {
-    window.localStorage.setItem("paperclip.selectedCompanyId", COMPANY_ID);
+    window.localStorage.setItem("todero.selectedCompanyId", COMPANY_ID);
     if (selectedCompanyId !== COMPANY_ID) {
       setSelectedCompanyId(COMPANY_ID);
     }

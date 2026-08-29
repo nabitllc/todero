@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { createDb, plugins } from "@paperclipai/db";
+import { createDb, plugins } from "@todero/db";
 import { pluginLoader, REPO_ROOT } from "../services/plugin-loader.js";
 import {
   getEmbeddedPostgresTestSupport,
@@ -73,8 +73,8 @@ type FixturePlugin = {
  */
 async function createBuiltPluginFixture(parentDir: string, nameSuffix: string): Promise<FixturePlugin> {
   const slug = `plugin-install-guard-${nameSuffix}-${randomUUID().slice(0, 8)}`;
-  const packageName = `@paperclipai/${slug}`;
-  const pluginKey = `paperclip.${slug.replace(/^plugin-/, "").replace(/-/g, "_")}`;
+  const packageName = `@todero/${slug}`;
+  const pluginKey = `todero.${slug.replace(/^plugin-/, "").replace(/-/g, "_")}`;
   const packageRoot = path.join(parentDir, slug);
   const distDir = path.join(packageRoot, "dist");
 
@@ -86,7 +86,7 @@ async function createBuiltPluginFixture(parentDir: string, nameSuffix: string): 
       version: "0.1.0",
       private: true,
       type: "module",
-      paperclipPlugin: {
+      toderoPlugin: {
         manifest: "./dist/manifest.js",
         worker: "./dist/worker.js",
       },
@@ -100,7 +100,7 @@ async function createBuiltPluginFixture(parentDir: string, nameSuffix: string): 
     version: "0.1.0",
     displayName: "Install Guard Fixture",
     description: "Plugin fixture for install-route security floor coverage.",
-    author: "Paperclip",
+    author: "Todero",
     categories: ["automation"],
     capabilities: ["companies.read"],
     entrypoints: {
@@ -152,7 +152,7 @@ describeEmbeddedPostgres("plugin install route security floor", () => {
   const originalManagedConfig = process.env["PAPERCLIP_MANAGED_CONFIG"];
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-install-guard-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-plugin-install-guard-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -181,7 +181,7 @@ describeEmbeddedPostgres("plugin install route security floor", () => {
 
       const res = await request(app)
         .post("/api/plugins/install")
-        .send({ packageName: "paperclip-plugin-anything", version: "1.0.0" });
+        .send({ packageName: "todero-plugin-anything", version: "1.0.0" });
 
       expect(res.status).toBe(403);
       expect(res.body.error).toContain("npm installs are disabled on cloud-managed instances");
@@ -199,7 +199,7 @@ describeEmbeddedPostgres("plugin install route security floor", () => {
 
       const res = await request(app)
         .post("/api/plugins/install")
-        .send({ packageName: "paperclip-plugin-anything" });
+        .send({ packageName: "todero-plugin-anything" });
 
       expect(res.status).toBe(403);
       expect(mockLifecycle.load).not.toHaveBeenCalled();
@@ -376,7 +376,7 @@ describeEmbeddedPostgres("plugin install route security floor", () => {
       // in the test environment) — proving the 403 floor did not trigger.
       const res = await request(app)
         .post("/api/plugins/install")
-        .send({ packageName: `paperclip-plugin-guard-missing-${randomUUID().slice(0, 8)}` });
+        .send({ packageName: `todero-plugin-guard-missing-${randomUUID().slice(0, 8)}` });
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("npm install failed");

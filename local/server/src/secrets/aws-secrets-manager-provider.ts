@@ -1,6 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
 import { S3Client } from "@aws-sdk/client-s3";
-import type { DeploymentMode, SecretProviderConfigDiscoveryPreviewResult } from "@paperclipai/shared";
+import type { DeploymentMode, SecretProviderConfigDiscoveryPreviewResult } from "@todero/shared";
 import { unprocessable } from "../errors.js";
 import type {
   PreparedSecretVersion,
@@ -16,8 +16,8 @@ import type {
 import { SecretProviderClientError } from "./types.js";
 
 const AWS_SECRETS_MANAGER_SCHEME = "aws_secrets_manager_v1";
-const DEFAULT_PREFIX = "paperclip";
-const DEFAULT_OWNER_TAG = "paperclip";
+const DEFAULT_PREFIX = "todero";
+const DEFAULT_OWNER_TAG = "todero";
 const DEFAULT_VERSION_STAGE = "AWSCURRENT";
 const PAPERCLIP_PENDING_VERSION_STAGE = "PAPERCLIP_PENDING";
 const DEFAULT_DELETE_RECOVERY_WINDOW_DAYS = 30;
@@ -27,9 +27,9 @@ const AWS_CREDENTIAL_EXPIRATION_SKEW_MS = 60_000;
 const PROVIDER_CONFIG_DISCOVERY_SAMPLE_LIMIT = 3;
 const PROVIDER_CONFIG_DISCOVERY_CANDIDATE_LIMIT = 6;
 const AWS_RUNTIME_CREDENTIAL_WARNING =
-  "AWS bootstrap credentials must be available to the Paperclip server runtime through the AWS SDK default credential provider chain: IAM role/workload identity, AWS_PROFILE/SSO/shared credentials, web identity, container/instance metadata, or short-lived shell credentials.";
+  "AWS bootstrap credentials must be available to the Todero server runtime through the AWS SDK default credential provider chain: IAM role/workload identity, AWS_PROFILE/SSO/shared credentials, web identity, container/instance metadata, or short-lived shell credentials.";
 const AWS_CREDENTIAL_CUSTODY_WARNING =
-  "Do not store AWS root credentials or long-lived IAM user access keys in Paperclip company_secrets; the AWS provider bootstrap belongs in deployment infrastructure, the process environment, an AWS profile, or the orchestrator secret store.";
+  "Do not store AWS root credentials or long-lived IAM user access keys in Todero company_secrets; the AWS provider bootstrap belongs in deployment infrastructure, the process environment, an AWS profile, or the orchestrator secret store.";
 
 interface AwsSecretsManagerMaterial extends StoredSecretVersionMaterial {
   scheme: typeof AWS_SECRETS_MANAGER_SCHEME;
@@ -504,7 +504,7 @@ function assertNotManagedNamespaceExternalRef(
 ) {
   if (!isManagedSecretNamespaceRef(config, externalRef)) return;
   throw unprocessable(
-    "AWS Paperclip-managed namespace secrets cannot be imported as external references",
+    "AWS Todero-managed namespace secrets cannot be imported as external references",
   );
 }
 
@@ -536,12 +536,12 @@ function buildManagedSecretTags(
 ): AwsSecretsManagerTag[] {
   if (!context) return [];
   return [
-    { Key: "paperclip:managed-by", Value: "paperclip" },
-    { Key: "paperclip:provider-owner", Value: config.providerOwnerTag },
-    { Key: "paperclip:deployment-id", Value: config.deploymentId },
-    { Key: "paperclip:company-id", Value: context.companyId },
-    { Key: "paperclip:secret-key", Value: context.secretKey },
-    { Key: "paperclip:environment", Value: config.environmentTag },
+    { Key: "todero:managed-by", Value: "todero" },
+    { Key: "todero:provider-owner", Value: config.providerOwnerTag },
+    { Key: "todero:deployment-id", Value: config.deploymentId },
+    { Key: "todero:company-id", Value: context.companyId },
+    { Key: "todero:secret-key", Value: context.secretKey },
+    { Key: "todero:environment", Value: config.environmentTag },
   ];
 }
 
@@ -631,13 +631,13 @@ function pathSegments(name: string) {
 function inferPathSignals(entry: AwsSecretsManagerListSecretEntry, tags: Map<string, string>) {
   const name = entry.Name?.trim() || entry.ARN?.trim() || "";
   const segments = pathSegments(name);
-  const paperclipDeploymentId = tagValue(tags, ["paperclip:deployment-id"]);
-  const paperclipManaged = tagValue(tags, ["paperclip:managed-by"])?.toLowerCase() === "paperclip";
+  const toderoDeploymentId = tagValue(tags, ["todero:deployment-id"]);
+  const toderoManaged = tagValue(tags, ["todero:managed-by"])?.toLowerCase() === "todero";
 
-  if (paperclipDeploymentId || paperclipManaged) {
+  if (toderoDeploymentId || toderoManaged) {
     return {
       prefix: segments[0] ?? DEFAULT_PREFIX,
-      namespace: paperclipDeploymentId ?? segments[1] ?? null,
+      namespace: toderoDeploymentId ?? segments[1] ?? null,
     };
   }
 
@@ -685,22 +685,22 @@ function discoverAwsProviderConfigCandidates(input: {
     environmentTag: string | null;
     ownerTag: string | null;
     kmsKeyId: string | null;
-    paperclipManaged: boolean;
-    paperclipCompanyId: string | null;
+    toderoManaged: boolean;
+    toderoCompanyId: string | null;
   };
 
   const skippedWarnings: string[] = [];
-  let skippedForeignPaperclipSampleCount = 0;
+  let skippedForeignToderoSampleCount = 0;
   const samples: DiscoverySample[] = [];
 
   for (const entry of input.entries) {
     const name = entry.Name?.trim() || entry.ARN?.trim();
     if (!name) continue;
     const tags = normalizeAwsTags(entry.Tags);
-    const paperclipManaged = tagValue(tags, ["paperclip:managed-by"])?.toLowerCase() === "paperclip";
-    const paperclipCompanyId = tagValue(tags, ["paperclip:company-id"]);
-    if (paperclipManaged && paperclipCompanyId !== input.companyId) {
-      skippedForeignPaperclipSampleCount += 1;
+    const toderoManaged = tagValue(tags, ["todero:managed-by"])?.toLowerCase() === "todero";
+    const toderoCompanyId = tagValue(tags, ["todero:company-id"]);
+    if (toderoManaged && toderoCompanyId !== input.companyId) {
+      skippedForeignToderoSampleCount += 1;
       continue;
     }
     const path = inferPathSignals(entry, tags);
@@ -710,17 +710,17 @@ function discoverAwsProviderConfigCandidates(input: {
       tags,
       prefix: path.prefix,
       namespace: path.namespace,
-      environmentTag: tagValue(tags, ["paperclip:environment", "environment", "env", "stage"]),
-      ownerTag: tagValue(tags, ["paperclip:provider-owner", "owner", "team", "service", "application"]),
+      environmentTag: tagValue(tags, ["todero:environment", "environment", "env", "stage"]),
+      ownerTag: tagValue(tags, ["todero:provider-owner", "owner", "team", "service", "application"]),
       kmsKeyId: asOptionalNonEmptyString(entry.KmsKeyId),
-      paperclipManaged,
-      paperclipCompanyId,
+      toderoManaged,
+      toderoCompanyId,
     });
   }
 
-  if (skippedForeignPaperclipSampleCount > 0) {
+  if (skippedForeignToderoSampleCount > 0) {
     skippedWarnings.push(
-      `Skipped ${skippedForeignPaperclipSampleCount} Paperclip-managed AWS secret sample(s) that were not tagged for this company.`,
+      `Skipped ${skippedForeignToderoSampleCount} Todero-managed AWS secret sample(s) that were not tagged for this company.`,
     );
   }
 
@@ -764,8 +764,8 @@ function discoverAwsProviderConfigCandidates(input: {
       if (kmsKeys.length > 1 && !draftKmsKeyId) {
         candidateWarnings.push("Sampled AWS secrets use multiple KMS keys; choose the intended KMS key before saving.");
       }
-      if (group.some((sample) => sample.paperclipManaged && sample.paperclipCompanyId === input.companyId)) {
-        candidateWarnings.push("Sample includes Paperclip-managed secrets for this company; do not import them as external references.");
+      if (group.some((sample) => sample.toderoManaged && sample.toderoCompanyId === input.companyId)) {
+        candidateWarnings.push("Sample includes Todero-managed secrets for this company; do not import them as external references.");
       }
 
       return {
@@ -798,8 +798,8 @@ function discoverAwsProviderConfigCandidates(input: {
           kmsKeyId: kmsKeyId ?? null,
           hasKmsKey: kmsKeys.length > 0,
           sampleCount: group.length,
-          paperclipManagedSampleCount: group.filter((sample) => sample.paperclipManaged).length,
-          skippedForeignPaperclipSampleCount,
+          toderoManagedSampleCount: group.filter((sample) => sample.toderoManaged).length,
+          skippedForeignToderoSampleCount,
         },
         warnings: candidateWarnings,
       };
@@ -817,7 +817,7 @@ function discoverAwsProviderConfigCandidates(input: {
     provider: "aws_secrets_manager",
     nextToken: input.nextToken,
     sampledSecretCount: samples.length,
-    skippedForeignPaperclipSampleCount,
+    skippedForeignToderoSampleCount,
     candidates,
     warnings,
   };
@@ -1064,8 +1064,8 @@ export function createAwsSecretsManagerProvider(
           detectedCredentialSources: readiness.credentialSources,
         },
         backupGuidance: [
-          "Back up Paperclip metadata separately from AWS-managed secrets.",
-          "Restoring access requires the Paperclip database plus the same AWS secret namespace and KMS permissions.",
+          "Back up Todero metadata separately from AWS-managed secrets.",
+          "Restoring access requires the Todero database plus the same AWS secret namespace and KMS permissions.",
         ],
       };
     } catch (error) {
@@ -1131,7 +1131,7 @@ export function createAwsSecretsManagerProvider(
           Name: secretId,
           SecretString: input.value,
           ...(config.kmsKeyId ? { KmsKeyId: config.kmsKeyId } : {}),
-          Description: input.context ? `Paperclip secret ${input.context.secretName}` : undefined,
+          Description: input.context ? `Todero secret ${input.context.secretName}` : undefined,
           Tags: buildManagedSecretTags(config, input.context),
         };
         const created = await gateway.createSecret({
@@ -1194,7 +1194,7 @@ export function createAwsSecretsManagerProvider(
           VersionStage: DEFAULT_VERSION_STAGE,
         });
         // No VersionStages: the new version becomes AWSCURRENT so every consumer of the
-        // referenced secret (not just Paperclip) picks up the new value.
+        // referenced secret (not just Todero) picks up the new value.
         const created = await gateway.putSecretValue({
           SecretId: secretId,
           SecretString: input.value,

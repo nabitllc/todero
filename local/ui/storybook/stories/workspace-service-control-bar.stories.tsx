@@ -12,7 +12,7 @@ function entry(overrides: Partial<WorkspaceServiceControlEntry> = {}): Workspace
     name: "dev",
     state: "running",
     healthStatus: "healthy",
-    url: "http://paperclip-dev:45439",
+    url: "http://todero-dev:45439",
     port: 45439,
     canStart: true,
     ...overrides,
@@ -85,7 +85,7 @@ export const LongUrl: Story = {
   args: {
     services: [
       entry({
-        url: "https://pap-14233-execution-workspace-service-start-stop.preview.paperclip.ing/deeply/nested/path",
+        url: "https://pap-14233-execution-workspace-service-start-stop.preview.todero.vercel.app/deeply/nested/path",
       }),
     ],
   },

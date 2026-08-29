@@ -77,7 +77,7 @@ export async function checkStagedCredentialReadiness(
   if (authBytes.length === 0) {
     return { ready: false, reason: "empty_credential" };
   }
-  const scratchHome = await mkdtemp(path.join(os.tmpdir(), "paperclip-login-readiness-"));
+  const scratchHome = await mkdtemp(path.join(os.tmpdir(), "todero-login-readiness-"));
   try {
     await mkdir(scratchHome, { recursive: true, mode: READINESS_HOME_DIR_MODE });
     await writeFile(path.join(scratchHome, AUTH_FILE_NAME), authBytes, {
@@ -197,14 +197,14 @@ export async function promoteDeviceLoginCredential(
 
   // 3. Decision C: only a user-initiated login seeds the company slot.
   if (!userInitiated) {
-    await log("[paperclip] Codex device-login promotion: skipped (an automatic background login never seeds a company slot).");
+    await log("[todero] Codex device-login promotion: skipped (an automatic background login never seeds a company slot).");
     return "background_skipped";
   }
 
   // 4. Decision H: write only while the session still owns the active slot.
   const soleOwner = await isSoleActiveOwner();
   if (!soleOwner) {
-    await log("[paperclip] Codex device-login promotion: skipped (the session no longer holds the sole active claim on the slot).");
+    await log("[todero] Codex device-login promotion: skipped (the session no longer holds the sole active claim on the slot).");
     return "not_sole_owner";
   }
 
@@ -220,8 +220,8 @@ export async function promoteDeviceLoginCredential(
     destinationPath: companyHomeAuthPath,
     seedIfDestAbsent: true,
     log,
-    writtenLine: "[paperclip] Codex device-login promotion: wrote the company credential home at mode 0600.",
-    keptLine: "[paperclip] Codex device-login promotion: kept the company credential home (the login is not a seed or a strictly-newer same-identity credential).",
+    writtenLine: "[todero] Codex device-login promotion: wrote the company credential home at mode 0600.",
+    keptLine: "[todero] Codex device-login promotion: kept the company credential home (the login is not a seed or a strictly-newer same-identity credential).",
     tempPrefix: "auth.json.promotion-home",
     errorLabel: "codex device-login promotion",
     env,
@@ -262,7 +262,7 @@ export async function promoteDeviceLoginCredential(
       await writeCodexAuthCacheEntry({ sandboxAuthBytes: authBytes, cacheEntryPath, log, env });
     } catch {
       await log(
-        "[paperclip] Codex device-login promotion: the per-identity cache write failed; the company credential home is durable, so the login stays successful.",
+        "[todero] Codex device-login promotion: the per-identity cache write failed; the company credential home is durable, so the login stays successful.",
       );
     }
   }

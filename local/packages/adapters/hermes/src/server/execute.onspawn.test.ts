@@ -5,7 +5,7 @@
  * reaper can track live child processes by PID, preventing false-positive
  * reaps on runs whose updatedAt becomes stale.
  *
- * @see https://github.com/paperclipai/paperclip/issues/8723
+ * @see https://github.com/nabitllc/todero/issues/8723
  */
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
@@ -13,8 +13,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // Mock the adapter-utils server-utils module that execute.ts imports from.
 // We intercept runChildProcess so we can inspect its opts without spawning
 // a real child process.
-vi.mock("@paperclipai/adapter-utils/server-utils", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@paperclipai/adapter-utils/server-utils")>();
+vi.mock("@todero/adapter-utils/server-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@todero/adapter-utils/server-utils")>();
   return {
     ...actual,
     runChildProcess: vi.fn(async () => ({
@@ -39,7 +39,7 @@ vi.mock("node:fs/promises", () => ({
 }));
 
 import { execute } from "./execute.js";
-import * as serverUtils from "@paperclipai/adapter-utils/server-utils";
+import * as serverUtils from "@todero/adapter-utils/server-utils";
 
 function makeCtx(overrides: Record<string, unknown> = {}) {
   const onSpawn = vi.fn(async () => undefined);
@@ -68,7 +68,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
       context: {
         issueId: "issue-1",
         wakeReason: "manual",
-        paperclipWake: null,
+        toderoWake: null,
       },
       onLog: vi.fn(async () => undefined),
       onMeta: vi.fn(async () => undefined),

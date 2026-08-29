@@ -7,7 +7,7 @@ const ORIGINAL_ENV = { ...process.env };
 const CI_ENV_VARS = ["CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI"];
 
 function makeConfigPath(root: string, enabled: boolean): string {
-  const configPath = path.join(root, ".paperclip", "config.json");
+  const configPath = path.join(root, ".todero", "config.json");
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify({
     $meta: {
@@ -51,7 +51,7 @@ function makeConfigPath(root: string, enabled: boolean): string {
         baseDir: path.join(root, "runtime", "storage"),
       },
       s3: {
-        bucket: "paperclip",
+        bucket: "todero",
         region: "us-east-1",
         prefix: "",
         forcePathStyle: false,
@@ -84,7 +84,7 @@ describe("cli telemetry", () => {
   });
 
   it("respects telemetry.enabled=false from the config file", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-telemetry-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "todero-cli-telemetry-"));
     const configPath = makeConfigPath(root, false);
     process.env.PAPERCLIP_HOME = path.join(root, "home");
     process.env.PAPERCLIP_INSTANCE_ID = "telemetry-test";
@@ -97,7 +97,7 @@ describe("cli telemetry", () => {
   });
 
   it("creates telemetry state only after the first event is tracked", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-telemetry-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "todero-cli-telemetry-"));
     process.env.PAPERCLIP_HOME = path.join(root, "home");
     process.env.PAPERCLIP_INSTANCE_ID = "telemetry-test";
 

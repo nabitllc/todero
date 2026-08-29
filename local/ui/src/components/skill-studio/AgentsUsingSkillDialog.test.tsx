@@ -9,7 +9,7 @@ import type {
   CompanySkillDetail,
   CompanySkillUsageAgent,
   CompanySkillVersion,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AgentsUsingSkillBadge,
@@ -137,7 +137,7 @@ function makeSkill(overrides: Partial<CompanySkillDetail> = {}): CompanySkillDet
   return {
     id: "skill-1",
     companyId: "company-1",
-    key: "paperclip/demo",
+    key: "todero/demo",
     slug: "demo",
     name: "Demo Skill",
     description: null,
@@ -268,10 +268,10 @@ describe("AgentsUsingSkillDialog", () => {
       adapterType: "claude_local",
       supported: true,
       mode: "managed",
-      desiredSkills: ["paperclip/demo", "paperclip/other"],
+      desiredSkills: ["todero/demo", "todero/other"],
       desiredSkillEntries: [
-        { key: "paperclip/demo", versionId: null },
-        { key: "paperclip/other", versionId: null },
+        { key: "todero/demo", versionId: null },
+        { key: "todero/other", versionId: null },
       ] satisfies AgentDesiredSkillEntry[],
       entries: [],
       warnings: [],
@@ -294,7 +294,7 @@ describe("AgentsUsingSkillDialog", () => {
     expect(mockAgentsApi.skills).toHaveBeenCalledWith("agent-1", "company-1");
     expect(mockAgentsApi.syncSkills).toHaveBeenCalledTimes(1);
     const [, sentEntries] = mockAgentsApi.syncSkills.mock.calls[0];
-    expect(sentEntries).toEqual([{ key: "paperclip/other", versionId: null }]);
+    expect(sentEntries).toEqual([{ key: "todero/other", versionId: null }]);
   });
 
   it("pins a version by sending the full set with the target repinned", async () => {
@@ -306,10 +306,10 @@ describe("AgentsUsingSkillDialog", () => {
       adapterType: "claude_local",
       supported: true,
       mode: "managed",
-      desiredSkills: ["paperclip/demo", "paperclip/other"],
+      desiredSkills: ["todero/demo", "todero/other"],
       desiredSkillEntries: [
-        { key: "paperclip/demo", versionId: null },
-        { key: "paperclip/other", versionId: null },
+        { key: "todero/demo", versionId: null },
+        { key: "todero/other", versionId: null },
       ] satisfies AgentDesiredSkillEntry[],
       entries: [],
       warnings: [],
@@ -328,8 +328,8 @@ describe("AgentsUsingSkillDialog", () => {
 
     expect(mockAgentsApi.syncSkills).toHaveBeenCalledTimes(1);
     const [, sentEntries] = mockAgentsApi.syncSkills.mock.calls[0];
-    expect(sentEntries).toContainEqual({ key: "paperclip/other", versionId: null });
-    expect(sentEntries).toContainEqual({ key: "paperclip/demo", versionId: "ver-2" });
+    expect(sentEntries).toContainEqual({ key: "todero/other", versionId: null });
+    expect(sentEntries).toContainEqual({ key: "todero/demo", versionId: "ver-2" });
   });
 
   it("hides mutating controls in read-only mode but keeps the roster", async () => {

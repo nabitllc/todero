@@ -17,8 +17,8 @@ import {
   routineRuns,
   routineTriggers,
   routines,
-} from "@paperclipai/db";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+} from "@todero/db";
+import type { PaperclipPluginManifestV1 } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -46,12 +46,12 @@ function issuePrefix(id: string) {
 
 function manifest(): PaperclipPluginManifestV1 {
   return {
-    id: "paperclip.managed-routines-test",
+    id: "todero.managed-routines-test",
     apiVersion: 1,
     version: "0.1.0",
     displayName: "Managed Routines Test",
     description: "Test plugin",
-    author: "Paperclip",
+    author: "Todero",
     categories: ["automation"],
     capabilities: ["agents.managed", "projects.managed", "routines.managed"],
     entrypoints: { worker: "./dist/worker.js" },
@@ -106,7 +106,7 @@ describeEmbeddedPostgres("plugin-managed routines", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-managed-routines-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-plugin-managed-routines-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -136,14 +136,14 @@ describeEmbeddedPostgres("plugin-managed routines", () => {
     const pluginId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: issuePrefix(companyId),
       defaultResponsibleUserId: "responsible-user",
     });
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: pluginManifest.id,
-      packageName: "@paperclipai/plugin-managed-routines-test",
+      packageName: "@todero/plugin-managed-routines-test",
       version: pluginManifest.version,
       apiVersion: pluginManifest.apiVersion,
       categories: pluginManifest.categories,
@@ -172,7 +172,7 @@ describeEmbeddedPostgres("plugin-managed routines", () => {
       activityGatePolicy: "require_external_activity",
       activityGateScope: "project",
       managedByPlugin: expect.objectContaining({
-        pluginKey: "paperclip.managed-routines-test",
+        pluginKey: "todero.managed-routines-test",
         resourceKind: "routine",
         resourceKey: "nightly-lint",
       }),
@@ -247,7 +247,7 @@ describeEmbeddedPostgres("plugin-managed routines", () => {
     expect(run.status).toBe("issue_created");
     const [issue] = await db.select().from(issues).where(eq(issues.id, run.linkedIssueId!));
     expect(issue).toMatchObject({
-      originKind: "plugin:paperclip.managed-routines-test:operation",
+      originKind: "plugin:todero.managed-routines-test:operation",
       originId: "operation:nightly-lint",
       billingCode: "plugin-test:nightly-lint",
       projectId: project.projectId,

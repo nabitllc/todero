@@ -191,13 +191,13 @@ export function renderRuntimeBrandingMeta(branding: WorktreeUiBranding): string 
   if (!branding.enabled || !branding.name || !branding.color || !branding.textColor) return "";
 
   const tags = [
-    '<meta name="paperclip-worktree-enabled" content="true" />',
-    `<meta name="paperclip-worktree-name" content="${escapeHtmlAttribute(branding.name)}" />`,
-    `<meta name="paperclip-worktree-color" content="${escapeHtmlAttribute(branding.color)}" />`,
-    `<meta name="paperclip-worktree-text-color" content="${escapeHtmlAttribute(branding.textColor)}" />`,
+    '<meta name="todero-worktree-enabled" content="true" />',
+    `<meta name="todero-worktree-name" content="${escapeHtmlAttribute(branding.name)}" />`,
+    `<meta name="todero-worktree-color" content="${escapeHtmlAttribute(branding.color)}" />`,
+    `<meta name="todero-worktree-text-color" content="${escapeHtmlAttribute(branding.textColor)}" />`,
   ];
   if (branding.instanceId) {
-    tags.push(`<meta name="paperclip-instance-id" content="${escapeHtmlAttribute(branding.instanceId)}" />`);
+    tags.push(`<meta name="todero-instance-id" content="${escapeHtmlAttribute(branding.instanceId)}" />`);
   }
   return tags.join("\n");
 }

@@ -1,6 +1,6 @@
 import { memo, type ComponentType, type SVGProps } from "react";
 import { Bot, FileText, Hexagon, MessageSquare, Paperclip, Quote } from "lucide-react";
-import type { Agent, CompanySearchResult } from "@paperclipai/shared";
+import type { Agent, CompanySearchResult } from "@todero/shared";
 import { Link } from "@/lib/router";
 import { cn } from "@/lib/utils";
 import { StatusIcon } from "../StatusIcon";
@@ -15,7 +15,7 @@ type SnippetStyle = {
 const SNIPPET_STYLES: Record<string, SnippetStyle> = {
   comment: { Icon: MessageSquare, label: "Comment" },
   document: { Icon: FileText, label: "Doc" },
-  artifact: { Icon: Paperclip, label: "Artifact" },
+  artifact: { Icon: Todero, label: "Artifact" },
   description: { Icon: Quote, label: "Description" },
 };
 

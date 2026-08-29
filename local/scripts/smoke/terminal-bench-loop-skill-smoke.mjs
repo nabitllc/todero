@@ -56,7 +56,7 @@ Usage:
   pnpm smoke:terminal-bench-loop-skill
 
 Options:
-  --source-issue-id <uuid>  Attach smoke issues under an existing Paperclip issue.
+  --source-issue-id <uuid>  Attach smoke issues under an existing Todero issue.
   --project-id <uuid>       Override inferred project id.
   --goal-id <uuid>          Override inferred goal id.
   --run-key <string>        Stable key used in smoke titles and mocked artifact paths.
@@ -67,7 +67,7 @@ Options:
 function requireEnv(name) {
   const value = process.env[name];
   if (!value) {
-    throw new Error(`${name} is required. Run against a local Paperclip server with an agent or board API token.`);
+    throw new Error(`${name} is required. Run against a local Todero server with an agent or board API token.`);
   }
   return value;
 }
@@ -90,7 +90,7 @@ async function assertLocalSkillPackage() {
     "request_confirmation",
     "diagnosis",
     "blockedByIssueIds",
-    "PAPERCLIPAI_CMD",
+    "TODEROAI_CMD",
     "PAPERCLIP_HARBOR_RUNNER_CONFIG",
   ]) {
     assert(markdown.includes(expected), `Skill smoke expected ${skillPath} to mention ${expected}`);
@@ -110,7 +110,7 @@ function createApiClient({ apiUrl, apiKey, runId }) {
       headers["Content-Type"] = "application/json";
     }
     if (runId && method !== "GET") {
-      headers["X-Paperclip-Run-Id"] = runId;
+      headers["X-Todero-Run-Id"] = runId;
     }
 
     const response = await fetch(`${baseUrl}${path}`, {
@@ -215,7 +215,7 @@ async function main() {
         "",
         "Next-action owner: board/user must accept or reject the confirmation before implementation subtasks exist.",
         "",
-        "Failure taxonomy: Paperclip product gap, mocked for smoke coverage.",
+        "Failure taxonomy: Todero product gap, mocked for smoke coverage.",
         "",
         "Invariant check:",
         "",

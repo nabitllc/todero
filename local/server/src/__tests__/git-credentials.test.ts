@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   DEFAULT_GITHUB_TOKEN_SECRET_NAMES,
   GIT_CREDENTIAL_TOKEN_ENV_KEY,
@@ -161,7 +161,7 @@ describe("buildGitAuthInvocation", () => {
 
 describe("credential helper execution (real git, no network)", () => {
   async function runCredentialFill(description: string) {
-    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-git-cred-fill-"));
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "todero-git-cred-fill-"));
     try {
       const invocation = buildGitAuthInvocation({
         token: "abc123",

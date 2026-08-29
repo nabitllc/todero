@@ -9,7 +9,7 @@ import {
   createDb,
   heartbeatRunEvents,
   heartbeatRuns,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -71,7 +71,7 @@ describeEmbeddedPostgres("heartbeat runtime state deduplication", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -112,7 +112,7 @@ describeEmbeddedPostgres("heartbeat runtime state deduplication", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -210,7 +210,7 @@ describeEmbeddedPostgres("heartbeat runtime state deduplication", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });

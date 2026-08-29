@@ -28,7 +28,7 @@ import type {
   ReleaseIssueTreeHold,
   UpsertIssueWatchdog,
   UpsertIssueDocument,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { api, type RequestOptions } from "./client";
 
 export type IssueUpdateResponse = Issue & {

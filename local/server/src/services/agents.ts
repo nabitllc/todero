@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gte, inArray, lt, ne, or, sql } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   agentConfigRevisions,
@@ -15,7 +15,7 @@ import {
   issueExecutionDecisions,
   issues,
   issueComments,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   getAgentWorkEligibility,
@@ -24,7 +24,7 @@ import {
   normalizeAgentUrlKey,
   type AgentEligibilityAgent,
   type AgentApiKeyScope,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   collectSecretRefs,
@@ -609,7 +609,7 @@ export function agentService(db: Db) {
     const beforeMarker = readBuiltInAgentMarker(beforeMetadata);
     const afterMarker = readBuiltInAgentMarker(afterMetadata);
     if (builtInAgentMarkersEqual(beforeMarker, afterMarker)) return;
-    throw conflict("Built-in agent marker is managed by Paperclip and cannot be edited directly", {
+    throw conflict("Built-in agent marker is managed by Todero and cannot be edited directly", {
       code: "built_in_agent_marker_readonly",
       key: beforeMarker?.key ?? afterMarker?.key ?? null,
     });

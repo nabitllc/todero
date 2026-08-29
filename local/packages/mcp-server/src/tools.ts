@@ -16,8 +16,8 @@ import {
   updateIssueSchema,
   upsertIssueDocumentSchema,
   linkIssueApprovalSchema,
-} from "@paperclipai/shared";
-import { PaperclipApiClient } from "./client.js";
+} from "@todero/shared";
+import { ToderoApiClient } from "./client.js";
 import { formatErrorResponse, formatTextResponse } from "./format.js";
 
 export interface ToolDefinition {
@@ -62,7 +62,7 @@ async function callRuntimeConnectionTool(
   const endpoint = process.env[endpointEnv]?.trim();
   const token = process.env.PAPERCLIP_RUNTIME_TOOLS_TOKEN?.trim();
   if (!endpoint || !token) {
-    throw new Error("Connection intent tools are available only inside an active Paperclip heartbeat run");
+    throw new Error("Connection intent tools are available only inside an active Todero heartbeat run");
   }
   const response = await fetch(endpoint, {
     method: "POST",
@@ -257,7 +257,7 @@ function selectRuntimeService(
     ?? null;
 }
 
-async function getIssueWorkspaceRuntime(client: PaperclipApiClient, issueId: string) {
+async function getIssueWorkspaceRuntime(client: ToderoApiClient, issueId: string) {
   const context = await client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/heartbeat-context`);
   const workspace = readCurrentExecutionWorkspace(context);
   return {
@@ -267,7 +267,7 @@ async function getIssueWorkspaceRuntime(client: PaperclipApiClient, issueId: str
   };
 }
 
-export function createToolDefinitions(client: PaperclipApiClient): ToolDefinition[] {
+export function createToolDefinitions(client: ToderoApiClient): ToolDefinition[] {
   return [
     makeTool(
       "connections_search",
@@ -288,31 +288,31 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       ),
     ),
     makeTool(
-      "paperclipMe",
-      "Get the current authenticated Paperclip actor details",
+      "toderoMe",
+      "Get the current authenticated Todero actor details",
       z.object({}),
       async () => client.requestJson("GET", "/agents/me"),
     ),
     makeTool(
-      "paperclipInboxLite",
+      "toderoInboxLite",
       "Get the current authenticated agent inbox-lite assignment list",
       z.object({}),
       async () => client.requestJson("GET", "/agents/me/inbox-lite"),
     ),
     makeTool(
-      "paperclipListAgents",
+      "toderoListAgents",
       "List agents in a company",
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/agents`),
     ),
     makeTool(
-      "paperclipListSkills",
+      "toderoListSkills",
       "List the company skill library (all installed skills, independent of which agents have them enabled)",
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/skills`),
     ),
     makeTool(
-      "paperclipGetAgent",
+      "toderoGetAgent",
       "Get a single agent by id",
       z.object({ agentId: z.string().min(1), companyId: companyIdOptional }),
       async ({ agentId, companyId }) => {
@@ -321,7 +321,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipListIssues",
+      "toderoListIssues",
       "List issues for a company with optional filters",
       listIssuesSchema,
       async (input) => {
@@ -336,13 +336,13 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipGetIssue",
+      "toderoGetIssue",
       "Get a single issue by UUID or identifier",
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}`),
     ),
     makeTool(
-      "paperclipGetHeartbeatContext",
+      "toderoGetHeartbeatContext",
       "Get compact heartbeat context for an issue",
       z.object({ issueId: issueIdSchema, wakeCommentId: z.string().guid().optional() }),
       async ({ issueId, wakeCommentId }) => {
@@ -351,7 +351,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipListComments",
+      "toderoListComments",
       "List issue comments with incremental options",
       listCommentsSchema,
       async ({ issueId, after, order, limit }) => {
@@ -364,33 +364,33 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipGetComment",
+      "toderoGetComment",
       "Get a specific issue comment by id",
       z.object({ issueId: issueIdSchema, commentId: z.string().guid() }),
       async ({ issueId, commentId }) =>
         client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/comments/${encodeURIComponent(commentId)}`),
     ),
     makeTool(
-      "paperclipListIssueApprovals",
+      "toderoListIssueApprovals",
       "List approvals linked to an issue",
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/approvals`),
     ),
     makeTool(
-      "paperclipListDocuments",
+      "toderoListDocuments",
       "List issue documents",
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/documents`),
     ),
     makeTool(
-      "paperclipGetDocument",
+      "toderoGetDocument",
       "Get one issue document by key",
       z.object({ issueId: issueIdSchema, key: documentKeySchema }),
       async ({ issueId, key }) =>
         client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/documents/${encodeURIComponent(key)}`),
     ),
     makeTool(
-      "paperclipListDocumentRevisions",
+      "toderoListDocumentRevisions",
       "List revisions for an issue document",
       z.object({ issueId: issueIdSchema, key: documentKeySchema }),
       async ({ issueId, key }) =>
@@ -400,13 +400,13 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         ),
     ),
     makeTool(
-      "paperclipListProjects",
+      "toderoListProjects",
       "List projects in a company",
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/projects`),
     ),
     makeTool(
-      "paperclipGetProject",
+      "toderoGetProject",
       "Get a project by id or company-scoped short reference",
       z.object({ projectId: projectIdSchema, companyId: companyIdOptional }),
       async ({ projectId, companyId }) => {
@@ -415,13 +415,13 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipGetIssueWorkspaceRuntime",
+      "toderoGetIssueWorkspaceRuntime",
       "Get the current execution workspace and runtime services for an issue, including service URLs",
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => getIssueWorkspaceRuntime(client, issueId),
     ),
     makeTool(
-      "paperclipControlIssueWorkspaceServices",
+      "toderoControlIssueWorkspaceServices",
       "Start, stop, or restart the current issue execution workspace runtime services",
       issueWorkspaceRuntimeControlSchema,
       async ({ issueId, action, ...target }) => {
@@ -438,7 +438,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipWaitForIssueWorkspaceService",
+      "toderoWaitForIssueWorkspaceService",
       "Wait until an issue execution workspace runtime service is running and has a URL when one is exposed",
       waitForIssueWorkspaceServiceSchema,
       async ({ issueId, runtimeServiceId, serviceName, timeoutSeconds }) => {
@@ -464,19 +464,19 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipListGoals",
+      "toderoListGoals",
       "List goals in a company",
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/goals`),
     ),
     makeTool(
-      "paperclipGetGoal",
+      "toderoGetGoal",
       "Get a goal by id",
       z.object({ goalId: goalIdSchema }),
       async ({ goalId }) => client.requestJson("GET", `/goals/${encodeURIComponent(goalId)}`),
     ),
     makeTool(
-      "paperclipListApprovals",
+      "toderoListApprovals",
       "List approvals in a company",
       z.object({ companyId: companyIdOptional, status: z.string().optional() }),
       async ({ companyId, status }) => {
@@ -485,7 +485,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipCreateApproval",
+      "toderoCreateApproval",
       "Create a board approval request, optionally linked to one or more issues",
       createApprovalToolSchema,
       async ({ companyId, ...body }) =>
@@ -494,39 +494,39 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipGetApproval",
+      "toderoGetApproval",
       "Get an approval by id",
       z.object({ approvalId: approvalIdSchema }),
       async ({ approvalId }) => client.requestJson("GET", `/approvals/${encodeURIComponent(approvalId)}`),
     ),
     makeTool(
-      "paperclipGetApprovalIssues",
+      "toderoGetApprovalIssues",
       "List issues linked to an approval",
       z.object({ approvalId: approvalIdSchema }),
       async ({ approvalId }) => client.requestJson("GET", `/approvals/${encodeURIComponent(approvalId)}/issues`),
     ),
     makeTool(
-      "paperclipListApprovalComments",
+      "toderoListApprovalComments",
       "List comments for an approval",
       z.object({ approvalId: approvalIdSchema }),
       async ({ approvalId }) => client.requestJson("GET", `/approvals/${encodeURIComponent(approvalId)}/comments`),
     ),
     makeTool(
-      "paperclipCreateIssue",
+      "toderoCreateIssue",
       "Create a new issue",
       createIssueToolSchema,
       async ({ companyId, ...body }) =>
         client.requestJson("POST", `/companies/${client.resolveCompanyId(companyId)}/issues`, { body }),
     ),
     makeTool(
-      "paperclipUpdateIssue",
+      "toderoUpdateIssue",
       "Patch an issue, optionally including a comment; include resume=true when intentionally requesting follow-up on resumable closed work",
       updateIssueToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("PATCH", `/issues/${encodeURIComponent(issueId)}`, { body }),
     ),
     makeTool(
-      "paperclipCheckoutIssue",
+      "toderoCheckoutIssue",
       "Checkout an issue for an agent",
       checkoutIssueToolSchema,
       async ({ issueId, agentId, expectedStatuses }) =>
@@ -538,20 +538,20 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipReleaseIssue",
+      "toderoReleaseIssue",
       "Release an issue checkout",
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/release`, { body: {} }),
     ),
     makeTool(
-      "paperclipAddComment",
+      "toderoAddComment",
       "Add a comment to an issue; include resume=true when intentionally requesting follow-up on resumable closed work",
       addCommentToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/comments`, { body }),
     ),
     makeTool(
-      "paperclipSuggestTasks",
+      "toderoSuggestTasks",
       "Create a suggest_tasks interaction on an issue",
       createSuggestTasksToolSchema,
       async ({ issueId, ...body }) =>
@@ -563,7 +563,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipAskUserQuestions",
+      "toderoAskUserQuestions",
       "Create an ask_user_questions interaction on an issue",
       createAskUserQuestionsToolSchema,
       async ({ issueId, ...body }) =>
@@ -575,7 +575,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipRequestConfirmation",
+      "toderoRequestConfirmation",
       "Create a request_confirmation interaction on an issue",
       createRequestConfirmationToolSchema,
       async ({ issueId, ...body }) =>
@@ -587,7 +587,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipRequestCheckboxConfirmation",
+      "toderoRequestCheckboxConfirmation",
       "Create a request_checkbox_confirmation interaction on an issue",
       createRequestCheckboxConfirmationToolSchema,
       async ({ issueId, ...body }) =>
@@ -599,7 +599,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipUpsertIssueDocument",
+      "toderoUpsertIssueDocument",
       "Create or update an issue document",
       upsertDocumentToolSchema,
       async ({ issueId, key, ...body }) =>
@@ -610,7 +610,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         ),
     ),
     makeTool(
-      "paperclipRestoreIssueDocumentRevision",
+      "toderoRestoreIssueDocumentRevision",
       "Restore a prior revision of an issue document",
       z.object({
         issueId: issueIdSchema,
@@ -625,7 +625,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         ),
     ),
     makeTool(
-      "paperclipLinkIssueApproval",
+      "toderoLinkIssueApproval",
       "Link an approval to an issue",
       z.object({ issueId: issueIdSchema }).merge(linkIssueApprovalSchema),
       async ({ issueId, approvalId }) =>
@@ -634,7 +634,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipUnlinkIssueApproval",
+      "toderoUnlinkIssueApproval",
       "Unlink an approval from an issue",
       z.object({ issueId: issueIdSchema, approvalId: approvalIdSchema }),
       async ({ issueId, approvalId }) =>
@@ -644,7 +644,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         ),
     ),
     makeTool(
-      "paperclipApprovalDecision",
+      "toderoApprovalDecision",
       "Approve, reject, request revision, or resubmit an approval",
       approvalDecisionSchema,
       async ({ approvalId, action, decisionNote, payloadJson }) => {
@@ -666,7 +666,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       },
     ),
     makeTool(
-      "paperclipAddApprovalComment",
+      "toderoAddApprovalComment",
       "Add a comment to an approval",
       z.object({ approvalId: approvalIdSchema, body: z.string().min(1) }),
       async ({ approvalId, body }) =>
@@ -675,8 +675,8 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         }),
     ),
     makeTool(
-      "paperclipApiRequest",
-      "Make a JSON request to an existing Paperclip /api endpoint for unsupported operations",
+      "toderoApiRequest",
+      "Make a JSON request to an existing Todero /api endpoint for unsupported operations",
       apiRequestSchema,
       async ({ method, path, jsonBody }) => {
         if (!path.startsWith("/") || path.includes("..")) {

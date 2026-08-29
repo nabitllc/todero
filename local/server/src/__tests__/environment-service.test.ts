@@ -17,7 +17,7 @@ import {
   instanceSettings,
   issues,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -100,7 +100,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "fixture.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -222,7 +222,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
           host: "fixture.example.test",
           port: 22,
           username: "fixture",
-          remoteWorkspacePath: "/srv/paperclip",
+          remoteWorkspacePath: "/srv/todero",
         },
         createdAt: now,
         updatedAt: now,
@@ -236,7 +236,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
           host: "other.example.test",
           port: 22,
           username: "fixture",
-          remoteWorkspacePath: "/srv/paperclip",
+          remoteWorkspacePath: "/srv/todero",
         },
         createdAt: now,
         updatedAt: now,
@@ -442,7 +442,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
           host: "default.example.test",
           port: 22,
           username: "fixture",
-          remoteWorkspacePath: "/srv/paperclip",
+          remoteWorkspacePath: "/srv/todero",
         },
         createdAt: now,
         updatedAt: now,
@@ -456,7 +456,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
           host: "delete.example.test",
           port: 22,
           username: "fixture",
-          remoteWorkspacePath: "/srv/paperclip",
+          remoteWorkspacePath: "/srv/todero",
         },
         createdAt: now,
         updatedAt: now,
@@ -511,7 +511,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "pending.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
       createdAt: now,
       updatedAt: now,
@@ -697,7 +697,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "resolved.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
       createdAt: now,
       updatedAt: now,
@@ -748,7 +748,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "deleted.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
       createdAt: now,
       updatedAt: now,
@@ -807,7 +807,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "race.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
       createdAt: now,
       updatedAt: now,
@@ -992,7 +992,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
 
       expect(adopted.id).toBe(existing?.id);
       expect(adopted.name).toBe("Tenant Local");
-      expect(adopted.metadata).toEqual({ owner: "operator", managedByPaperclip: true });
+      expect(adopted.metadata).toEqual({ owner: "operator", managedByTodero: true });
 
       // Re-ensuring an already-adopted row must not rewrite it.
       const adoptedRow = await db
@@ -1001,7 +1001,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         .where(eq(environments.driver, "local"))
         .then((rows) => rows[0]);
       const reused = await svc.ensureLocalEnvironment(companyId);
-      expect(reused.metadata).toEqual({ owner: "operator", managedByPaperclip: true });
+      expect(reused.metadata).toEqual({ owner: "operator", managedByTodero: true });
       const reusedRow = await db
         .select()
         .from(environments)
@@ -1153,7 +1153,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
     expect(created.name).toBe("Daytona");
     expect(created.config.provider).toBe("daytona");
     expect(created.config.target).toBe("us");
-    expect(created.metadata?.managedByPaperclip).toBe(true);
+    expect(created.metadata?.managedByTodero).toBe(true);
     expect(created.metadata?.managedSandboxProvider).toBe("daytona");
 
     // A stock update advances config and name in place, and a description
@@ -1555,7 +1555,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
       status: "active",
       config: { provider: "daytona", target: "us" },
     });
-    expect(handMade.metadata?.managedByPaperclip).toBeUndefined();
+    expect(handMade.metadata?.managedByTodero).toBeUndefined();
 
     const reconciliation = await svc.ensureManagedSandboxEnvironment({
       companyId,
@@ -1570,7 +1570,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
     });
     expect(reconciliation.environment.id).toBe(handMade.id);
     expect(reconciliation.environment.config.target).toBe("us");
-    expect(reconciliation.environment.metadata?.managedByPaperclip).toBeUndefined();
+    expect(reconciliation.environment.metadata?.managedByTodero).toBeUndefined();
 
     const rows = await db
       .select()
@@ -1589,7 +1589,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "fixture.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
     });
     const kubernetes = await svc.ensureKubernetesEnvironment(companyId, { inCluster: true });
@@ -1618,7 +1618,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
         host: "fixture.example.test",
         port: 22,
         username: "fixture",
-        remoteWorkspacePath: "/srv/paperclip",
+        remoteWorkspacePath: "/srv/todero",
       },
     });
 
@@ -1683,13 +1683,13 @@ describeEmbeddedPostgres("environmentService leases", () => {
       driver: "sandbox",
       status: "active",
       config: { provider: "kubernetes" },
-      metadata: { managedByPaperclip: true, managedKubernetesSandbox: true },
+      metadata: { managedByTodero: true, managedKubernetesSandbox: true },
       createdAt: now,
       updatedAt: now,
     });
 
     // Partial unique index environments_company_managed_sandbox_idx rejects a
-    // second row matching driver='sandbox' AND managedByPaperclip=true for the
+    // second row matching driver='sandbox' AND managedByTodero=true for the
     // same company. This is the DB-level invariant that replaced the previous
     // application-side post-insert convergence loop.
     const secondInsert = db.insert(environments).values({
@@ -1697,7 +1697,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
       driver: "sandbox",
       status: "active",
       config: { provider: "kubernetes" },
-      metadata: { managedByPaperclip: true, managedKubernetesSandbox: true },
+      metadata: { managedByTodero: true, managedKubernetesSandbox: true },
       createdAt: new Date(now.getTime() + 1),
       updatedAt: new Date(now.getTime() + 1),
     });
@@ -1713,7 +1713,7 @@ describeEmbeddedPostgres("environmentService leases", () => {
     }
     expect(raisedConstraint).toBe("environments_managed_sandbox_idx");
 
-    // Index does NOT cover tenant-created sandbox rows (no managedByPaperclip
+    // Index does NOT cover tenant-created sandbox rows (no managedByTodero
     // marker) — operators must be able to keep multiple tenant sandbox envs.
     await db.insert(environments).values({
       name: "Tenant Sandbox",

@@ -36,7 +36,7 @@ type KeyRow = { id: number; value: string };
  *
  * Admin-only surface over P5a's command-template routes
  * (`POST /companies/:id/tools/stdio-templates`). Registers a command that
- * Paperclip will run in the company's isolated workspace and the keys it
+ * Todero will run in the company's isolated workspace and the keys it
  * expects. One of the two M8 screens where "MCP" vocabulary is allowed.
  */
 export function RunYourOwnTab({ companyId }: { companyId: string }) {
@@ -94,7 +94,7 @@ export function RunYourOwnTab({ companyId }: { companyId: string }) {
   return (
     <div className="space-y-6">
       <p className="max-w-2xl text-sm text-muted-foreground">
-        For a tool that runs from a command. Paperclip runs it in your organization's own isolated workspace.
+        For a tool that runs from a command. Todero runs it in your organization's own isolated workspace.
         Administrators only.
       </p>
 
@@ -194,7 +194,7 @@ export function RunYourOwnTab({ companyId }: { companyId: string }) {
             {createMutation.isPending ? "Adding…" : "Check & continue"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            Paperclip will register the command and the keys it needs.
+            Todero will register the command and the keys it needs.
           </span>
         </div>
       </div>

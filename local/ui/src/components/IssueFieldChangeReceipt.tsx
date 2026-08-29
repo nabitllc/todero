@@ -1,5 +1,5 @@
 import { ArrowRight, ShieldCheck } from "lucide-react";
-import type { ActivityEvent } from "@paperclipai/shared";
+import type { ActivityEvent } from "@todero/shared";
 import {
   issueAuthorizationReasonLabel,
   readIssueChangeReceipt,

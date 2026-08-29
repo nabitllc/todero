@@ -24,7 +24,7 @@ import { test, expect, request as pwRequest, type APIRequestContext } from "@pla
 const PORT = Number(process.env.PAPERCLIP_E2E_PORT ?? 3199);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const COMPANY_NAME_PREFIX = "E2E-SidebarTakeover";
-const COLLAPSED_STORAGE_KEY = "paperclip.sidebar.collapsed";
+const COLLAPSED_STORAGE_KEY = "todero.sidebar.collapsed";
 
 // The sidebar header's "Collapse sidebar" toggle only renders when the app
 // sidebar is expanded (pinned, desktop, not takeover-locked); in the collapsed

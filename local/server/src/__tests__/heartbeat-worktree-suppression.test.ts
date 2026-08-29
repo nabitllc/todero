@@ -17,7 +17,7 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -101,7 +101,7 @@ describeEmbeddedPostgres("heartbeat worktree suppression", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       status: "active",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,

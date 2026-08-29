@@ -14,7 +14,7 @@ coverage/
 .AppleDouble
 .LSOverride
 data/
-.paperclip/
+.todero/
 .pnpm-store/
 tmp-*
 cli/tmp/
@@ -47,8 +47,8 @@ diagnostics/
 *.tmp
 .vscode/
 .claude/settings.local.json
-.paperclip-local/
-.paperclip-runtime/
+.todero-local/
+.todero-runtime/
 /.idea/
 /.agents/
 

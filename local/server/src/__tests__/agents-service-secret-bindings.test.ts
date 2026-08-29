@@ -13,7 +13,7 @@ import {
   companySecretVersions,
   companySecrets,
   createDb,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -34,7 +34,7 @@ describeEmbeddedPostgres("agent service secret binding sync", () => {
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-agent-secret-bindings-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-agent-secret-bindings-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
@@ -68,7 +68,7 @@ describeEmbeddedPostgres("agent service secret binding sync", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

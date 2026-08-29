@@ -161,7 +161,7 @@ impl CodexProvider {
             json!({
                 "clientInfo": {
                     "name": "paperclip-runnerd",
-                    "title": "Paperclip Runner",
+                    "title": "Todero Runner",
                     "version": "1",
                 },
                 "capabilities": {
@@ -640,7 +640,7 @@ fn codex_question_set(
     Ok((
         request_id,
         json!({
-            "schema": "paperclip.question_set.v1",
+            "schema": "todero.question_set.v1",
             "title": params.get("title").and_then(Value::as_str).unwrap_or("Codex input").chars().take(240).collect::<String>(),
             "submitLabel": "Submit answers",
             "questions": canonical,
@@ -664,9 +664,9 @@ fn codex_question_response(
             "runtime response contains an unknown top-level field",
         ));
     }
-    if response.get("schema").and_then(Value::as_str) != Some("paperclip.question_response.v1") {
+    if response.get("schema").and_then(Value::as_str) != Some("todero.question_response.v1") {
         return Err(LocalRunnerError::invalid(
-            "runtime response requires paperclip.question_response.v1",
+            "runtime response requires todero.question_response.v1",
         ));
     }
     let answers = response
@@ -786,7 +786,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(request_id, "41");
-        assert_eq!(question_set["schema"], "paperclip.question_set.v1");
+        assert_eq!(question_set["schema"], "todero.question_set.v1");
         let pending = PendingRuntimeRequest {
             rpc_id: json!(41),
             method: "item/tool/requestUserInput".to_owned(),
@@ -797,7 +797,7 @@ mod tests {
         let native = codex_question_response(
             &pending,
             &json!({
-                "schema": "paperclip.question_response.v1",
+                "schema": "todero.question_response.v1",
                 "answers": {"environment": {"selectedOptionIds": ["option-1"]}},
             }),
         )
@@ -806,7 +806,7 @@ mod tests {
         assert!(codex_question_response(
             &pending,
             &json!({
-                "schema": "paperclip.question_response.v1",
+                "schema": "todero.question_response.v1",
                 "answers": {"environment": {
                     "selectedOptionIds": ["option-1"],
                     "customText": "Production",
@@ -817,7 +817,7 @@ mod tests {
         assert!(codex_question_response(
             &pending,
             &json!({
-                "schema": "paperclip.question_response.v1",
+                "schema": "todero.question_response.v1",
                 "answers": {"environment": {"selectedOptionIds": ["option-1"]}},
                 "providerEnvelope": {},
             }),

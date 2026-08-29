@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
-import { execute } from "@paperclipai/adapter-cursor-local/server";
+import { runChildProcess } from "@todero/adapter-utils/server-utils";
+import { execute } from "@todero/adapter-cursor-local/server";
 
 async function writeFakeCursorCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
@@ -13,7 +13,7 @@ const capturePath = process.env.PAPERCLIP_TEST_CAPTURE_PATH;
 const payload = {
   argv: process.argv.slice(2),
   prompt: fs.readFileSync(0, "utf8"),
-  paperclipEnvKeys: Object.keys(process.env)
+  toderoEnvKeys: Object.keys(process.env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort(),
 };
@@ -106,7 +106,7 @@ function createLocalSandboxRunner() {
 type CapturePayload = {
   argv: string[];
   prompt: string;
-  paperclipEnvKeys: string[];
+  toderoEnvKeys: string[];
 };
 
 async function createSkillDir(root: string, name: string) {
@@ -117,8 +117,8 @@ async function createSkillDir(root: string, name: string) {
 }
 
 describe("cursor execute", () => {
-  it("injects paperclip env vars and prompt note by default", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-"));
+  it("injects todero env vars and prompt note by default", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-cursor-execute-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
     const capturePath = path.join(root, "capture.json");
@@ -152,7 +152,7 @@ describe("cursor execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -166,10 +166,10 @@ describe("cursor execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.argv).not.toContain("Follow the paperclip heartbeat.");
+      expect(capture.argv).not.toContain("Follow the todero heartbeat.");
       expect(capture.argv).not.toContain("--mode");
       expect(capture.argv).not.toContain("ask");
-      expect(capture.paperclipEnvKeys).toEqual(
+      expect(capture.toderoEnvKeys).toEqual(
         expect.arrayContaining([
           "PAPERCLIP_AGENT_ID",
           "PAPERCLIP_API_KEY",
@@ -178,9 +178,9 @@ describe("cursor execute", () => {
           "PAPERCLIP_RUN_ID",
         ]),
       );
-      expect(capture.prompt).toContain("Paperclip runtime note:");
+      expect(capture.prompt).toContain("Todero runtime note:");
       expect(capture.prompt).toContain("PAPERCLIP_API_KEY");
-      expect(invocationPrompt).toContain("Paperclip runtime note:");
+      expect(invocationPrompt).toContain("Todero runtime note:");
       expect(invocationPrompt).toContain("PAPERCLIP_API_URL");
     } finally {
       if (previousHome === undefined) {
@@ -193,7 +193,7 @@ describe("cursor execute", () => {
   });
 
   it("passes --mode when explicitly configured", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-mode-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-cursor-execute-mode-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
     const capturePath = path.join(root, "capture.json");
@@ -227,7 +227,7 @@ describe("cursor execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -251,7 +251,7 @@ describe("cursor execute", () => {
   });
 
   it("injects company-library runtime skills into the Cursor skills home before execution", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-runtime-skill-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-cursor-execute-runtime-skill-"));
     const processHome = path.join(root, "process-home");
     const configuredHome = path.join(root, "configured-home");
     const workspace = path.join(root, "workspace");
@@ -260,7 +260,7 @@ describe("cursor execute", () => {
     await fs.mkdir(workspace, { recursive: true });
     await writeFakeCursorCommand(commandPath);
 
-    const paperclipDir = await createSkillDir(runtimeSkillsRoot, "paperclip");
+    const toderoDir = await createSkillDir(runtimeSkillsRoot, "todero");
     const asciiHeartDir = await createSkillDir(runtimeSkillsRoot, "ascii-heart");
 
     const previousHome = process.env.HOME;
@@ -287,20 +287,20 @@ describe("cursor execute", () => {
           cwd: workspace,
           model: "auto",
           env: { HOME: configuredHome },
-          paperclipRuntimeSkills: [
+          toderoRuntimeSkills: [
             {
-              name: "paperclip",
-              source: paperclipDir,
+              name: "todero",
+              source: toderoDir,
             },
             {
               name: "ascii-heart",
               source: asciiHeartDir,
             },
           ],
-          paperclipSkillSync: {
+          toderoSkillSync: {
             desiredSkills: ["ascii-heart"],
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -327,7 +327,7 @@ describe("cursor execute", () => {
   });
 
   it("prefers ~/.local/bin/cursor-agent for remote sandbox execution when using the default command", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-sandbox-execute-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-cursor-sandbox-execute-"));
     const homeDir = path.join(root, "home");
     const workspace = path.join(root, "workspace");
     const remoteWorkspace = path.join(root, "remote-workspace");
@@ -366,7 +366,7 @@ describe("cursor execute", () => {
         config: {
           command: "agent",
           cwd: workspace,
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -382,7 +382,7 @@ describe("cursor execute", () => {
       };
       expect(capture.command).toBe(cursorAgentPath);
       expect(capture.path.split(":")[0]).toBe(path.join(homeDir, ".local", "bin"));
-      expect(capture.prompt).toContain("Follow the paperclip heartbeat.");
+      expect(capture.prompt).toContain("Follow the todero heartbeat.");
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
@@ -391,7 +391,7 @@ describe("cursor execute", () => {
   }, 10_000);
 
   it("keeps explicit command overrides for remote sandbox execution", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-sandbox-explicit-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-cursor-sandbox-explicit-"));
     const homeDir = path.join(root, "home");
     const workspace = path.join(root, "workspace");
     const remoteWorkspace = path.join(root, "remote-workspace");
@@ -432,7 +432,7 @@ describe("cursor execute", () => {
         config: {
           command: customCommandPath,
           cwd: workspace,
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",

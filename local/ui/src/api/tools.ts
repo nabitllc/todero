@@ -66,7 +66,7 @@ import type {
   ConnectionGrantsResponse,
   ToolConnectionCreateCapabilities,
   ToolAppMetadataPreflightResult,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { api } from "./client";
 
 /**

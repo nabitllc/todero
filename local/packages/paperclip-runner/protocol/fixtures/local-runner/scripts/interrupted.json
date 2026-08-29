@@ -1,5 +1,5 @@
 {
-  "schema": "paperclip.fake_harness.script.v1",
+  "schema": "todero.fake_harness.script.v1",
   "name": "interrupted",
   "steps": [
     {
@@ -19,7 +19,7 @@
     {
       "kind": "result",
       "payload": {
-        "schema": "paperclip.run_result.v1",
+        "schema": "todero.run_result.v1",
         "reportedWorkDisposition": "yielded",
         "summary": "The scripted turn was interrupted.",
         "completionClaim": {
@@ -47,7 +47,7 @@
     {
       "kind": "terminal",
       "payload": {
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": "interrupted",
         "runTerminalState": "cancelled",
         "reportedWorkDisposition": "yielded"

@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
-import type { Db } from "@paperclipai/db";
-import { agents, companies, connectionGrants, issueThreadInteractions, toolConnectionInstalls } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { agents, companies, connectionGrants, issueThreadInteractions, toolConnectionInstalls } from "@todero/db";
 import { and, eq, or } from "drizzle-orm";
 import {
   APP_STORE_DEFINITIONS,
@@ -45,7 +45,7 @@ import {
   updateToolPolicySchema,
   updateToolProfileEntrySchema,
   updateToolProfileWithEntriesSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { validate } from "../middleware/validate.js";
 import { getActorInfo, assertBoard, assertCompanyAccess, getAccessibleResource, hasCompanyAccess } from "./authz.js";
 import { badRequest, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
@@ -53,7 +53,7 @@ import { accessService, logActivity, toolAccessPolicyService, toolAccessService,
 import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-gateway.js";
 import type { ComposioClient } from "../services/composio.js";
 import type { VercelConnectClient } from "../services/vercel-connect.js";
-import { paperclipIdGoogleConnectorCapabilitiesFromEnv } from "../services/paperclip-id-gmail-connector.js";
+import { toderoIdGoogleConnectorCapabilitiesFromEnv } from "../services/paperclip-id-gmail-connector.js";
 import {
   OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH,
   oauthClientIdMetadataDocument,
@@ -145,7 +145,7 @@ export function connectionIntentOAuthOutcomeHtml(input: {
   // authorization URL stay server-side; the opener refreshes the task from the
   // interaction id instead of trusting provider-window data.
   const message = JSON.stringify({
-    type: "paperclip.connection-intent.oauth",
+    type: "todero.connection-intent.oauth",
     interactionId: input.interactionId,
     outcome: input.outcome,
   }).replace(/</g, "\\u003c");
@@ -165,7 +165,7 @@ export function connectionIntentOAuthOutcomeHtml(input: {
     }
   })();
   const targetOrigin = JSON.stringify(openerOrigin ?? "");
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Connection authorization</title></head><body><p>Returning to Paperclip…</p><script>const message=${message};const targetOrigin=${targetOrigin}||window.location.origin;if(window.opener&&window.opener!==window){window.opener.postMessage(message,targetOrigin);window.close();}else{window.location.replace(${fallback});}</script></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Connection authorization</title></head><body><p>Returning to Todero…</p><script>const message=${message};const targetOrigin=${targetOrigin}||window.location.origin;if(window.opener&&window.opener!==window){window.opener.postMessage(message,targetOrigin);window.close();}else{window.location.replace(${fallback});}</script></body></html>`;
 }
 
 export function toolAccessRoutes(
@@ -306,7 +306,7 @@ export function toolAccessRoutes(
     const baseUrl = configuredPublicBaseUrl() ?? requestLoopbackBaseUrl(req);
     if (!baseUrl) {
       throw unprocessable(
-        "This Paperclip needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
+        "This Todero needs a browser-reachable HTTPS address (or loopback HTTP) before browser sign-in can start.",
         { code: "oauth_redirect_origin_unsupported" },
       );
     }
@@ -639,7 +639,7 @@ export function toolAccessRoutes(
       res.status(401).json({ error: "Agent run id required", code: "run_id_required" });
       return;
     }
-    const headerRunId = req.get("X-Paperclip-Run-Id")?.trim();
+    const headerRunId = req.get("X-Todero-Run-Id")?.trim();
     if (headerRunId && headerRunId !== req.actor.runId) {
       res.status(403).json({ error: "Run id header does not match agent token", code: "run_id_mismatch" });
       return;
@@ -662,7 +662,7 @@ export function toolAccessRoutes(
     assertBoard(req);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const googleConnectorProfiles = new Set(await paperclipIdGoogleConnectorCapabilitiesFromEnv());
+    const googleConnectorProfiles = new Set(await toderoIdGoogleConnectorCapabilitiesFromEnv());
     const vercelConnect = vercelConnectIntegrationStatus();
     res.json({
       capabilities: await describeConnectionCreateCapabilities(req, companyId),
@@ -676,7 +676,7 @@ export function toolAccessRoutes(
             ? vercelConnect.configured
               ? null
               : "Vercel Connect needs workload OIDC or PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN."
-            : "Vercel Connect setup is disabled on this Paperclip instance.",
+            : "Vercel Connect setup is disabled on this Todero instance.",
         },
       },
       apps: APP_STORE_DEFINITIONS.map((app) => {
@@ -705,13 +705,13 @@ export function toolAccessRoutes(
   });
 
   /**
-   * Paperclip's Client ID Metadata Document (PAP-17087).
+   * Todero's Client ID Metadata Document (PAP-17087).
    *
-   * The document's own URL is the `client_id` Paperclip presents to an
+   * The document's own URL is the `client_id` Todero presents to an
    * authorization server that supports CIMD, so this endpoint has to be publicly
    * readable — an authorization server fetches it server-to-server with no
-   * Paperclip session. It contains only this deployment's callback and the
-   * grant/response/auth methods Paperclip uses: no company, connection or secret
+   * Todero session. It contains only this deployment's callback and the
+   * grant/response/auth methods Todero uses: no company, connection or secret
    * data of any kind.
    */
   router.get(OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH.replace(/^\/api/, ""), (_req, res) => {
@@ -826,7 +826,7 @@ export function toolAccessRoutes(
     res.json(result);
   });
 
-  router.get("/tools/oauth/paperclip-id/callback", async (req, res) => {
+  router.get("/tools/oauth/todero-id/callback", async (req, res) => {
     assertBoard(req);
     const state = typeof req.query.state === "string" ? req.query.state : "";
     const claimId = typeof req.query.claim_id === "string" ? req.query.claim_id : null;
@@ -844,7 +844,7 @@ export function toolAccessRoutes(
     }
     const acceptsHtml = req.get("accept")?.includes("text/html") === true;
     try {
-      const result = await svc.completePaperclipIdGmailCallback({
+      const result = await svc.completeToderoIdGmailCallback({
         state,
         claimId,
         error,
@@ -1013,7 +1013,7 @@ export function toolAccessRoutes(
     const code = typeof req.query.code === "string" ? req.query.code : null;
     const error = typeof req.query.error === "string" ? req.query.error : null;
     // `error_description` / `error_uri` are read from neither the query nor the
-    // provider's body: they are provider-authored prose, and Paperclip maps the
+    // provider's body: they are provider-authored prose, and Todero maps the
     // `error` code to its own copy instead of reflecting them (PAP-17108).
     const iss = typeof req.query.iss === "string" ? req.query.iss : null;
     const pendingState = state ? await svc.peekOAuthState(state) : null;
@@ -1062,7 +1062,7 @@ export function toolAccessRoutes(
         details: {
           code: callbackFailureCode,
           status: callbackError instanceof HttpError ? callbackError.status : 500,
-          // HttpError messages are Paperclip-authored. Provider-authored
+          // HttpError messages are Todero-authored. Provider-authored
           // error_description/error_uri values are never read above and cannot
           // be reflected into the activity stream.
           message: callbackError instanceof HttpError

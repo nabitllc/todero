@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConnectToolAppResult, McpJsonImportPreview } from "@paperclipai/shared";
+import type { ConnectToolAppResult, McpJsonImportPreview } from "@todero/shared";
 import { PasteConfigTab } from "./PasteConfigTab";
 
 const toolsApiMock = vi.hoisted(() => ({
@@ -310,7 +310,7 @@ describe("PasteConfigTab — activation handoff (PAP-11092)", () => {
               prefix: null,
               required: true,
             }],
-            warnings: ["Header Authorization will be stored as a Paperclip secret before activation."],
+            warnings: ["Header Authorization will be stored as a Todero secret before activation."],
           },
         ],
       },
@@ -436,7 +436,7 @@ describe("PasteConfigTab — activation handoff (PAP-11092)", () => {
             config: { importedCommand: "npx -y @modelcontextprotocol/server-github", importedArgs: [] },
             credentialRefs: [{ name: "GITHUB_TOKEN", secretId: "draft-token", placement: "env", key: "GITHUB_TOKEN" }],
             credentialFields: [],
-            warnings: ["Imported stdio commands stay draft-only unless mapped to an approved Paperclip template."],
+            warnings: ["Imported stdio commands stay draft-only unless mapped to an approved Todero template."],
           },
         ],
       },

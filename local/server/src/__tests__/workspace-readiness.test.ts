@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Db } from "@paperclipai/db";
-import type { WorkspaceReadinessProbeResult } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import type { WorkspaceReadinessProbeResult } from "@todero/shared";
 import {
   isManagedWorkspaceInstance,
   resetManagedWorkspaceInstanceCacheForTests,
@@ -35,7 +35,7 @@ import {
 const tempDirs: string[] = [];
 
 function createMarkerDir(files: Record<string, string> = {}) {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "paperclip-workspace-readiness-"));
+  const dir = mkdtempSync(path.join(os.tmpdir(), "todero-workspace-readiness-"));
   tempDirs.push(dir);
   const configPath = path.join(dir, "config.json");
   writeFileSync(configPath, "{}\n", "utf8");

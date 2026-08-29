@@ -16,7 +16,7 @@ interface RegisteredAuthority {
 }
 
 interface RunnerPrpUpgradeRequest extends IncomingMessage {
-  paperclipWebSocketHandled?: boolean;
+  toderoWebSocketHandled?: boolean;
 }
 
 const registrations = new Map<string, RegisteredAuthority>();
@@ -58,12 +58,12 @@ export function setupRunnerPrpWebSocketServer(
   server.on(
     "upgrade",
     (request: IncomingMessage, socket: Duplex, head: Buffer) => {
-      const url = new URL(request.url ?? "/", "http://paperclip.invalid");
+      const url = new URL(request.url ?? "/", "http://todero.invalid");
       if (!url.pathname.startsWith(CONNECT_PATH_PREFIX)) return;
 
       const ownedRequest = request as RunnerPrpUpgradeRequest;
-      if (ownedRequest.paperclipWebSocketHandled) return;
-      ownedRequest.paperclipWebSocketHandled = true;
+      if (ownedRequest.toderoWebSocketHandled) return;
+      ownedRequest.toderoWebSocketHandled = true;
       socket.on("error", (error) => {
         logger.warn(
           { errorName: error.name },

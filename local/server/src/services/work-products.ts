@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
-import { issueWorkProducts, workspaceRuntimeServices } from "@paperclipai/db";
-import type { IssueWorkProduct } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import { issueWorkProducts, workspaceRuntimeServices } from "@todero/db";
+import type { IssueWorkProduct } from "@todero/shared";
 import { insertRowsInChunks } from "./batch-insert.js";
 import type { ImportIssueWorkProductRow } from "./import-write-types.js";
 

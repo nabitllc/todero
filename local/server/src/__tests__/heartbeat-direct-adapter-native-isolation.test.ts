@@ -10,7 +10,7 @@ import {
   nativeRunResults,
   statusDecisions,
   workAssessments,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { ServerAdapterModule } from "../adapters/index.js";
 import {
   getEmbeddedPostgresTestSupport,

@@ -9,7 +9,7 @@ import {
   startSshEnvLabFixture,
   stopSshEnvLabFixture,
   type SshConnectionConfig,
-} from "@paperclipai/adapter-utils/ssh";
+} from "@todero/adapter-utils/ssh";
 
 async function readOptionalSecret(
   value: string | undefined,
@@ -31,7 +31,7 @@ async function readOptionalSecret(
 function resolveEnvLabStatePath(): string {
   const instanceRoot =
     process.env.PAPERCLIP_INSTANCE_ROOT?.trim() ||
-    path.join(process.env.HOME ?? "/tmp", ".paperclip-worktrees", "instances", "live-ssh-test");
+    path.join(process.env.HOME ?? "/tmp", ".todero-worktrees", "instances", "live-ssh-test");
   return path.join(instanceRoot, "env-lab", "ssh-fixture", "state.json");
 }
 

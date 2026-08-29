@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import type { Project } from "@todero/shared";
 import { ProjectProperties, type ProjectConfigFieldKey, type ProjectFieldSaveState } from "@/components/ProjectProperties";
 import { queryKeys } from "@/lib/queryKeys";
-import { storybookProjects } from "../fixtures/paperclipData";
+import { storybookProjects } from "../fixtures/toderoData";
 
 const COMPANY_ID = "company-storybook";
 const boardProject = storybookProjects.find((project) => project.id === "project-board-ui") ?? storybookProjects[0]!;

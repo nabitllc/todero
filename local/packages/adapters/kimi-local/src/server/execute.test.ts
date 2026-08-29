@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext } from "@todero/adapter-utils";
 
 const ensureRuntimeInstalledMock = vi.hoisted(() => vi.fn(async () => {}));
 const ensureCommandMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -13,14 +13,14 @@ const prepareRuntimeMock = vi.hoisted(() => vi.fn(async () => ({
 const resolveCommandForLogsMock = vi.hoisted(() => vi.fn(async () => "kimi"));
 const runProcessMock = vi.hoisted(() => vi.fn());
 
-vi.mock("@paperclipai/adapter-utils/execution-target", () => ({
+vi.mock("@todero/adapter-utils/execution-target", () => ({
   adapterExecutionTargetIsRemote: () => false,
   adapterExecutionTargetRemoteCwd: (_target: unknown, cwd: string) => cwd,
   overrideAdapterExecutionTargetRemoteCwd: (target: unknown, _cwd: string) => target,
   adapterExecutionTargetSessionIdentity: () => ({ kind: "local" }),
   adapterExecutionTargetSessionMatches: () => true,
   adapterExecutionTargetUsesManagedHome: () => false,
-  adapterExecutionTargetUsesPaperclipBridge: () => false,
+  adapterExecutionTargetUsesToderoBridge: () => false,
   describeAdapterExecutionTarget: () => "local",
   ensureAdapterExecutionTargetCommandResolvable: ensureCommandMock,
   ensureAdapterExecutionTargetRuntimeCommandInstalled: ensureRuntimeInstalledMock,
@@ -31,7 +31,7 @@ vi.mock("@paperclipai/adapter-utils/execution-target", () => ({
   resolveAdapterExecutionTargetTimeoutSec: (_target: unknown, timeoutSec: number) => timeoutSec,
   runAdapterExecutionTargetProcess: runProcessMock,
   runAdapterExecutionTargetShellCommand: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
-  startAdapterExecutionTargetPaperclipBridge: async () => null,
+  startAdapterExecutionTargetToderoBridge: async () => null,
 }));
 
 import { execute } from "./execute.js";
@@ -39,7 +39,7 @@ import { execute } from "./execute.js";
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-kimi-local-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-kimi-local-"));
   tempRoots.push(root);
   return root;
 }

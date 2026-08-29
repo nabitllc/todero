@@ -1,167 +1,167 @@
 [
   {
     "dir": "packages/adapter-utils",
-    "name": "@paperclipai/adapter-utils",
+    "name": "@todero/adapter-utils",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/claude-local",
-    "name": "@paperclipai/adapter-claude-local",
+    "name": "@todero/adapter-claude-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/codex-local",
-    "name": "@paperclipai/adapter-codex-local",
+    "name": "@todero/adapter-codex-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/cursor-cloud",
-    "name": "@paperclipai/adapter-cursor-cloud",
+    "name": "@todero/adapter-cursor-cloud",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/cursor-local",
-    "name": "@paperclipai/adapter-cursor-local",
+    "name": "@todero/adapter-cursor-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/gemini-local",
-    "name": "@paperclipai/adapter-gemini-local",
+    "name": "@todero/adapter-gemini-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/grok-local",
-    "name": "@paperclipai/adapter-grok-local",
+    "name": "@todero/adapter-grok-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/hermes",
-    "name": "@paperclipai/hermes-paperclip-adapter",
+    "name": "@todero/hermes-paperclip-adapter",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/hermes-gateway",
-    "name": "@paperclipai/adapter-hermes-gateway",
+    "name": "@todero/adapter-hermes-gateway",
     "publishFromCi": false
   },
   {
     "dir": "packages/adapters/kimi-local",
-    "name": "@paperclipai/adapter-kimi-local",
+    "name": "@todero/adapter-kimi-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/opencode-local",
-    "name": "@paperclipai/adapter-opencode-local",
+    "name": "@todero/adapter-opencode-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/pi-local",
-    "name": "@paperclipai/adapter-pi-local",
+    "name": "@todero/adapter-pi-local",
     "publishFromCi": true
   },
   {
     "dir": "packages/adapters/openclaw-gateway",
-    "name": "@paperclipai/adapter-openclaw-gateway",
+    "name": "@todero/adapter-openclaw-gateway",
     "publishFromCi": true
   },
   {
     "dir": "packages/shared",
-    "name": "@paperclipai/shared",
+    "name": "@todero/shared",
     "publishFromCi": true
   },
   {
     "dir": "packages/skills-catalog",
-    "name": "@paperclipai/skills-catalog",
+    "name": "@todero/skills-catalog",
     "publishFromCi": true
   },
   {
     "dir": "packages/teams-catalog",
-    "name": "@paperclipai/teams-catalog",
+    "name": "@todero/teams-catalog",
     "publishFromCi": true
   },
   {
     "dir": "packages/db",
-    "name": "@paperclipai/db",
+    "name": "@todero/db",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sdk",
-    "name": "@paperclipai/plugin-sdk",
+    "name": "@todero/plugin-sdk",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/plugin-workspace-diff",
-    "name": "@paperclipai/plugin-workspace-diff",
+    "name": "@todero/plugin-workspace-diff",
     "publishFromCi": true
   },
   {
     "dir": "server",
-    "name": "@paperclipai/server",
+    "name": "@todero/server",
     "publishFromCi": true
   },
   {
     "dir": "cli",
-    "name": "paperclipai",
+    "name": "todero",
     "publishFromCi": true
   },
   {
     "dir": "packages/mcp-server",
-    "name": "@paperclipai/mcp-server",
+    "name": "@todero/mcp-server",
     "publishFromCi": true
   },
   {
     "dir": "packages/google-sheets-mcp-server",
-    "name": "@paperclipai/google-sheets-mcp-server",
+    "name": "@todero/google-sheets-mcp-server",
     "publishFromCi": false
   },
   {
     "dir": "packages/kv-demo-mcp-server",
-    "name": "@paperclipai/kv-demo-mcp-server",
+    "name": "@todero/kv-demo-mcp-server",
     "publishFromCi": false
   },
   {
-    "dir": "packages/plugins/create-paperclip-plugin",
-    "name": "@paperclipai/create-paperclip-plugin",
+    "dir": "packages/plugins/create-todero-plugin",
+    "name": "@todero/create-todero-plugin",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/cloudflare",
-    "name": "@paperclipai/plugin-cloudflare-sandbox",
+    "name": "@todero/plugin-cloudflare-sandbox",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/daytona",
-    "name": "@paperclipai/plugin-daytona",
+    "name": "@todero/plugin-daytona",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/exe-dev",
-    "name": "@paperclipai/plugin-exe-dev",
+    "name": "@todero/plugin-exe-dev",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/e2b",
-    "name": "@paperclipai/plugin-e2b",
+    "name": "@todero/plugin-e2b",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/modal",
-    "name": "@paperclipai/plugin-modal",
+    "name": "@todero/plugin-modal",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/kubernetes",
-    "name": "@paperclipai/plugin-kubernetes",
+    "name": "@todero/plugin-kubernetes",
     "publishFromCi": true
   },
   {
     "dir": "packages/plugins/sandbox-providers/novita",
-    "name": "@paperclipai/plugin-novita-sandbox",
+    "name": "@todero/plugin-novita-sandbox",
     "publishFromCi": true
   },
   {
     "dir": "ui",
-    "name": "@paperclipai/ui",
+    "name": "@todero/ui",
     "publishFromCi": true
   }
 ]

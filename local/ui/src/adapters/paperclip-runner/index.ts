@@ -1,11 +1,11 @@
-import { buildPaperclipRunnerConfig, parseCodexStdoutLine } from "@paperclipai/adapter-codex-local/ui";
+import { buildToderoRunnerConfig, parseCodexStdoutLine } from "@todero/adapter-codex-local/ui";
 import { CodexLocalConfigFields } from "../codex-local/config-fields";
 import type { UIAdapterModule } from "../types";
 
-export const paperclipRunnerUIAdapter: UIAdapterModule = {
+export const toderoRunnerUIAdapter: UIAdapterModule = {
   type: "paperclip_runner",
-  label: "Paperclip Runner",
+  label: "Todero Runner",
   parseStdoutLine: parseCodexStdoutLine,
   ConfigFields: CodexLocalConfigFields,
-  buildAdapterConfig: buildPaperclipRunnerConfig,
+  buildAdapterConfig: buildToderoRunnerConfig,
 };

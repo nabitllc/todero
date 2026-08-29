@@ -9,7 +9,7 @@ import type {
   Resources,
   Sandbox,
 } from "@daytonaio/sdk";
-import { decodeChannelBytes, definePlugin, NOOP_PLUGIN_TRACER } from "@paperclipai/plugin-sdk";
+import { decodeChannelBytes, definePlugin, NOOP_PLUGIN_TRACER } from "@todero/plugin-sdk";
 import type {
   PluginContext,
   PluginTracer,
@@ -39,14 +39,14 @@ import type {
   PluginEnvironmentValidateConfigParams,
   PluginEnvironmentValidationResult,
   PluginSyncOperation,
-} from "@paperclipai/plugin-sdk";
+} from "@todero/plugin-sdk";
 import { performSyncIn, performSyncOut, withProviderSpan } from "./file-sync.js";
 
 // The Claude `setup-token` login pseudo-terminal (PTY) session for this provider.
 // The session runs the login command on a real pseudo-terminal, streams the
 // terminal output, and delivers the delayed browser code plus the Enter byte. A
 // later phase binds the opener to `sandbox.process` and wraps it with the
-// `createLoginPtyTransport` factory from `@paperclipai/adapter-utils` to
+// `createLoginPtyTransport` factory from `@todero/adapter-utils` to
 // build the transport the login runner drives.
 export {
   createDaytonaLoginPtySessionOpener,
@@ -197,7 +197,7 @@ type DaytonaSnapshotService = {
   delete?: (snapshot: unknown) => Promise<void>;
 };
 
-const WORKSPACE_SENTINEL_RELATIVE_PATH = ".paperclip-runtime/reusable-sandbox-lease.json";
+const WORKSPACE_SENTINEL_RELATIVE_PATH = ".todero-runtime/reusable-sandbox-lease.json";
 
 // Quota-safety defaults (minutes). Daytona counts *stopped* sandboxes against
 // the storage quota; only *archived* sandboxes move to cold object storage and
@@ -376,13 +376,13 @@ function buildSandboxLabels(input: {
   reuseLease: boolean;
 }): Record<string, string> {
   return {
-    "paperclip-provider": "daytona",
-    "paperclip-company-id": input.companyId,
-    "paperclip-environment-id": input.environmentId,
-    "paperclip-reuse-lease": input.reuseLease ? "true" : "false",
-    ...(input.runId ? { "paperclip-run-id": input.runId } : {}),
-    ...(input.setupSessionId ? { "paperclip-setup-session-id": input.setupSessionId } : {}),
-    ...(input.purpose ? { "paperclip-purpose": input.purpose } : {}),
+    "todero-provider": "daytona",
+    "todero-company-id": input.companyId,
+    "todero-environment-id": input.environmentId,
+    "todero-reuse-lease": input.reuseLease ? "true" : "false",
+    ...(input.runId ? { "todero-run-id": input.runId } : {}),
+    ...(input.setupSessionId ? { "todero-setup-session-id": input.setupSessionId } : {}),
+    ...(input.purpose ? { "todero-purpose": input.purpose } : {}),
   };
 }
 
@@ -480,7 +480,7 @@ async function resolveSandboxWorkingDirectory(sandbox: Sandbox): Promise<string>
   const root = (await sandbox.getWorkDir())?.trim()
     || (await sandbox.getUserHomeDir())?.trim()
     || "/home/daytona";
-  const remoteCwd = path.posix.join(root, "paperclip-workspace");
+  const remoteCwd = path.posix.join(root, "todero-workspace");
   await sandbox.fs.createFolder(remoteCwd, "755");
   return remoteCwd;
 }
@@ -635,7 +635,7 @@ function leaseMetadata(input: {
     ...(input.config.archiveOnRelease ? { archiveOnRelease: true } : {}),
     remoteCwd: input.remoteCwd,
     resumedLease: input.resumedLease,
-    // Record the resources Paperclip attempted to request so future diagnosis
+    // Record the resources Todero attempted to request so future diagnosis
     // can compare requested allocation against what Daytona provisioned.
     ...(input.config.cpu != null ? { cpu: input.config.cpu } : {}),
     ...(input.config.memory != null ? { memory: input.config.memory } : {}),
@@ -659,7 +659,7 @@ function expiresAtForMinutes(minutes: number): string {
 }
 
 // Configure a provider-side time-to-live so Daytona destroys the sandbox at or
-// before the caller-requested deadline, even after a Paperclip crash or outage.
+// before the caller-requested deadline, even after a Todero crash or outage.
 // `setTtl` counts wall-clock time regardless of the sandbox state, so the destroy
 // happens even when the sandbox is stopped, paused, or archived. The function
 // returns the real provider destroy time (`autoDestroyAt`) as evidence of the
@@ -1487,7 +1487,7 @@ async function getOrCreateSession(sandbox: Sandbox, scope: SandboxScope): Promis
   // session. The guard checks and starts the create in one synchronous step, so
   // no second command can slip in between the store read and the create start.
   return sandboxHandleSessionStore.runSingle(scope, async () => {
-    const sessionId = `paperclip-${randomUUID()}`;
+    const sessionId = `todero-${randomUUID()}`;
     // Wrap the session create in a short `session.open` provider span. The span
     // carries no session id and no command text, only the provider family. The
     // host maps the name to `sandbox.daytona.session.open`.
@@ -1548,7 +1548,7 @@ async function executeOneShot(
   const timeoutMs = resolveTimeoutMs(params.timeoutMs, config);
   const effectiveTimeoutMs = gitNet ? Math.min(timeoutMs, GIT_NETWORK_TIMEOUT_MS) : timeoutMs;
   const timeoutSeconds = toTimeoutSeconds(effectiveTimeoutMs);
-  const stdinPath = params.stdin != null ? `/tmp/paperclip-stdin-${randomUUID()}` : null;
+  const stdinPath = params.stdin != null ? `/tmp/todero-stdin-${randomUUID()}` : null;
 
   // Marks the start of the `executeCommand` REST round-trip. Hoisted out of the
   // try so the timeout path below can still attribute the exec wall-time it spent
@@ -1786,7 +1786,7 @@ async function executeInSession(
   const timeoutMs = resolveTimeoutMs(params.timeoutMs, config);
   const effectiveTimeoutMs = gitNet ? Math.min(timeoutMs, GIT_NETWORK_TIMEOUT_MS) : timeoutMs;
   const timeoutSeconds = toTimeoutSeconds(effectiveTimeoutMs);
-  const stdinPath = params.stdin != null ? `/tmp/paperclip-stdin-${randomUUID()}` : null;
+  const stdinPath = params.stdin != null ? `/tmp/todero-stdin-${randomUUID()}` : null;
 
   // Marks the start of the session dispatch and poll. The timeout paths report
   // the exec wall-time spent before the abort, so a slow command is still
@@ -2087,7 +2087,7 @@ const plugin = definePlugin({
       const remoteCwd = await resolveSandboxWorkingDirectory(sandbox);
       const shellCommand = await detectSandboxShellCommand(sandbox, toTimeoutSeconds(config.timeoutMs));
       // Configure a provider-side destroy time at or before a caller deadline, so
-      // an abandoned sandbox self-destroys even if Paperclip is down. The lease
+      // an abandoned sandbox self-destroys even if Todero is down. The lease
       // carries the real provider expiry (or none) as evidence of the bound.
       const expiresAt = await configureSandboxExpiry({
         sandbox,
@@ -2319,7 +2319,7 @@ const plugin = definePlugin({
       typeof params.lease.metadata?.remoteCwd === "string" &&
       params.lease.metadata.remoteCwd.trim().length > 0
         ? params.lease.metadata.remoteCwd.trim()
-        : params.workspace.remotePath ?? params.workspace.localPath ?? "/paperclip-workspace";
+        : params.workspace.remotePath ?? params.workspace.localPath ?? "/todero-workspace";
 
     if (params.lease.providerLeaseId) {
       const scope: SandboxScope = {
@@ -2479,7 +2479,7 @@ const plugin = definePlugin({
     }
     const templateRef = sanitizeSnapshotName(
       params.templateLabel,
-      `paperclip-${params.environmentId}-${randomUUID().slice(0, 8)}`,
+      `todero-${params.environmentId}-${randomUUID().slice(0, 8)}`,
     );
     const timeoutMs = typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0
       ? Math.trunc(params.timeoutMs)

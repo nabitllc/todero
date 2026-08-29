@@ -4,12 +4,12 @@ import { createTestHarness } from "../src/testing.js";
 import type { PaperclipPluginManifestV1 } from "../src/types.js";
 
 const manifest = {
-  id: "paperclip.test-actions",
+  id: "todero.test-actions",
   apiVersion: 1,
   version: "1.0.0",
   displayName: "Test Actions",
   description: "Test plugin",
-  author: "Paperclip",
+  author: "Todero",
   categories: ["automation"],
   capabilities: [],
   entrypoints: {},

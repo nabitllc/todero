@@ -241,11 +241,11 @@ import {
   claudeSetupTokenCompletionResponseSchema,
   claudeOAuthTokenStatusResponseSchema,
   startAdapterAuthSessionRequestSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
   companyImportTransferDeclarationSchema,
-} from "@paperclipai/shared/company-import-transfer";
+} from "@todero/shared/company-import-transfer";
 
 type JsonSchema = Record<string, unknown>;
 type OpenApiResponse = Record<string, unknown>;
@@ -1120,7 +1120,7 @@ function applyDocumentFixups(document: any): any {
       in: "cookie",
       name: "paperclip_session",
       description:
-        "Board session cookie in authenticated mode. Paperclip uses Better Auth; cookie transport may vary by deployment.",
+        "Board session cookie in authenticated mode. Todero uses Better Auth; cookie transport may vary by deployment.",
     },
     [BOARD_API_KEY_AUTH_SCHEME]: {
       type: "http",
@@ -1133,7 +1133,7 @@ function applyDocumentFixups(document: any): any {
       scheme: "bearer",
       bearerFormat: "Agent API Key or Agent JWT",
       description:
-        "Agent API key or Paperclip-issued local agent JWT presented in the Authorization bearer header.",
+        "Agent API key or Todero-issued local agent JWT presented in the Authorization bearer header.",
     },
     [RUNTIME_TOOLS_BEARER_AUTH_SCHEME]: {
       type: "http",
@@ -1158,7 +1158,7 @@ function applyDocumentFixups(document: any): any {
         operation.security = BOARD_SECURITY;
       }
 
-      operation["x-paperclip-authorization"] =
+      operation["x-todero-authorization"] =
         authLevel === "instance_admin"
           ? { actor: "board", instanceAdmin: true }
           : authLevel === "board"
@@ -1238,7 +1238,7 @@ registry.registerPath({
       deploymentMode: z.string().optional(),
       cloud: z.object({
         managed: z.literal(true),
-        managedBy: z.literal("paperclip-cloud"),
+        managedBy: z.literal("todero-cloud"),
         stackSlug: z.string().nullable(),
         stackDisplayName: z.string().optional(),
         cloudBaseUrl: z.string().nullable(),
@@ -5018,7 +5018,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/onboarding-seed",
   tags: ["companies"],
-  summary: "Apply the onboarding seed Paperclip Cloud collected at signup",
+  summary: "Apply the onboarding seed Todero Cloud collected at signup",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 422: r.unprocessable },
 });
@@ -6349,8 +6349,8 @@ registry.registerPath({
     "JSON `meta` field, or a bare `application/zip` body with the `meta` JSON in the `meta` " +
     "query parameter); the zip is unzipped server-side into the same import bundle. " +
     "Callers can opt into asynchronous processing: trusted Cloud tenants set the " +
-    "`x-paperclip-cloud-async-import: 1` header (browsers cannot — the Cloud harness proxy " +
-    "strips inbound `x-paperclip-cloud-*` headers), while board sessions use the proxy-safe " +
+    "`x-todero-cloud-async-import: 1` header (browsers cannot — the Cloud harness proxy " +
+    "strips inbound `x-todero-cloud-*` headers), while board sessions use the proxy-safe " +
     "`?async=1` query parameter. Either way the server responds 202 with a job id and status " +
     "URL instead of holding the connection open for the whole import. While a board actor " +
     "already has an async job running, a resubmit returns 409 carrying the running job's id " +
@@ -7592,9 +7592,9 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
-  path: "/api/tools/oauth/paperclip-id/callback",
+  path: "/api/tools/oauth/todero-id/callback",
   tags: ["tool-access"],
-  summary: "Handle a brokered Paperclip ID OAuth callback",
+  summary: "Handle a brokered Todero ID OAuth callback",
 });
 
 registerCurrentRoute({
@@ -8064,9 +8064,9 @@ export function buildOpenApiDocument(): any {
   return applyDocumentFixups({
     openapi: "3.0.0",
     info: {
-      title: "Paperclip API",
+      title: "Todero API",
       version: "1.0.0",
-      description: "REST API for the Paperclip AI agent management platform",
+      description: "REST API for the Todero AI agent management platform",
     },
     servers: [{ url: "/" }],
     components: registry.buildComponents(),

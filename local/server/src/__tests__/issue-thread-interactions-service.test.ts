@@ -20,12 +20,12 @@ import {
   projectWorkspaces,
   projects,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@paperclipai/shared";
+import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@todero/shared";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { issueService } from "../services/issues.js";
 import { issueThreadInteractionService } from "../services/issue-thread-interactions.js";
@@ -41,7 +41,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-thread-interactions-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-issue-thread-interactions-");
     db = createDb(tempDb.connectionString);
     issuesSvc = issueService(db);
     interactionsSvc = issueThreadInteractionService(db);
@@ -78,7 +78,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -547,7 +547,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -692,7 +692,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -774,7 +774,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -841,7 +841,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -943,7 +943,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1251,7 +1251,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1498,7 +1498,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
     const agentId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1711,7 +1711,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2423,7 +2423,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2995,7 +2995,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -3123,7 +3123,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -3247,7 +3247,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -3408,7 +3408,7 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
 
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
         requireBoardApprovalForNewAgents: false,
       });

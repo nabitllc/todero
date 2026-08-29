@@ -20,8 +20,8 @@
   "redirectConstraints": "https-or-loopback-http",
   "methods": [
     {
-      "key": "paperclip-read",
-      "label": "Connect with Paperclip",
+      "key": "todero-read",
+      "label": "Connect with Todero",
       "transport": "mcp_remote",
       "auth": "oauth",
       "oauthStrategy": "paperclip_id_connector",
@@ -37,7 +37,7 @@
       "ownershipModes": [
         "platform_shared"
       ],
-      "whenToUse": "Use Paperclip-managed OAuth for read-only Sheets access.",
+      "whenToUse": "Use Todero-managed OAuth for read-only Sheets access.",
       "defaults": {
         "serverUrl": "https://sheetsmcp.googleapis.com/mcp/v1",
         "scopesHint": [
@@ -82,7 +82,7 @@
           "prompt": "consent"
         }
       },
-      "guidanceMd": "Enable the Drive, Sheets, and Sheets MCP APIs, then register Paperclip's callback URI.",
+      "guidanceMd": "Enable the Drive, Sheets, and Sheets MCP APIs, then register Todero's callback URI.",
       "consoleLinks": {
         "register": "https://console.cloud.google.com/auth/clients",
         "docs": "https://developers.google.com/workspace/guides/configure-mcp-servers"
@@ -93,8 +93,8 @@
       "riskTier": "S3"
     },
     {
-      "key": "paperclip-write",
-      "label": "Connect with Paperclip",
+      "key": "todero-write",
+      "label": "Connect with Todero",
       "transport": "mcp_remote",
       "auth": "oauth",
       "oauthStrategy": "paperclip_id_connector",
@@ -110,7 +110,7 @@
       "ownershipModes": [
         "platform_shared"
       ],
-      "whenToUse": "Use Paperclip-managed OAuth to read and update Sheets.",
+      "whenToUse": "Use Todero-managed OAuth to read and update Sheets.",
       "defaults": {
         "serverUrl": "https://sheetsmcp.googleapis.com/mcp/v1",
         "scopesHint": [
@@ -158,7 +158,7 @@
           "prompt": "consent"
         }
       },
-      "guidanceMd": "Enable the Drive, Sheets, and Sheets MCP APIs, then register Paperclip's callback URI.",
+      "guidanceMd": "Enable the Drive, Sheets, and Sheets MCP APIs, then register Todero's callback URI.",
       "consoleLinks": {
         "register": "https://console.cloud.google.com/auth/clients",
         "docs": "https://developers.google.com/workspace/guides/configure-mcp-servers"
@@ -171,22 +171,22 @@
     },
     {
       "key": "local",
-      "label": "Use the Paperclip robot account",
+      "label": "Use the Todero robot account",
       "transport": "local_stdio",
       "auth": "none",
       "capabilityProfile": {
         "key": "robot",
         "label": "Share selected sheets",
-        "description": "Share only named spreadsheets with the Paperclip robot account."
+        "description": "Share only named spreadsheets with the Todero robot account."
       },
       "ownershipModes": [
         "customer"
       ],
-      "whenToUse": "Share selected spreadsheets with the Paperclip robot account instead of connecting a Google identity.",
+      "whenToUse": "Share selected spreadsheets with the Todero robot account instead of connecting a Google identity.",
       "defaults": {
-        "templateKey": "paperclip.google-sheets"
+        "templateKey": "todero.google-sheets"
       },
-      "guidanceMd": "Share each spreadsheet with the Paperclip robot email, then paste the sheet links.",
+      "guidanceMd": "Share each spreadsheet with the Todero robot email, then paste the sheet links.",
       "riskTier": "S3",
       "requiredResourceFilters": [
         "spreadsheet"

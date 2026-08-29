@@ -107,7 +107,7 @@ async function getAvailablePort(): Promise<number> {
   }
 
   throw new Error(
-    `Failed to allocate embedded Postgres test port outside reserved Paperclip ports: ${[
+    `Failed to allocate embedded Postgres test port outside reserved Todero ports: ${[
       ...reservedPorts,
     ].join(", ")}`,
   );
@@ -124,8 +124,8 @@ async function createEmbeddedPostgresTestInstance(tempDirPrefix: string) {
   const logBuffer = createEmbeddedPostgresLogBuffer();
   const instance = new EmbeddedPostgres({
     databaseDir: dataDir,
-    user: "paperclip",
-    password: "paperclip",
+    user: "todero",
+    password: "todero",
     port,
     persistent: true,
     initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -247,7 +247,7 @@ async function probeEmbeddedPostgresSupport(): Promise<EmbeddedPostgresTestSuppo
   let started: { dataDir: string; instance: EmbeddedPostgresInstance } | null = null;
 
   try {
-    started = await startEmbeddedPostgresWithRetry("paperclip-embedded-postgres-probe-");
+    started = await startEmbeddedPostgresWithRetry("todero-embedded-postgres-probe-");
     return { supported: true };
   } catch (error) {
     return {
@@ -279,9 +279,9 @@ export async function startEmbeddedPostgresTestDatabase(
   const { port, dataDir, instance } = await startEmbeddedPostgresWithRetry(tempDirPrefix);
 
   try {
-    const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    await ensurePostgresDatabase(adminConnectionString, "paperclip");
-    const connectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+    const adminConnectionString = `postgres://todero:todero@127.0.0.1:${port}/postgres`;
+    await ensurePostgresDatabase(adminConnectionString, "todero");
+    const connectionString = `postgres://todero:todero@127.0.0.1:${port}/todero`;
     await applyPendingMigrations(connectionString);
 
     return {

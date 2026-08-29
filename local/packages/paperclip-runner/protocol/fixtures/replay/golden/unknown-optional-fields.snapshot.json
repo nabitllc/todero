@@ -1,8 +1,8 @@
 {
-  "schema": "paperclip.prp.session-snapshot.v1",
+  "schema": "todero.prp.session-snapshot.v1",
   "fixtureName": "Unknown optional fields",
   "identity": {
-    "schema": "paperclip.prp.identity.v1",
+    "schema": "todero.prp.identity.v1",
     "companyId": "company_replay",
     "issueId": "issue_replay_future",
     "runId": "run_replay_future",
@@ -13,7 +13,7 @@
     "futureIdentityLabel": "preserved"
   },
   "capabilities": {
-    "schema": "paperclip.prp.capabilities.v1",
+    "schema": "todero.prp.capabilities.v1",
     "sessionReusePolicy": "new_per_run",
     "driver": {
       "kind": "fake",
@@ -37,7 +37,7 @@
   "items": [],
   "requests": [],
   "proposedResult": {
-    "schema": "paperclip.run_result.v1",
+    "schema": "todero.run_result.v1",
     "reportedWorkDisposition": "done",
     "summary": "Unknown optional fields did not change the v1 projection.",
     "completionClaim": {
@@ -55,7 +55,7 @@
     }
   },
   "terminal": {
-    "schema": "paperclip.prp.terminal.v1",
+    "schema": "todero.prp.terminal.v1",
     "turnTerminalState": "completed",
     "runTerminalState": "succeeded",
     "reportedWorkDisposition": "done",

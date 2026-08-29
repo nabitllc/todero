@@ -1,8 +1,8 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
-import { LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@todero/adapter-opencode-local";
+import { LOW_TRUST_REVIEW_PRESET } from "@todero/shared";
 import { hoistModuleGraph } from "./helpers/hoist-module-graph.js";
 
 vi.mock("acpx/runtime", () => ({
@@ -121,15 +121,15 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
 }));
 
 function registerModuleMocks() {
-  vi.doMock("@paperclipai/adapter-opencode-local/server", async () => {
-    const actual = await vi.importActual<typeof import("@paperclipai/adapter-opencode-local/server")>("@paperclipai/adapter-opencode-local/server");
+  vi.doMock("@todero/adapter-opencode-local/server", async () => {
+    const actual = await vi.importActual<typeof import("@todero/adapter-opencode-local/server")>("@todero/adapter-opencode-local/server");
     return {
       ...actual,
       ensureOpenCodeModelConfiguredAndAvailable: mockEnsureOpenCodeModelConfiguredAndAvailable,
     };
   });
 
-  vi.doMock("@paperclipai/shared/telemetry", () => ({
+  vi.doMock("@todero/shared/telemetry", () => ({
     trackAgentCreated: mockTrackAgentCreated,
     trackErrorHandlerCrash: vi.fn(),
   }));
@@ -223,7 +223,7 @@ function createDbStub(options: { requireBoardApprovalForNewAgents?: boolean } = 
           then: vi.fn((resolve) =>
             Promise.resolve(resolve([{
               id: companyId,
-              name: "Paperclip",
+              name: "Todero",
               requireBoardApprovalForNewAgents: options.requireBoardApprovalForNewAgents ?? false,
             }])),
           ),
@@ -555,7 +555,7 @@ describe.sequential("agent permission routes", () => {
         adapterConfig: {
           workspaceStrategy: {
             type: "git_worktree",
-            provisionCommand: "touch /tmp/paperclip-rce",
+            provisionCommand: "touch /tmp/todero-rce",
           },
         },
       }));
@@ -588,7 +588,7 @@ describe.sequential("agent permission routes", () => {
               adapterConfig: {
                 workspaceStrategy: {
                   type: "git_worktree",
-                  provisionCommand: "touch /tmp/paperclip-rce",
+                  provisionCommand: "touch /tmp/todero-rce",
                 },
               },
             },

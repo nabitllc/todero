@@ -16,22 +16,22 @@ import path from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@todero/adapter-utils";
 import {
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 
 // Wrap the staging seam + both sandbox bridges in call-recording spies that
 // still delegate to the real implementations. A runner-backed sandbox test
 // exercises them end-to-end against a local runner, while a teardown test can
 // override just the bridges with stop spies. (Copied from execute.test.ts.)
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@todero/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@todero/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
-    startAdapterExecutionTargetPaperclipBridge: vi.fn(actual.startAdapterExecutionTargetPaperclipBridge),
+    startAdapterExecutionTargetToderoBridge: vi.fn(actual.startAdapterExecutionTargetToderoBridge),
     startAdapterExecutionTargetProcessSessionBridge: vi.fn(actual.startAdapterExecutionTargetProcessSessionBridge),
   };
 });
@@ -52,7 +52,7 @@ const execFile = promisify(execFileCallback);
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-acpx-skills-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-acpx-skills-"));
   tempRoots.push(root);
   return root;
 }
@@ -218,11 +218,11 @@ async function setupRemoteSandbox() {
 // Stub both sandbox bridges with stop spies collected per start, so a test can
 // assert the bridges stopped without running the real bridge transport.
 function stubBridges() {
-  const paperclipStops: Array<ReturnType<typeof vi.fn>> = [];
+  const toderoStops: Array<ReturnType<typeof vi.fn>> = [];
   const processStops: Array<ReturnType<typeof vi.fn>> = [];
-  vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementation(async () => {
+  vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementation(async () => {
     const stop = vi.fn(async () => {});
-    paperclipStops.push(stop);
+    toderoStops.push(stop);
     return { env: {}, stop } as never;
   });
   vi.mocked(startAdapterExecutionTargetProcessSessionBridge).mockImplementation(async () => {
@@ -232,12 +232,12 @@ function stubBridges() {
   });
   const anyStopped = (stops: Array<ReturnType<typeof vi.fn>>) =>
     stops.some((stop) => stop.mock.calls.length > 0);
-  return { paperclipStops, processStops, anyStopped };
+  return { toderoStops, processStops, anyStopped };
 }
 
 function throwingHandoffContext(): Record<string, unknown> {
   const context: Record<string, unknown> = {};
-  Object.defineProperty(context, "paperclipSessionHandoffMarkdown", {
+  Object.defineProperty(context, "toderoSessionHandoffMarkdown", {
     enumerable: false,
     get() {
       throw new Error("prompt build boom");
@@ -300,7 +300,7 @@ describe("ACP settlement — Layer A: engine teardown orchestration", () => {
     // and the seam teardown, and read the still-held lease during the sync-back.
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
     const order: string[] = [];
-    vi.mocked(startAdapterExecutionTargetPaperclipBridge).mockImplementation(async () => ({
+    vi.mocked(startAdapterExecutionTargetToderoBridge).mockImplementation(async () => ({
       env: {},
       stop: vi.fn(async () => {
         order.push("bridge-stop");
@@ -428,7 +428,7 @@ describe("ACP settlement — Layer A: engine teardown orchestration", () => {
     expect(result.exitCode).toBe(0);
     expect(closeSpy).toHaveBeenCalledTimes(1);
     expect((closeSpy.mock.calls[0]! as unknown[])[0]).toMatchObject({
-      reason: "paperclip completed turn cleanup",
+      reason: "todero completed turn cleanup",
       discardPersistentState: false,
     });
   });
@@ -622,9 +622,9 @@ describe("ACP settlement — Layer A: engine teardown orchestration", () => {
       discard: boolean;
       exitCode: number;
     }> = [
-      { status: "completed", reason: "paperclip completed turn cleanup", discard: false, exitCode: 0 },
-      { status: "failed", reason: "paperclip turn failed", discard: false, exitCode: 1 },
-      { status: "cancelled", reason: "paperclip turn cancelled", discard: true, exitCode: 1 },
+      { status: "completed", reason: "todero completed turn cleanup", discard: false, exitCode: 0 },
+      { status: "failed", reason: "todero turn failed", discard: false, exitCode: 1 },
+      { status: "cancelled", reason: "todero turn cancelled", discard: true, exitCode: 1 },
     ];
 
     for (const testCase of cases) {
@@ -673,7 +673,7 @@ describe("ACP settlement — Layer A: engine teardown orchestration", () => {
     // Corrected F3 policy (execute.ts:3374-3393): a failing teardown step is
     // recorded and swallowed; later steps still run and the lease still releases.
     const { stateDir, localCwd, executionTarget } = await setupRemoteSandbox();
-    const { paperclipStops, processStops, anyStopped } = stubBridges();
+    const { toderoStops, processStops, anyStopped } = stubBridges();
     const stagingLocks = new Map<string, Promise<unknown>>();
     const logs: Array<{ stream: string; text: string }> = [];
     const execute = createAcpxEngineExecutor({
@@ -700,7 +700,7 @@ describe("ACP settlement — Layer A: engine teardown orchestration", () => {
     } as never);
 
     expect(result.exitCode).toBe(1);
-    expect(anyStopped(paperclipStops)).toBe(true);
+    expect(anyStopped(toderoStops)).toBe(true);
     expect(anyStopped(processStops)).toBe(true);
     expect(stagingLocks.size).toBe(0);
     expect(
@@ -911,8 +911,8 @@ describe("ACP settlement — Layer B: restoreWorkspace order + native-sync selec
     await fs.mkdir(sourceRepoDir, { recursive: true });
     await git(sourceRepoDir, ["init"]);
     await git(sourceRepoDir, ["checkout", "-b", "main"]);
-    await git(sourceRepoDir, ["config", "user.name", "Paperclip Test"]);
-    await git(sourceRepoDir, ["config", "user.email", "test@paperclip.dev"]);
+    await git(sourceRepoDir, ["config", "user.name", "Todero Test"]);
+    await git(sourceRepoDir, ["config", "user.email", "test@todero.dev"]);
     await fs.writeFile(path.join(sourceRepoDir, "tracked.txt"), "base\n", "utf8");
     await git(sourceRepoDir, ["add", "tracked.txt"]);
     await git(sourceRepoDir, ["commit", "-m", "base"]);
@@ -940,8 +940,8 @@ describe("ACP settlement — Layer B: restoreWorkspace order + native-sync selec
 
     // The sandbox holds a real git worktree seeded from the host history.
     expect((await git(remoteWorkspaceDir, ["rev-list", "--count", "HEAD"]))).toBe("1");
-    await git(remoteWorkspaceDir, ["config", "user.name", "Paperclip Sandbox"]);
-    await git(remoteWorkspaceDir, ["config", "user.email", "sandbox@paperclip.dev"]);
+    await git(remoteWorkspaceDir, ["config", "user.name", "Todero Sandbox"]);
+    await git(remoteWorkspaceDir, ["config", "user.email", "sandbox@todero.dev"]);
     await git(remoteWorkspaceDir, ["add", "-A"]);
     await git(remoteWorkspaceDir, ["commit", "-m", "sandbox update"]);
     await fs.writeFile(path.join(remoteWorkspaceDir, "remote-only.txt"), "from sandbox\n", "utf8");

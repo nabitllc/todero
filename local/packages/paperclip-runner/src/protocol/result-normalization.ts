@@ -158,7 +158,7 @@ export function normalizeLegacyPrpStructuredRunResult(value: unknown): unknown {
       "paperclip_finish.v1",
     ].includes(reportedSchema)
   ) {
-    normalized.schema = "paperclip.run_result.v1";
+    normalized.schema = "todero.run_result.v1";
   }
   const signals = normalizePrpResultSignals(source);
   if (

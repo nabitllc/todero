@@ -46,11 +46,11 @@ export async function createScopedNetworkEgressPolicy(input: {
   if (input.mode === "cilium") {
     const manifest = buildCiliumNetworkPolicyManifest({
       namespace: input.namespace,
-      paperclipServerNamespace: "",
+      toderoServerNamespace: "",
       egressAllowFqdns: input.grant.allowFqdns,
       egressAllowCidrs: input.grant.allowCidrs,
       name,
-      endpointSelector: { "paperclip.io/run-id": input.runId },
+      endpointSelector: { "todero.io/run-id": input.runId },
       includeBaseRules: false,
       ownerReferences: [input.ownerReference],
     });
@@ -64,11 +64,11 @@ export async function createScopedNetworkEgressPolicy(input: {
   } else {
     const [, manifest] = buildNetworkPolicyManifests({
       namespace: input.namespace,
-      paperclipServerNamespace: "",
+      toderoServerNamespace: "",
       egressAllowFqdns: input.grant.allowFqdns,
       egressAllowCidrs: input.grant.allowCidrs,
       name,
-      podSelector: { "paperclip.io/run-id": input.runId },
+      podSelector: { "todero.io/run-id": input.runId },
       includeBaseRules: false,
       ownerReferences: [input.ownerReference],
     });
@@ -102,5 +102,5 @@ export function appendNetworkEgressDenyHint(stderr: string, grant: ScopedNetwork
   }
   const allowed = [...grant.allowFqdns, ...grant.allowCidrs];
   const detail = allowed.length > 0 ? ` Current task grant: ${allowed.join(", ")}.` : " No task-scoped destinations are granted.";
-  return `${stderr.trimEnd()}\nPaperclip network policy denied or could not route this request.${detail} Request access through ${NETWORK_EGRESS_GRANT_PATH}.\n`;
+  return `${stderr.trimEnd()}\nTodero network policy denied or could not route this request.${detail} Request access through ${NETWORK_EGRESS_GRANT_PATH}.\n`;
 }

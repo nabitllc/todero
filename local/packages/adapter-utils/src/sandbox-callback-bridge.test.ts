@@ -124,7 +124,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("round-trips localhost bridge requests over the sandbox queue without forwarding the bridge token", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-runtime-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-runtime-"));
     cleanupDirs.push(rootDir);
 
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -154,7 +154,7 @@ describe("sandbox callback bridge", () => {
       ],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const bridgeToken = createSandboxCallbackBridgeToken();
     const seenRequests: Array<{
@@ -214,7 +214,7 @@ describe("sandbox callback bridge", () => {
         authorization: `Bearer ${bridgeToken}`,
         accept: "application/json",
         "if-none-match": '"client-cache-key"',
-        "x-paperclip-run-id": "run-bridge-1",
+        "x-todero-run-id": "run-bridge-1",
         "x-bridge-debug": "drop-me",
       },
     });
@@ -263,12 +263,12 @@ describe("sandbox callback bridge", () => {
       },
     });
     expect(seenRequests[0]?.headers.authorization).toBeUndefined();
-    expect(seenRequests[0]?.headers["x-paperclip-run-id"]).toBeUndefined();
+    expect(seenRequests[0]?.headers["x-todero-run-id"]).toBeUndefined();
 
   });
 
   it("denies non-allowlisted requests by default", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-default-policy-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-default-policy-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -314,7 +314,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("drains already-queued requests on stop", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-drain-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-drain-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -370,7 +370,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("writes fast 503 responses for queued requests that miss the drain deadline", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-drain-timeout-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-drain-timeout-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -432,7 +432,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("handles SSH queue polling failures without emitting an unhandled rejection", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-ssh-failure-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-ssh-failure-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -449,7 +449,7 @@ describe("sandbox callback bridge", () => {
           makeDirs: async () => {},
           listJsonFiles: async () => {
             throw new Error(
-              "list /remote/.paperclip-runtime/gemini/paperclip-bridge/queue/requests failed with exit code 255: kex_exchange_identification: read: Connection reset by peer",
+              "list /remote/.todero-runtime/gemini/todero-bridge/queue/requests failed with exit code 255: kex_exchange_identification: read: Connection reset by peer",
             );
           },
           readTextFile: async () => {
@@ -484,7 +484,7 @@ describe("sandbox callback bridge", () => {
     // terminal catch, killing the relay for the rest of the run. The loop must
     // instead back off, retry, and still deliver requests queued after the
     // failure window.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-transient-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-transient-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -542,7 +542,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("keeps the queue-directory setup on the startup step but resets the poll loop store", async () => {
-    // The worker starts inside the measured `bridge.paperclip` step. Its awaited
+    // The worker starts inside the measured `bridge.todero` step. Its awaited
     // queue-directory setup is startup work, so a `makeDir` `sandbox.exec` span
     // must keep the active step and its `criticalPath` flag. The long-lived poll
     // loop runs run-time execs for the whole run, so a loop `sandbox.exec` span
@@ -555,14 +555,14 @@ describe("sandbox callback bridge", () => {
       resolveFirstPoll = resolve;
     });
 
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-step-store-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-step-store-"));
     cleanupDirs.push(rootDir);
     const queueDir = path.posix.join(rootDir, "queue");
 
     const worker = await measureStartupStep(
       {},
       () => 0,
-      "bridge.paperclip",
+      "bridge.todero",
       () =>
         startSandboxCallbackBridgeWorker({
           client: {
@@ -609,7 +609,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("test_paperclip_loop_exec_parents_to_run_context", async () => {
-    // The worker starts inside the measured `bridge.paperclip` step. Its awaited
+    // The worker starts inside the measured `bridge.todero` step. Its awaited
     // queue-directory setup is startup work and keeps the active step. The poll
     // loop shell stays outside that store. But a per-request unit of work is
     // run-time work, so the worker runs each request under the current-run
@@ -626,14 +626,14 @@ describe("sandbox callback bridge", () => {
       resolveServed = resolve;
     });
 
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-run-parent-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-run-parent-"));
     cleanupDirs.push(rootDir);
     const queueDir = path.posix.join(rootDir, "queue");
 
     const worker = await measureStartupStep(
       {},
       () => 0,
-      "bridge.paperclip",
+      "bridge.todero",
       () =>
         startSandboxCallbackBridgeWorker({
           client: {
@@ -693,7 +693,7 @@ describe("sandbox callback bridge", () => {
       resolveServed = resolve;
     });
 
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-relay-span-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-relay-span-"));
     cleanupDirs.push(rootDir);
     const queueDir = path.posix.join(rootDir, "queue");
 
@@ -739,14 +739,14 @@ describe("sandbox callback bridge", () => {
       resolveServed = resolve;
     });
 
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-no-getter-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-no-getter-"));
     cleanupDirs.push(rootDir);
     const queueDir = path.posix.join(rootDir, "queue");
 
     const worker = await measureStartupStep(
       {},
       () => 0,
-      "bridge.paperclip",
+      "bridge.todero",
       () =>
         startSandboxCallbackBridgeWorker({
           client: {
@@ -778,7 +778,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("serializes remote response writes so stop does not recreate a late orphaned response", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-response-lock-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-response-lock-"));
     cleanupDirs.push(rootDir);
 
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -801,7 +801,7 @@ describe("sandbox callback bridge", () => {
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const bridgeToken = createSandboxCallbackBridgeToken();
     const seenRequestIds: string[] = [];
@@ -864,13 +864,13 @@ describe("sandbox callback bridge", () => {
     await expect(readdir(directories.responsesDir)).resolves.toEqual([]);
     await expect(
       readdir(directories.responsesDir).then((entries) =>
-        entries.filter((entry) => entry.endsWith(".tmp") || entry.includes(".paperclip-write.lock")),
+        entries.filter((entry) => entry.endsWith(".tmp") || entry.includes(".todero-write.lock")),
       ),
     ).resolves.toEqual([]);
   });
 
   it("rejects non-JSON request bodies and full queues at the bridge server", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-server-guards-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-server-guards-"));
     cleanupDirs.push(rootDir);
 
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -894,7 +894,7 @@ describe("sandbox callback bridge", () => {
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const bridgeToken = createSandboxCallbackBridgeToken();
 
@@ -952,7 +952,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("returns a 502 when the host response times out", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-timeout-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-timeout-"));
     cleanupDirs.push(rootDir);
 
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -975,7 +975,7 @@ describe("sandbox callback bridge", () => {
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const bridgeToken = createSandboxCallbackBridgeToken();
     const bridge = await startSandboxCallbackBridgeServer({
       runner,
@@ -1004,7 +1004,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("returns a 502 for malformed host response files", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-malformed-response-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-malformed-response-"));
     cleanupDirs.push(rootDir);
 
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
@@ -1027,7 +1027,7 @@ describe("sandbox callback bridge", () => {
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const bridgeToken = createSandboxCallbackBridgeToken();
     const bridge = await startSandboxCallbackBridgeServer({
@@ -1065,15 +1065,15 @@ describe("sandbox callback bridge", () => {
   });
 
   it("reuses an already-uploaded bridge entrypoint when the remote file hash matches", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-sync-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-sync-"));
     cleanupDirs.push(rootDir);
 
     const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
     const remoteAssetDir = path.posix.join(
       remoteWorkspaceDir,
-      ".paperclip-runtime",
+      ".todero-runtime",
       "codex",
-      "paperclip-bridge",
+      "todero-bridge",
       "server",
     );
     await mkdir(remoteWorkspaceDir, { recursive: true });
@@ -1103,29 +1103,29 @@ describe("sandbox callback bridge", () => {
 
     expect(first.uploaded).toBe(true);
     expect(second.uploaded).toBe(false);
-    await expect(readFile(path.posix.join(remoteAssetDir, "paperclip-bridge-server.mjs"), "utf8")).resolves.toBe(expandedSource);
+    await expect(readFile(path.posix.join(remoteAssetDir, "todero-bridge-server.mjs"), "utf8")).resolves.toBe(expandedSource);
     await expect(
       readdir(remoteAssetDir).then((entries) =>
         entries.filter(
           (entry) =>
-            entry.endsWith(".paperclip-upload.b64") ||
+            entry.endsWith(".todero-upload.b64") ||
             entry.endsWith(".partial") ||
-            entry === ".paperclip-bridge-upload.lock",
+            entry === ".todero-bridge-upload.lock",
         ),
       ),
     ).resolves.toEqual([]);
   });
 
   it("rejects a corrupted bridge entrypoint upload without committing a torn remote file", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-sync-corrupt-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-sync-corrupt-"));
     cleanupDirs.push(rootDir);
 
     const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
     const remoteAssetDir = path.posix.join(
       remoteWorkspaceDir,
-      ".paperclip-runtime",
+      ".todero-runtime",
       "codex",
-      "paperclip-bridge",
+      "todero-bridge",
       "server",
     );
     await mkdir(remoteWorkspaceDir, { recursive: true });
@@ -1157,31 +1157,31 @@ describe("sandbox callback bridge", () => {
       }),
     ).rejects.toThrow(/sha mismatch/i);
 
-    await expect(readFile(path.posix.join(remoteAssetDir, "paperclip-bridge-server.mjs"), "utf8")).rejects.toThrow();
+    await expect(readFile(path.posix.join(remoteAssetDir, "todero-bridge-server.mjs"), "utf8")).rejects.toThrow();
     await expect(
       readdir(remoteAssetDir).then((entries) =>
         entries.filter(
           (entry) =>
-            entry.endsWith(".paperclip-upload.b64") ||
+            entry.endsWith(".todero-upload.b64") ||
             entry.endsWith(".partial") ||
-            entry === ".paperclip-bridge-upload.lock",
+            entry === ".todero-bridge-upload.lock",
         ),
       ),
     ).resolves.toEqual([]);
   });
 
-  // The process-session remote script is a static, Paperclip-authored `.mjs`
+  // The process-session remote script is a static, Todero-authored `.mjs`
   // written into the sandbox on every bridge start. `syncRemoteTextFileWithHashSkip`
   // (which now backs that write, mirroring the bridge-entrypoint sha256 gate)
   // content-hash-skips it so a warm start where the remote script already matches
   // costs ZERO write execs instead of the prior ~3 (prepare/append/finalize base64
   // upload).
   it("test_process_session_script_skipped_when_remote_hash_matches: warm start with a matching remote hash writes 0 execs", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-hashskip-warm-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-hashskip-warm-"));
     cleanupDirs.push(rootDir);
     const remoteDir = path.join(rootDir, "runtime", "codex", "process-sessions");
-    const remotePath = path.posix.join(remoteDir, "paperclip-process-session-remote.mjs");
-    const lockDir = path.posix.join(remoteDir, ".paperclip-process-session-script.lock");
+    const remotePath = path.posix.join(remoteDir, "todero-process-session-remote.mjs");
+    const lockDir = path.posix.join(remoteDir, ".todero-process-session-script.lock");
     const body = "console.log('process session remote script v1');\n";
 
     let execCount = 0;
@@ -1223,20 +1223,20 @@ describe("sandbox callback bridge", () => {
       readdir(remoteDir).then((entries) =>
         entries.filter(
           (entry) =>
-            entry.endsWith(".paperclip-upload.b64") ||
+            entry.endsWith(".todero-upload.b64") ||
             entry.endsWith(".partial") ||
-            entry === ".paperclip-process-session-script.lock",
+            entry === ".todero-process-session-script.lock",
         ),
       ),
     ).resolves.toEqual([]);
   });
 
   it("test_process_session_script_rewritten_on_hash_mismatch: a mismatched remote hash still rewrites the script", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-hashskip-cold-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-hashskip-cold-"));
     cleanupDirs.push(rootDir);
     const remoteDir = path.join(rootDir, "runtime", "codex", "process-sessions");
-    const remotePath = path.posix.join(remoteDir, "paperclip-process-session-remote.mjs");
-    const lockDir = path.posix.join(remoteDir, ".paperclip-process-session-script.lock");
+    const remotePath = path.posix.join(remoteDir, "todero-process-session-remote.mjs");
+    const lockDir = path.posix.join(remoteDir, ".todero-process-session-script.lock");
     const body = "console.log('process session remote script v2');\n";
 
     // Pre-seed the remote with a DIFFERENT script (a prior/stale build).
@@ -1260,11 +1260,11 @@ describe("sandbox callback bridge", () => {
   });
 
   it("fails loud when the hash-skip sync exec errors instead of silently re-uploading", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-hashskip-fail-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-hashskip-fail-"));
     cleanupDirs.push(rootDir);
     const remoteDir = path.join(rootDir, "runtime", "codex", "process-sessions");
-    const remotePath = path.posix.join(remoteDir, "paperclip-process-session-remote.mjs");
-    const lockDir = path.posix.join(remoteDir, ".paperclip-process-session-script.lock");
+    const remotePath = path.posix.join(remoteDir, "todero-process-session-remote.mjs");
+    const lockDir = path.posix.join(remoteDir, ".todero-process-session-script.lock");
 
     // A runner whose exec fails: the hash-gate cannot be evaluated. The write
     // must surface the failure, never swallow it and re-upload behind a green
@@ -1318,7 +1318,7 @@ describe("sandbox callback bridge", () => {
       { method: "GET", path: "/api/companies/co-1/approvals" },
       { method: "GET", path: "/api/companies/co-1/routines" },
       { method: "GET", path: "/api/companies/co-1/skills" },
-      // Hire skill (paperclip-create-agent): discovery + submit + issue linking
+      // Hire skill (todero-create-agent): discovery + submit + issue linking
       { method: "GET", path: "/llms/agent-configuration.txt" },
       { method: "GET", path: "/llms/agent-configuration/claude_local.txt" },
       { method: "GET", path: "/llms/agent-icons.txt" },
@@ -1428,7 +1428,7 @@ describe("sandbox callback bridge", () => {
       timeoutMs: 30_000,
     });
 
-    await client.makeDir("/workspace/.paperclip-runtime/codex/paperclip-bridge/queue");
+    await client.makeDir("/workspace/.todero-runtime/codex/todero-bridge/queue");
 
     expect(runner.execute).toHaveBeenCalledWith(expect.objectContaining({
       env: {
@@ -1438,7 +1438,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("creates the bridge queue directories in one directory-creation exec", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-makedirs-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-makedirs-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -1476,7 +1476,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("falls back to sequential makeDir when the queue client omits makeDirs", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-makedir-fallback-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-makedir-fallback-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -1577,7 +1577,7 @@ describe("sandbox callback bridge", () => {
   }
 
   it("times out a stalled poll, surfaces a run-level error, and recovers to deliver the request", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-hang-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-hang-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -1924,7 +1924,7 @@ describe("sandbox callback bridge", () => {
     const responseBody = JSON.parse(parsed.body);
     expect(responseBody.outcome).toBe("indeterminate");
     expect(responseBody.retryable).toBe(false);
-    expect(parsed.headers?.["x-paperclip-bridge-outcome"]).toBe("indeterminate");
+    expect(parsed.headers?.["x-todero-bridge-outcome"]).toBe("indeterminate");
     expect(responseWrites.some((write) => write.status === 503)).toBe(false);
     expect(responseWrites.some((write) => write.status === 502)).toBe(false);
     // The backstop removed the request file, so it does not strand in the queue.
@@ -2031,7 +2031,7 @@ describe("sandbox callback bridge", () => {
     const responseBody = JSON.parse(parsed.body);
     expect(responseBody.outcome).toBe("indeterminate");
     expect(responseBody.retryable).toBe(false);
-    expect(parsed.headers?.["x-paperclip-bridge-outcome"]).toBe("indeterminate");
+    expect(parsed.headers?.["x-todero-bridge-outcome"]).toBe("indeterminate");
 
     expect(requestRemovals).toContain(requestPath);
 
@@ -2315,7 +2315,7 @@ describe("sandbox callback bridge", () => {
     const responseBody = JSON.parse(parsed.body);
     expect(responseBody.outcome).toBe("indeterminate");
     expect(responseBody.retryable).toBe(false);
-    expect(parsed.headers?.["x-paperclip-bridge-outcome"]).toBe("indeterminate");
+    expect(parsed.headers?.["x-todero-bridge-outcome"]).toBe("indeterminate");
     // The finalize writes failed before the backstop wrote, so it took a later
     // attempt.
     expect(writeAttempts).toBeGreaterThanOrEqual(4);
@@ -2525,7 +2525,7 @@ describe("sandbox callback bridge", () => {
     // possibly-committed mutation. The outcome header and body still forward, so a
     // caller that reads them still sees the indeterminate result.
     const source = getSandboxCallbackBridgeServerSource();
-    expect(source).toContain("x-paperclip-bridge-outcome");
+    expect(source).toContain("x-todero-bridge-outcome");
     expect(source).toContain('=== "indeterminate"');
     expect(source).toContain("res.statusCode = 409");
   });
@@ -2626,7 +2626,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("trips the watchdog on a stalled poll, writes a 503, and surfaces a run-level error", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-watchdog-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-watchdog-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -2673,7 +2673,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("processes a fast request with no false-positive timeout and no run-level error", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-fast-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-fast-"));
     cleanupDirs.push(rootDir);
 
     const queueDir = path.posix.join(rootDir, "queue");
@@ -2730,7 +2730,7 @@ describe("sandbox callback bridge", () => {
       workspaceLocalDir: localWorkspaceDir,
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     return {
       runner,
       remoteWorkspaceDir,
@@ -2742,7 +2742,7 @@ describe("sandbox callback bridge", () => {
   }
 
   it("cleans up a timed-out request file and keeps serving after the host recovers", async () => {
-    const fixture = await prepareGatewayFixture("paperclip-bridge-timeout-clean-");
+    const fixture = await prepareGatewayFixture("todero-bridge-timeout-clean-");
 
     const bridge = await startSandboxCallbackBridgeServer({
       runner: fixture.runner,
@@ -2798,7 +2798,7 @@ describe("sandbox callback bridge", () => {
   }, 30_000);
 
   it("sweeps stale request files before rejecting at the queue-depth cap", async () => {
-    const fixture = await prepareGatewayFixture("paperclip-bridge-stale-sweep-");
+    const fixture = await prepareGatewayFixture("todero-bridge-stale-sweep-");
 
     const bridge = await startSandboxCallbackBridgeServer({
       runner: fixture.runner,
@@ -2903,9 +2903,9 @@ describe("sandbox callback bridge", () => {
     // Before readiness, the crash handlers must not keep the process alive: a
     // failed bind means the gateway can never serve, and surviving would only
     // leave an un-ready zombie while the host waits out its readiness poll.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-bind-fail-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-bind-fail-"));
     cleanupDirs.push(rootDir);
-    const entrypoint = path.join(rootDir, "paperclip-bridge-server.mjs");
+    const entrypoint = path.join(rootDir, "todero-bridge-server.mjs");
     await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
     const queueDir = path.join(rootDir, "queue");
     await mkdir(queueDir, { recursive: true });
@@ -2940,7 +2940,7 @@ describe("sandbox callback bridge", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("[paperclip-bridge] server error");
+    expect(stderr).toContain("[todero-bridge] server error");
     expect(stderr).toContain("EADDRINUSE");
   }, 15_000);
 
@@ -2948,9 +2948,9 @@ describe("sandbox callback bridge", () => {
     // The closed mode allowlist rejects `duplex_v1` before the queue-directory
     // check, so a stale `duplex_v1` launch environment fails startup instead
     // of silently falling through to the queue gateway.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-mode-duplex-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-mode-duplex-"));
     cleanupDirs.push(rootDir);
-    const entrypoint = path.join(rootDir, "paperclip-bridge-server.mjs");
+    const entrypoint = path.join(rootDir, "todero-bridge-server.mjs");
     await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
     const queueDir = path.join(rootDir, "queue");
     await mkdir(queueDir, { recursive: true });
@@ -2980,9 +2980,9 @@ describe("sandbox callback bridge", () => {
   it("exits nonzero for an unknown bridge mode instead of starting the queue gateway", async () => {
     // The closed mode allowlist rejects every value it does not name, not
     // only the retired duplex transport.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-mode-unknown-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-mode-unknown-"));
     cleanupDirs.push(rootDir);
-    const entrypoint = path.join(rootDir, "paperclip-bridge-server.mjs");
+    const entrypoint = path.join(rootDir, "todero-bridge-server.mjs");
     await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
     const queueDir = path.join(rootDir, "queue");
     await mkdir(queueDir, { recursive: true });
@@ -3016,9 +3016,9 @@ describe("sandbox callback bridge", () => {
     // with nothing in between, because the gateway hands stdout to the
     // HTTP/2 client immediately after it writes READY and starts no
     // heartbeat timer and writes no envelope frame on this path.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-http2-gateway-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-http2-gateway-"));
     cleanupDirs.push(rootDir);
-    const entrypoint = path.join(rootDir, "paperclip-bridge-server.mjs");
+    const entrypoint = path.join(rootDir, "todero-bridge-server.mjs");
     await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
 
     const probe = createServer();
@@ -3102,9 +3102,9 @@ describe("sandbox callback bridge", () => {
     maxBodyBytes?: number;
     forwardRequest: (request: Http2BridgeForwardRequest) => Promise<Http2BridgeForwardResult>;
   }): Promise<{ baseUrl: string; stop: () => Promise<void> }> {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-http2-test-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-http2-test-"));
     cleanupDirs.push(rootDir);
-    const entrypoint = path.join(rootDir, "paperclip-bridge-server.mjs");
+    const entrypoint = path.join(rootDir, "todero-bridge-server.mjs");
     await writeFile(entrypoint, getSandboxCallbackBridgeServerSource(), "utf8");
 
     const probe = createServer();
@@ -3316,7 +3316,7 @@ describe("sandbox callback bridge", () => {
   }, 15_000);
 
   it("rejects a request body over maxBodyBytes on the queue path before it writes the queue file", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-queue-maxbody-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-queue-maxbody-"));
     cleanupDirs.push(rootDir);
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
     const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
@@ -3335,7 +3335,7 @@ describe("sandbox callback bridge", () => {
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const directories = sandboxCallbackBridgeDirectories(queueDir);
     const bridgeToken = createSandboxCallbackBridgeToken();
     const maxBodyBytes = 32;
@@ -3372,7 +3372,7 @@ describe("sandbox callback bridge", () => {
   });
 
   it("keeps the queue request payload's body field as a plain JSON string", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-bridge-queue-body-shape-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-bridge-queue-body-shape-"));
     cleanupDirs.push(rootDir);
     const localWorkspaceDir = path.join(rootDir, "local-workspace");
     const remoteWorkspaceDir = path.join(rootDir, "remote-workspace");
@@ -3391,7 +3391,7 @@ describe("sandbox callback bridge", () => {
       assets: [{ key: "bridge", localDir: bridgeAsset.localDir }],
     });
 
-    const queueDir = path.posix.join(prepared.runtimeRootDir, "paperclip-bridge");
+    const queueDir = path.posix.join(prepared.runtimeRootDir, "todero-bridge");
     const bridgeToken = createSandboxCallbackBridgeToken();
     const requestBodyText = JSON.stringify({ note: "café" });
 

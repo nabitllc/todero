@@ -1,13 +1,13 @@
 import { Router, type Request } from "express";
 import { eq } from "drizzle-orm";
-import { heartbeatRuns, type Db } from "@paperclipai/db";
+import { heartbeatRuns, type Db } from "@todero/db";
 import {
   addApprovalCommentSchema,
   createApprovalSchema,
   requestApprovalRevisionSchema,
   resolveApprovalSchema,
   resubmitApprovalSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {

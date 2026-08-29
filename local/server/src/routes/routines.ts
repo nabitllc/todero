@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   createRoutineSchema,
   createDocumentAnnotationCommentSchema,
@@ -10,8 +10,8 @@ import {
   updateDocumentAnnotationThreadSchema,
   updateRoutineSchema,
   updateRoutineTriggerSchema,
-} from "@paperclipai/shared";
-import { trackRoutineCreated } from "@paperclipai/shared/telemetry";
+} from "@todero/shared";
+import { trackRoutineCreated } from "@todero/shared/telemetry";
 import { validate, validateIssueMutationBody } from "../middleware/validate.js";
 import { accessService, documentAnnotationService, logActivity, routineService } from "../services/index.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -656,9 +656,9 @@ export function routineRoutes(
   router.post("/routine-triggers/public/:publicId/fire", async (req, res) => {
     const result = await svc.firePublicTrigger(req.params.publicId as string, {
       authorizationHeader: req.header("authorization"),
-      signatureHeader: req.header("x-paperclip-signature"),
+      signatureHeader: req.header("x-todero-signature"),
       hubSignatureHeader: req.header("x-hub-signature-256"),
-      timestampHeader: req.header("x-paperclip-timestamp"),
+      timestampHeader: req.header("x-todero-timestamp"),
       idempotencyKey: req.header("idempotency-key"),
       rawBody: (req as { rawBody?: Buffer }).rawBody ?? null,
       payload: typeof req.body === "object" && req.body !== null ? req.body as Record<string, unknown> : null,

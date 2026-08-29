@@ -31,7 +31,7 @@ Turning on the flag is all the setup there is.
 
 That's it. The everyday dev server works as-is: a `local_trusted` localhost box, an
 **`authenticated` instance behind Tailscale + login** (e.g.
-`http://paperclip-dev:45439`), and a `pnpm dev` server built with
+`http://todero-dev:45439`), and a `pnpm dev` server built with
 `NODE_ENV=production` are all fine — those are private, so the Smoke Lab is
 available. The auth mode and the Node build target no longer matter; only public
 exposure is disallowed (the fake OAuth provider and fixture sidecars must never be
@@ -66,7 +66,7 @@ the URL bar, e.g. `PAP`). Replace it in the example paths.
    **Install fixture apps**, **Reset** — an *Integration matrix* (all cells
    "not run" at first), and a *Runs* panel ("no runs yet"). A card shows the
    **Fake OAuth demo credentials**:
-   - email: `smoke@paperclip.test`
+   - email: `smoke@todero.test`
    - password: `smoke-password`
 3. Click **Start services**.
    **You should see:** two service cards flip to a green **running** dot:
@@ -152,9 +152,9 @@ This is the richest path — do it by hand once and the rest are variations.
      with Smoke OAuth** with a **Reconnect** button instead — Reconnect walks the
      same flow.
    - Click it. The fake provider's **real consent page** opens: a brown banner
-     *"SMOKE TEST - not a real provider"*, headed *"Paperclip Smoke OAuth login +
+     *"SMOKE TEST - not a real provider"*, headed *"Todero Smoke OAuth login +
      consent"*.
-   - The **email is pre-filled** (`smoke@paperclip.test`). Type the password
+   - The **email is pre-filled** (`smoke@todero.test`). Type the password
      `smoke-password` and click **Authorize smoke test app**.
    - **You should see:** the provider accepts the credentials and returns you to
      this connection's **Setup** tab with the card now reading **Connected with
@@ -260,7 +260,7 @@ read the evidence:
 
 ## 8. The daily routine (hands-off)
 
-A recurring Paperclip routine — **"Daily Smoke Lab integration smoke (P1-P7)"** —
+A recurring Todero routine — **"Daily Smoke Lab integration smoke (P1-P7)"** —
 runs the browser smoke for you every day and:
 
 - **records** each run to the results API (matrix + dashboard);

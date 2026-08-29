@@ -1,4 +1,4 @@
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import { isGitHubDotCom } from "./github-fetch.js";
 import { secretService } from "./secrets.js";
 

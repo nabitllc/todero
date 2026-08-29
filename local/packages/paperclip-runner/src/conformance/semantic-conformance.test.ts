@@ -42,7 +42,7 @@ describe("semantic conformance kit", () => {
       ],
     });
 
-    expect(report.schema).toBe("paperclip.semantic-conformance-report.v1");
+    expect(report.schema).toBe("todero.semantic-conformance-report.v1");
     expect(report.rows).toHaveLength(1);
     expect(report.rows[0]?.adapterIds).toEqual(["mock", "real"]);
   });

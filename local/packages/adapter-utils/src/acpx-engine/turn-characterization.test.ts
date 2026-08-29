@@ -2,22 +2,22 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@todero/adapter-utils";
 import {
   prepareAdapterExecutionTargetRuntime,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
   startAdapterExecutionTargetProcessSessionBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 
 // Wrap the staging seam + both sandbox bridges in call-recording spies that
 // still delegate to the real implementations. This mirrors the execute.test.ts
 // harness so the turn characterization tests share the same mocked module graph.
-vi.mock("@paperclipai/adapter-utils/execution-target", async (importActual) => {
-  const actual = await importActual<typeof import("@paperclipai/adapter-utils/execution-target")>();
+vi.mock("@todero/adapter-utils/execution-target", async (importActual) => {
+  const actual = await importActual<typeof import("@todero/adapter-utils/execution-target")>();
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime: vi.fn(actual.prepareAdapterExecutionTargetRuntime),
-    startAdapterExecutionTargetPaperclipBridge: vi.fn(actual.startAdapterExecutionTargetPaperclipBridge),
+    startAdapterExecutionTargetToderoBridge: vi.fn(actual.startAdapterExecutionTargetToderoBridge),
     startAdapterExecutionTargetProcessSessionBridge: vi.fn(actual.startAdapterExecutionTargetProcessSessionBridge),
   };
 });
@@ -31,7 +31,7 @@ import { runChildProcess } from "../server-utils.js";
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-acpx-skills-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-acpx-skills-"));
   tempRoots.push(root);
   return root;
 }
@@ -644,7 +644,7 @@ describe("ACPX engine turn characterization", () => {
     // A throwing accessor on a field only buildPrompt reads makes the prompt build
     // fail after the session handshake succeeds but before startTurn runs.
     const context: Record<string, unknown> = {};
-    Object.defineProperty(context, "paperclipSessionHandoffMarkdown", {
+    Object.defineProperty(context, "toderoSessionHandoffMarkdown", {
       enumerable: false,
       get() {
         throw new Error("prompt build boom");

@@ -1,6 +1,6 @@
 import { memo, useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent, type CSSProperties, type DragEvent, type RefObject } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AgentEnvConfig, EnvBinding, IssueWorkMode } from "@paperclipai/shared";
+import type { AgentEnvConfig, EnvBinding, IssueWorkMode } from "@todero/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useAdapterCapabilities } from "../adapters/use-adapter-capabilities";
@@ -81,7 +81,7 @@ import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySel
 import { getTrustPreset } from "../lib/trust-policy-ui";
 import { ReusableExecutionWorkspaceSelect } from "./ReusableExecutionWorkspaceSelect";
 
-const DRAFT_KEY = "paperclip:issue-draft";
+const DRAFT_KEY = "todero:issue-draft";
 const DEBOUNCE_MS = 800;
 
 type VisualViewportLayout = {
@@ -1406,7 +1406,7 @@ export function NewIssueDialog() {
           // their default prevented. Telling Radix "this event is handled" skips
           // that preventDefault, restoring popover scroll and autocomplete taps.
           const target = event.detail.originalEvent.target as HTMLElement | null;
-          if (target?.closest("[data-radix-popper-content-wrapper], [data-paperclip-floating-ui]")) {
+          if (target?.closest("[data-radix-popper-content-wrapper], [data-todero-floating-ui]")) {
             event.preventDefault();
           }
         }}

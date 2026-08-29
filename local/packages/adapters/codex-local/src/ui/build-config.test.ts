@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCodexLocalConfig, buildPaperclipRunnerConfig } from "./build-config.js";
-import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import { buildCodexLocalConfig, buildToderoRunnerConfig } from "./build-config.js";
+import type { CreateConfigValues } from "@todero/adapter-utils";
 
 function makeValues(overrides: Partial<CreateConfigValues> = {}): CreateConfigValues {
   return {
@@ -70,9 +70,9 @@ describe("buildCodexLocalConfig", () => {
   });
 });
 
-describe("buildPaperclipRunnerConfig", () => {
+describe("buildToderoRunnerConfig", () => {
   it("keeps only settings implemented by the Codex runner profile", () => {
-    const config = buildPaperclipRunnerConfig(makeValues({
+    const config = buildToderoRunnerConfig(makeValues({
       codexEngine: "acp",
       codexAcpAgentCommand: "custom-acp",
       codexAcpStateDir: "/tmp/acp",

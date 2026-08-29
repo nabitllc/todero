@@ -1,20 +1,20 @@
-import type { PaperclipSemanticActionDescriptor } from "../catalog/semantic-action-types.js";
+import type { ToderoSemanticActionDescriptor } from "../catalog/semantic-action-types.js";
 import type {
-  PaperclipSemanticAuthorizationDecision,
-  PaperclipSemanticAuthorizationPhase,
-  PaperclipSemanticDenialCode,
-  PaperclipSemanticRunContext,
+  ToderoSemanticAuthorizationDecision,
+  ToderoSemanticAuthorizationPhase,
+  ToderoSemanticDenialCode,
+  ToderoSemanticRunContext,
 } from "./types.js";
 
 const TERMINAL_TASK_STATES = new Set(["done", "cancelled", "canceled"]);
 
-export function decidePaperclipSemanticAuthorization(
-  descriptor: PaperclipSemanticActionDescriptor,
-  context: PaperclipSemanticRunContext,
-  phase: PaperclipSemanticAuthorizationPhase,
+export function decideToderoSemanticAuthorization(
+  descriptor: ToderoSemanticActionDescriptor,
+  context: ToderoSemanticRunContext,
+  phase: ToderoSemanticAuthorizationPhase,
   requestedRunId: string,
   input?: unknown,
-): PaperclipSemanticAuthorizationDecision {
+): ToderoSemanticAuthorizationDecision {
   if (!validAuthorityContext(context, requestedRunId)) {
     return {
       allowed: false,
@@ -35,9 +35,9 @@ export function decidePaperclipSemanticAuthorization(
     effectiveClaims,
   } as const;
   const deny = (
-    code: PaperclipSemanticDenialCode,
+    code: ToderoSemanticDenialCode,
     reason: string,
-  ): PaperclipSemanticAuthorizationDecision => ({
+  ): ToderoSemanticAuthorizationDecision => ({
     ...base,
     allowed: false,
     code,
@@ -138,7 +138,7 @@ export function decidePaperclipSemanticAuthorization(
 function validAuthorityContext(
   context: unknown,
   requestedRunId: string,
-): context is PaperclipSemanticRunContext {
+): context is ToderoSemanticRunContext {
   if (
     !isRecord(context) ||
     !isRecord(context.actor) ||

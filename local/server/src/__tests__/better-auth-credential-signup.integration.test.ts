@@ -16,7 +16,7 @@
 import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { authAccounts, createDb } from "@paperclipai/db";
+import { authAccounts, createDb } from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -72,7 +72,7 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
     // the sign-up and sign-in this suite issues back to back.
     process.env.PAPERCLIP_AUTH_RATE_LIMIT_ENABLED = "false";
 
-    database = await startEmbeddedPostgresTestDatabase("paperclip-better-auth-signup-");
+    database = await startEmbeddedPostgresTestDatabase("todero-better-auth-signup-");
     db = createDb(database.connectionString);
 
     const auth = createBetterAuthInstance(db, testConfig(), [ORIGIN]);

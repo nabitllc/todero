@@ -46,9 +46,9 @@ import type {
   RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 
-import type { PaperclipPlugin } from "./define-plugin.js";
+import type { ToderoPlugin } from "./define-plugin.js";
 import type {
   PluginApiRequestInput,
   PluginHealthDiagnostics,
@@ -149,7 +149,7 @@ export interface WorkerRpcHostOptions {
    *
    * The worker entrypoint should import its plugin and pass it here.
    */
-  plugin: PaperclipPlugin;
+  plugin: ToderoPlugin;
 
   /**
    * Input stream to read JSON-RPC messages from.
@@ -278,7 +278,7 @@ export interface RunWorkerOptions {
  * ```
  */
 export function runWorker(
-  plugin: PaperclipPlugin,
+  plugin: ToderoPlugin,
   moduleUrl: string,
   options?: RunWorkerOptions,
 ): WorkerRpcHost | void {
@@ -308,7 +308,7 @@ export function runWorker(
  * ```ts
  * // worker-bootstrap.ts
  * import plugin from "./worker.js";
- * import { startWorkerRpcHost } from "@paperclipai/plugin-sdk";
+ * import { startWorkerRpcHost } from "@todero/plugin-sdk";
  *
  * startWorkerRpcHost({ plugin });
  * ```
@@ -350,7 +350,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     (params: Record<string, unknown>, context: PluginPerformActionContext) => Promise<unknown>
   >();
   const toolHandlers = new Map<string, {
-    declaration: Pick<import("@paperclipai/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">;
+    declaration: Pick<import("@todero/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">;
     fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>;
   }>();
 
@@ -431,7 +431,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
         const activeInvocation = invocationContextStorage.getStore();
         const request = {
           ...createRequest(method, params, id),
-          ...(activeInvocation ? { paperclipInvocationId: activeInvocation.id } : {}),
+          ...(activeInvocation ? { toderoInvocationId: activeInvocation.id } : {}),
         };
         sendMessage(request);
       } catch (err) {
@@ -448,7 +448,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       const activeInvocation = invocationContextStorage.getStore();
       sendMessage({
         ...createNotification(method, params),
-        ...(activeInvocation ? { paperclipInvocationId: activeInvocation.id } : {}),
+        ...(activeInvocation ? { toderoInvocationId: activeInvocation.id } : {}),
       });
     } catch {
       // Swallow — the host may have closed stdin
@@ -1448,7 +1448,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       tools: {
         register(
           name: string,
-          declaration: Pick<import("@paperclipai/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">,
+          declaration: Pick<import("@todero/shared").PluginToolDeclaration, "displayName" | "description" | "parametersSchema">,
           fn: (params: unknown, runCtx: ToolRunContext) => Promise<ToolResult>,
         ): void {
           toolHandlers.set(name, { declaration, fn });
@@ -1551,8 +1551,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
     try {
       const invoke = () => dispatchMethod(method, params);
-      const result = request.paperclipInvocation
-        ? await invocationContextStorage.run(request.paperclipInvocation, invoke)
+      const result = request.toderoInvocation
+        ? await invocationContextStorage.run(request.toderoInvocation, invoke)
         : await invoke();
       sendMessage(createSuccessResponse(id, result ?? null));
     } catch (err) {
@@ -2242,8 +2242,8 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       // Dispatch host→worker push notifications
       const notif = message as JsonRpcNotification & { method: string; params?: unknown };
       const runNotification = (fn: () => void | Promise<void>) => {
-        if (notif.paperclipInvocation) {
-          return invocationContextStorage.run(notif.paperclipInvocation, fn);
+        if (notif.toderoInvocation) {
+          return invocationContextStorage.run(notif.toderoInvocation, fn);
         }
         return fn();
       };

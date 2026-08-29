@@ -2,7 +2,7 @@ import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { notFound } from "../errors.js";
-import { resolvePaperclipInstanceRoot } from "../home-paths.js";
+import { resolveToderoInstanceRoot } from "../home-paths.js";
 import { createS3StorageProvider } from "../storage/s3-provider.js";
 import type { StorageProvider } from "../storage/types.js";
 
@@ -85,7 +85,7 @@ export interface DurableRunLogStoreOptions {
 // detail. Live append/tail stays on the pod-local file (fast, no per-chunk PUT);
 // on finalize the complete .ndjson is uploaded to object storage; on read we try
 // local first and fall back to S3 when the local file is gone. This is the fix
-// for "Run log not found" after a deploy/restart (the /paperclip data dir is an
+// for "Run log not found" after a deploy/restart (the /todero data dir is an
 // emptyDir in cloud_tenant mode -- persistence is disabled to avoid the
 // operator's privileged selinux-relabel init container in our hardened ns).
 //
@@ -415,7 +415,7 @@ let cachedStore: RunLogStore | null = null;
 
 export function getRunLogStore() {
   if (cachedStore) return cachedStore;
-  const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolvePaperclipInstanceRoot(), "data", "run-logs");
+  const basePath = process.env.RUN_LOG_BASE_PATH ?? path.resolve(resolveToderoInstanceRoot(), "data", "run-logs");
   cachedStore = createDurableRunLogStore({ basePath, s3: resolveRunLogS3() });
   return cachedStore;
 }

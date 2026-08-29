@@ -1,21 +1,21 @@
 {
-  "name": "@paperclipai/adapter-hermes-gateway",
+  "name": "@todero/adapter-hermes-gateway",
   "version": "0.1.0",
-  "description": "Deprecated compatibility shim for Hermes Gateway; use @paperclipai/hermes-paperclip-adapter/gateway",
+  "description": "Deprecated compatibility shim for Hermes Gateway; use @todero/hermes-paperclip-adapter/gateway",
   "type": "module",
   "license": "MIT",
-  "author": "Paperclip",
+  "author": "Todero",
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/nabitllc/todero",
     "directory": "packages/adapters/hermes-gateway"
   },
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/nabitllc/todero/issues"
   },
-  "homepage": "https://github.com/paperclipai/paperclip/tree/master/packages/adapters/hermes#readme",
+  "homepage": "https://github.com/nabitllc/todero/tree/main/packages/adapters/hermes#readme",
   "keywords": [
-    "paperclip",
+    "todero",
     "hermes",
     "gateway",
     "adapter",
@@ -28,7 +28,7 @@
     "./cli": "./src/cli/index.ts",
     "./ui-parser": "./ui-parser.cjs"
   },
-  "paperclip": {
+  "todero": {
     "adapterUiParser": "1.0.0"
   },
   "publishConfig": {
@@ -68,7 +68,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@paperclipai/hermes-paperclip-adapter": "workspace:*"
+    "@todero/hermes-paperclip-adapter": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

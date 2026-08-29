@@ -132,7 +132,7 @@ const CLOUD_HEALTH = {
   status: "ok" as const,
   cloud: {
     managed: true as const,
-    managedBy: "paperclip-cloud" as const,
+    managedBy: "todero-cloud" as const,
     stackSlug: "acme-labs",
     cloudBaseUrl: "https://cloud.example.test",
   },
@@ -569,7 +569,7 @@ describe("SidebarCompanyMenu", () => {
     });
   });
 
-  describe("in Paperclip Cloud", () => {
+  describe("in Todero Cloud", () => {
     it("closes the menu and enters the Cloud logout flow without local sign-out", async () => {
       const { root } = renderMenu({ cloud: true });
       await flushReact();

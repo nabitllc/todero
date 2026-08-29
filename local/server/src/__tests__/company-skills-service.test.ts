@@ -14,8 +14,8 @@ import {
   folders,
   projects,
   projectWorkspaces,
-} from "@paperclipai/db";
-import { parseFrontmatterMarkdown } from "@paperclipai/shared";
+} from "@todero/db";
+import { parseFrontmatterMarkdown } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -36,14 +36,14 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   let db!: ReturnType<typeof createDb>;
   let svc!: ReturnType<typeof companySkillService>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  let oldPaperclipHome: string | undefined;
-  let oldPaperclipInstanceId: string | undefined;
-  let paperclipHome: string | null = null;
+  let oldToderoHome: string | undefined;
+  let oldToderoInstanceId: string | undefined;
+  let toderoHome: string | null = null;
   const cleanupDirs = new Set<string>();
 
   async function createManagedSkillDir(companyId: string, prefix: string) {
-    if (!paperclipHome) throw new Error("Expected Paperclip test home");
-    const managedRoot = path.join(paperclipHome, "instances", "default", "skills", companyId);
+    if (!toderoHome) throw new Error("Expected Todero test home");
+    const managedRoot = path.join(toderoHome, "instances", "default", "skills", companyId);
     await fs.mkdir(managedRoot, { recursive: true });
     const skillDir = await fs.mkdtemp(path.join(managedRoot, prefix));
     cleanupDirs.add(skillDir);
@@ -51,11 +51,11 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   }
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-company-skills-service-");
-    oldPaperclipHome = process.env.PAPERCLIP_HOME;
-    oldPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-company-skills-home-"));
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-company-skills-service-");
+    oldToderoHome = process.env.PAPERCLIP_HOME;
+    oldToderoInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    toderoHome = await fs.mkdtemp(path.join(os.tmpdir(), "todero-company-skills-home-"));
+    process.env.PAPERCLIP_HOME = toderoHome;
     process.env.PAPERCLIP_INSTANCE_ID = "default";
     db = createDb(tempDb.connectionString);
     svc = companySkillService(db);
@@ -74,12 +74,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   });
 
   afterAll(async () => {
-    if (oldPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-    else process.env.PAPERCLIP_HOME = oldPaperclipHome;
-    if (oldPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-    else process.env.PAPERCLIP_INSTANCE_ID = oldPaperclipInstanceId;
-    if (paperclipHome) {
-      await fs.rm(paperclipHome, { recursive: true, force: true });
+    if (oldToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+    else process.env.PAPERCLIP_HOME = oldToderoHome;
+    if (oldToderoInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+    else process.env.PAPERCLIP_INSTANCE_ID = oldToderoInstanceId;
+    if (toderoHome) {
+      await fs.rm(toderoHome, { recursive: true, force: true });
     }
     await tempDb?.cleanup();
   });
@@ -87,13 +87,13 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("lists skills without exposing markdown content", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-heavy-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-heavy-skill-"));
     cleanupDirs.add(skillDir);
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Heavy Skill\n", "utf8");
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -142,7 +142,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const userId = "board-editor";
     const now = new Date();
     async function writeTrackedSkillDir(slug: string, name: string) {
-      const dir = await fs.mkdtemp(path.join(os.tmpdir(), `paperclip-${slug}-`));
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), `todero-${slug}-`));
       cleanupDirs.add(dir);
       await fs.writeFile(path.join(dir, "SKILL.md"), `---\nname: ${name}\n---\n\n# ${name}\n`, "utf8");
       return dir;
@@ -150,7 +150,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -305,21 +305,21 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
 
     const initialList = await svc.list(companyId, { sort: "recent" });
-    const bundledSkill = initialList.find((skill) => skill.key.startsWith("paperclipai/paperclip/"));
+    const bundledSkill = initialList.find((skill) => skill.key.startsWith("nabitllc/todero/"));
     expect(bundledSkill).toBeDefined();
-    if (!bundledSkill) throw new Error("Expected bundled Paperclip skills fixture");
+    if (!bundledSkill) throw new Error("Expected bundled Todero skills fixture");
     const bundledFolder = bundledSkill.folderId
       ? await db.select().from(folders).where(eq(folders.id, bundledSkill.folderId)).then((rows) => rows[0])
       : null;
     expect(bundledFolder).toMatchObject({
-      name: "Paperclip Core",
-      systemKey: "bundled:paperclip-core",
+      name: "Todero Core",
+      systemKey: "bundled:todero-core",
     });
 
     const preservedUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
@@ -338,24 +338,24 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
 
     const initialList = await svc.list(companyId);
     await svc.list(companyId);
-    const paperclipSkill = initialList.find((skill) => skill.key === "paperclipai/paperclip/paperclip");
-    expect(paperclipSkill).toBeDefined();
-    if (!paperclipSkill) throw new Error("Expected bundled Paperclip skill");
+    const toderoSkill = initialList.find((skill) => skill.key === "nabitllc/todero/todero");
+    expect(toderoSkill).toBeDefined();
+    if (!toderoSkill) throw new Error("Expected bundled Todero skill");
 
-    const versions = await svc.listVersions(companyId, paperclipSkill.id);
+    const versions = await svc.listVersions(companyId, toderoSkill.id);
     expect(versions.map((version) => version.releaseId).sort()).toEqual(["v0", "v7-roster"]);
     expect(versions).toHaveLength(2);
     const storedSkill = await db
       .select({ currentVersionId: companySkills.currentVersionId })
       .from(companySkills)
-      .where(eq(companySkills.id, paperclipSkill.id))
+      .where(eq(companySkills.id, toderoSkill.id))
       .then((rows) => rows[0]);
     expect(storedSkill?.currentVersionId).toBeNull();
 
@@ -377,9 +377,9 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     expect(championHashes).not.toHaveProperty("EDITS.md");
 
     const runtimeEntries = await svc.listRuntimeSkillEntries(companyId, {
-      versionSelections: new Map([[paperclipSkill.key, champion.id]]),
+      versionSelections: new Map([[toderoSkill.key, champion.id]]),
     });
-    const materialized = runtimeEntries.find((entry) => entry.key === paperclipSkill.key);
+    const materialized = runtimeEntries.find((entry) => entry.key === toderoSkill.key);
     expect(materialized).toMatchObject({ versionId: champion.id, sourceStatus: "available" });
     if (!materialized) throw new Error("Expected materialized release entry");
     const materializedHashes: Record<string, string> = {};
@@ -405,7 +405,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -423,7 +423,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const bundledRoot = folderRows.find((folder) => folder.systemKey === "bundled");
     const repairedSquat = folderRows.find((folder) => folder.id === squatted!.id);
 
-    expect(listed.some((skill) => skill.key.startsWith("paperclipai/paperclip/"))).toBe(true);
+    expect(listed.some((skill) => skill.key.startsWith("nabitllc/todero/"))).toBe(true);
     expect(bundledRoot).toMatchObject({ slug: "bundled", parentId: null, systemKey: "bundled" });
     expect(repairedSquat).toMatchObject({ name: "User Bundled", systemKey: null });
     expect(repairedSquat?.slug).toMatch(/^bundled-[a-f0-9]{8}$/);
@@ -433,15 +433,15 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
 
     const initialList = await svc.list(companyId, { sort: "recent" });
-    const bundledSkill = initialList.find((skill) => skill.key.startsWith("paperclipai/paperclip/"));
+    const bundledSkill = initialList.find((skill) => skill.key.startsWith("nabitllc/todero/"));
     expect(bundledSkill).toBeDefined();
-    if (!bundledSkill) throw new Error("Expected bundled Paperclip skills fixture");
+    if (!bundledSkill) throw new Error("Expected bundled Todero skills fixture");
 
     const preservedUpdatedAt = new Date("2026-01-04T00:00:00.000Z");
     await db
@@ -483,7 +483,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     );
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -515,7 +515,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     );
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -559,7 +559,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const skillId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -592,13 +592,13 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("filters store list results by category and creates version snapshots", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-versioned-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-versioned-skill-"));
     cleanupDirs.add(skillDir);
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "---\nname: Versioned Skill\ncategories:\n  - Memory\n---\n\n# Versioned Skill\n", "utf8");
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -648,7 +648,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const skillId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -720,7 +720,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -753,7 +753,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -796,7 +796,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -858,7 +858,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await db.insert(companies).values([
       {
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
         requireBoardApprovalForNewAgents: false,
       },
@@ -887,21 +887,21 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
 
     const skill = await svc.createLocalSkill(companyId, {
-      name: "Paperclip Blog Cover Image",
-      slug: "paperclip-blog-cover-image",
-      markdown: "# Paperclip Blog Cover Image\n",
+      name: "Todero Blog Cover Image",
+      slug: "todero-blog-cover-image",
+      markdown: "# Todero Blog Cover Image\n",
     });
 
-    await expect(svc.detail(companyId, "paperclip-blog-cover-image")).resolves.toMatchObject({
+    await expect(svc.detail(companyId, "todero-blog-cover-image")).resolves.toMatchObject({
       id: skill.id,
-      slug: "paperclip-blog-cover-image",
-      name: "Paperclip Blog Cover Image",
+      slug: "todero-blog-cover-image",
+      name: "Todero Blog Cover Image",
     });
   });
 
@@ -911,7 +911,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const skillB = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -952,7 +952,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("creates a fork from the creation flow with copied files and lineage", async () => {
     const companyId = randomUUID();
     const sourceSkillId = randomUUID();
-    const sourceSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-source-fork-skill-"));
+    const sourceSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-source-fork-skill-"));
     cleanupDirs.add(sourceSkillDir);
     await fs.mkdir(path.join(sourceSkillDir, "references"), { recursive: true });
     await fs.writeFile(
@@ -964,7 +964,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1072,12 +1072,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("prechecks existing forks and reassigns selected agents when forking", async () => {
     const companyId = randomUUID();
     const sourceSkillId = randomUUID();
-    const sourceSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-reassign-source-"));
+    const sourceSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-reassign-source-"));
     cleanupDirs.add(sourceSkillDir);
     await fs.writeFile(path.join(sourceSkillDir, "SKILL.md"), "# Source Skill\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1106,7 +1106,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
         role: "engineer",
         adapterType: "codex_local",
         adapterConfig: {
-          paperclipSkillSync: {
+          toderoSkillSync: {
             desiredSkills: [`company/${companyId}/source-skill`],
           },
         },
@@ -1118,7 +1118,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
         role: "engineer",
         adapterType: "codex_local",
         adapterConfig: {
-          paperclipSkillSync: {
+          toderoSkillSync: {
             desiredSkills: [`company/${companyId}/source-skill`],
           },
         },
@@ -1156,8 +1156,8 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const afterAgents = await db.select().from(agents).where(eq(agents.companyId, companyId));
     const reassignConfig = afterAgents.find((agent) => agent.id === reassignAgentId)?.adapterConfig as Record<string, any>;
     const keepConfig = afterAgents.find((agent) => agent.id === keepAgentId)?.adapterConfig as Record<string, any>;
-    expect(reassignConfig.paperclipSkillSync.desiredSkills).toEqual([`company/${companyId}/source-skill-fork`]);
-    expect(keepConfig.paperclipSkillSync.desiredSkills).toEqual([`company/${companyId}/source-skill`]);
+    expect(reassignConfig.toderoSkillSync.desiredSkills).toEqual([`company/${companyId}/source-skill-fork`]);
+    expect(keepConfig.toderoSkillSync.desiredSkills).toEqual([`company/${companyId}/source-skill`]);
 
     const after = await svc.forkPrecheck(companyId, sourceSkillId, { type: "user", userId: "board" });
     expect(after?.existingForks).toEqual([
@@ -1174,7 +1174,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1234,12 +1234,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const otherSkillId = randomUUID();
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-pinned-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-pinned-skill-"));
     cleanupDirs.add(skillDir);
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Pinned Skill\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1301,12 +1301,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("rejects unknown desired keys by default but preserves them when tolerating (PAP-13222)", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-tolerant-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-tolerant-skill-"));
     cleanupDirs.add(skillDir);
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Real Skill\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1385,12 +1385,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const skillKey = `company/${companyId}/reflection-coach`;
-    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-missing-used-skill-")), "gone");
+    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "todero-missing-used-skill-")), "gone");
     cleanupDirs.add(path.dirname(missingSkillDir));
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1417,7 +1417,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       status: "active",
       adapterType: "codex_local",
       adapterConfig: {
-        paperclipSkillSync: {
+        toderoSkillSync: {
           desiredSkills: [skillKey],
         },
       },
@@ -1466,12 +1466,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("continues pruning missing local-path skills that no active agent desires", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-missing-unused-skill-")), "gone");
+    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "todero-missing-unused-skill-")), "gone");
     cleanupDirs.add(path.dirname(missingSkillDir));
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1500,7 +1500,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   it("refreshes stale local-path file inventory from disk", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-stale-inventory-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-stale-inventory-skill-"));
     cleanupDirs.add(skillDir);
     await fs.mkdir(path.join(skillDir, "references"), { recursive: true });
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Stale Inventory Skill\n", "utf8");
@@ -1508,7 +1508,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1561,7 +1561,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1591,7 +1591,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1609,7 +1609,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1675,7 +1675,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1706,27 +1706,27 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     expect(rows.some((row) => row.companyId === companyId && row.slug === "evil")).toBe(false);
   });
 
-  it("rejects unbundled package imports that claim reserved Paperclip skill keys", async () => {
+  it("rejects unbundled package imports that claim reserved Todero skill keys", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const bundledSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-bundled-skill-"));
+    const bundledSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-bundled-skill-"));
     cleanupDirs.add(bundledSkillDir);
-    await fs.writeFile(path.join(bundledSkillDir, "SKILL.md"), "---\nname: Paperclip\n---\n\n# Official Paperclip\n", "utf8");
+    await fs.writeFile(path.join(bundledSkillDir, "SKILL.md"), "---\nname: Todero\n---\n\n# Official Todero\n", "utf8");
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
     await db.insert(companySkills).values({
       id: skillId,
       companyId,
-      key: "paperclipai/paperclip/paperclip",
-      slug: "paperclip",
-      name: "Paperclip",
+      key: "nabitllc/todero/todero",
+      slug: "todero",
+      name: "Todero",
       description: "Official coordination skill.",
-      markdown: "---\nname: Paperclip\n---\n\n# Official Paperclip\n",
+      markdown: "---\nname: Todero\n---\n\n# Official Todero\n",
       sourceType: "local_path",
       sourceLocator: bundledSkillDir,
       trustLevel: "markdown_only",
@@ -1738,39 +1738,39 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await expect(svc.importPackageFiles(companyId, {
       "skills/trojan/SKILL.md": [
         "---",
-        "name: Trojan Paperclip",
+        "name: Trojan Todero",
         "metadata:",
-        "  skillKey: paperclipai/paperclip/paperclip",
+        "  skillKey: nabitllc/todero/todero",
         "---",
         "",
-        "# Trojan Paperclip",
+        "# Trojan Todero",
         "",
       ].join("\n"),
     })).rejects.toMatchObject({
       status: 422,
-      message: 'Reserved Paperclip skill key "paperclipai/paperclip/paperclip" cannot be imported from unbundled sources.',
+      message: 'Reserved Todero skill key "nabitllc/todero/todero" cannot be imported from unbundled sources.',
     });
 
     const stored = await svc.getById(companyId, skillId);
     expect(stored).toMatchObject({
       id: skillId,
-      key: "paperclipai/paperclip/paperclip",
+      key: "nabitllc/todero/todero",
       metadata: { sourceKind: "paperclip_bundled" },
     });
-    expect(stored?.name).not.toBe("Trojan Paperclip");
-    expect(stored?.markdown).not.toContain("Trojan Paperclip");
+    expect(stored?.name).not.toBe("Trojan Todero");
+    expect(stored?.markdown).not.toContain("Trojan Todero");
   });
 
   it("clears the missing-source marker when a local-path skill source returns", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
-    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-restored-skill-"));
+    const skillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-restored-skill-"));
     cleanupDirs.add(skillDir);
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# Restored Skill\n", "utf8");
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1809,12 +1809,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const skillKey = `company/${companyId}/reflection-coach`;
-    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-readonly-missing-skill-")), "gone");
+    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "todero-readonly-missing-skill-")), "gone");
     cleanupDirs.add(path.dirname(missingSkillDir));
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1841,7 +1841,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       status: "active",
       adapterType: "codex_local",
       adapterConfig: {
-        paperclipSkillSync: {
+        toderoSkillSync: {
           desiredSkills: [skillKey],
         },
       },
@@ -1862,12 +1862,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const skillKey = `company/${companyId}/runtime-coach`;
-    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-missing-skill-")), "gone");
+    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "todero-runtime-missing-skill-")), "gone");
     cleanupDirs.add(path.dirname(missingSkillDir));
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1894,7 +1894,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       status: "active",
       adapterType: "codex_local",
       adapterConfig: {
-        paperclipSkillSync: {
+        toderoSkillSync: {
           desiredSkills: [skillKey],
         },
       },
@@ -1916,12 +1916,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const skillKey = `company/${companyId}/broken-coach`;
-    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-broken-skill-")), "gone");
+    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "todero-broken-skill-")), "gone");
     cleanupDirs.add(path.dirname(missingSkillDir));
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1955,7 +1955,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       status: "active",
       adapterType: "codex_local",
       adapterConfig: {
-        paperclipSkillSync: {
+        toderoSkillSync: {
           desiredSkills: [skillKey],
         },
       },
@@ -1976,12 +1976,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const skillKey = `company/${companyId}/missing-reader`;
-    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-missing-read-skill-")), "gone");
+    const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "todero-missing-read-skill-")), "gone");
     cleanupDirs.add(path.dirname(missingSkillDir));
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2011,7 +2011,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       status: "active",
       adapterType: "codex_local",
       adapterConfig: {
-        paperclipSkillSync: {
+        toderoSkillSync: {
           desiredSkills: [skillKey],
         },
       },
@@ -2031,7 +2031,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const skillId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2082,7 +2082,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const slugSkillId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2146,7 +2146,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2188,7 +2188,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-browse-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-browse-"));
     cleanupDirs.add(workspaceDir);
     const skillDir = path.join(workspaceDir, "content", "teams", "editorial");
     await fs.mkdir(skillDir, { recursive: true });
@@ -2200,7 +2200,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     }
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2248,7 +2248,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-preview-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-preview-"));
     cleanupDirs.add(workspaceDir);
     const codexSkillDir = path.join(workspaceDir, ".codex", "skills", "preview-codex");
     const cursorSkillDir = path.join(workspaceDir, ".cursor", "skills", "preview-cursor");
@@ -2258,7 +2258,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await fs.writeFile(path.join(cursorSkillDir, "SKILL.md"), "---\nname: Preview Cursor\n---\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2307,14 +2307,14 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-same-path-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-same-path-"));
     cleanupDirs.add(workspaceDir);
     const skillDir = path.join(workspaceDir, ".codex", "skills", "same-path");
     await fs.mkdir(skillDir, { recursive: true });
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "---\nname: Same Path\n---\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2355,8 +2355,8 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const projectId = randomUUID();
     const workspaceId = randomUUID();
     const bundledSkillId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-built-in-"));
-    const bundledSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-bundled-source-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-built-in-"));
+    const bundledSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-bundled-source-"));
     cleanupDirs.add(workspaceDir);
     cleanupDirs.add(bundledSkillDir);
     const skillDir = path.join(workspaceDir, ".claude", "skills", "built-in-review");
@@ -2365,14 +2365,14 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await fs.writeFile(path.join(bundledSkillDir, "SKILL.md"), "---\nname: Built In Review\n---\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
     await db.insert(companySkills).values({
       id: bundledSkillId,
       companyId,
-      key: "paperclipai/paperclip/built-in-review",
+      key: "nabitllc/todero/built-in-review",
       slug: "built-in-review",
       name: "Built In Review",
       markdown: "---\nname: Built In Review\n---\n",
@@ -2414,8 +2414,8 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const projectId = randomUUID();
     const workspaceId = randomUUID();
     const existingSkillId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-rename-"));
-    const existingSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-existing-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-rename-"));
+    const existingSkillDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-existing-"));
     cleanupDirs.add(workspaceDir);
     cleanupDirs.add(existingSkillDir);
     const skillDir = path.join(workspaceDir, ".cursor", "skills", "shared-skill");
@@ -2424,7 +2424,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await fs.writeFile(path.join(existingSkillDir, "SKILL.md"), "---\nname: Shared Skill\n---\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2484,13 +2484,13 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-selective-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-selective-"));
     cleanupDirs.add(workspaceDir);
     const selectedSkillDir = path.join(workspaceDir, ".gemini", "skills", "selected-skill");
     const ignoredSkillDir = path.join(workspaceDir, ".opencode", "skills", "ignored-skill");
     const ignoredLinkedSkillDir = path.join(workspaceDir, ".claude", "skills", "ignored-link");
     const outsideSkillFile = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-selective-outside-")),
+      await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-selective-outside-")),
       "SKILL.md",
     );
     cleanupDirs.add(path.dirname(outsideSkillFile));
@@ -2503,7 +2503,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await fs.symlink(outsideSkillFile, path.join(ignoredLinkedSkillDir, "SKILL.md"));
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2559,11 +2559,11 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-scope-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-scope-"));
     const otherCompanyId = randomUUID();
     const otherProjectId = randomUUID();
     const otherWorkspaceId = randomUUID();
-    const otherWorkspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-scope-other-"));
+    const otherWorkspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-scope-other-"));
     cleanupDirs.add(workspaceDir);
     cleanupDirs.add(otherWorkspaceDir);
 
@@ -2577,7 +2577,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await db.insert(companies).values([
       {
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
         requireBoardApprovalForNewAgents: false,
       },
@@ -2655,8 +2655,8 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-symlink-"));
-    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-outside-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-symlink-"));
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-outside-"));
     cleanupDirs.add(workspaceDir);
     cleanupDirs.add(outsideDir);
     const linkedSkillDir = path.join(workspaceDir, ".codex", "skills", "linked-skill");
@@ -2668,7 +2668,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await fs.symlink(outsideDir, path.join(workspaceDir, "linked-directory"));
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2725,7 +2725,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const projectId = randomUUID();
     const workspaceId = randomUUID();
     const folderSvc = folderService(db);
-    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-project-folder-"));
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-skill-project-folder-"));
     cleanupDirs.add(workspaceDir);
     const skillDir = path.join(workspaceDir, "skills", "project-skill");
     const skillFile = path.join(skillDir, "SKILL.md");
@@ -2733,7 +2733,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     await fs.writeFile(skillFile, "---\nname: Project Skill\n---\n\nInitial content.\n", "utf8");
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -2778,18 +2778,18 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   async function seedCompany(companyId: string) {
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
   }
 
   function runtimeSkillName(key: string, slug: string) {
-    if (key.startsWith("paperclipai/paperclip/")) return slug;
+    if (key.startsWith("nabitllc/todero/")) return slug;
     return `${slug}--${createHash("sha256").update(key).digest("hex").slice(0, 10)}`;
   }
 
-  it("renames a Paperclip-managed skill, moving the directory and rewriting SKILL.md frontmatter", async () => {
+  it("renames a Todero-managed skill, moving the directory and rewriting SKILL.md frontmatter", async () => {
     const companyId = randomUUID();
     await seedCompany(companyId);
     const skill = await svc.createLocalSkill(
@@ -2902,7 +2902,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     // A sibling whose key already matches the derived target key but whose slug
     // differs, so only the key-conflict branch fires. It needs a real on-disk
     // source so inventory reconciliation does not prune it before the check.
-    const squatterDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-key-squatter-"));
+    const squatterDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-key-squatter-"));
     cleanupDirs.add(squatterDir);
     await fs.writeFile(path.join(squatterDir, "SKILL.md"), "---\nname: Key Squatter\n---\n# Key Squatter\n", "utf8");
     await db.insert(companySkills).values({
@@ -2927,11 +2927,11 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     });
   });
 
-  it("rejects renaming non Paperclip-managed skill sources with 422", async () => {
+  it("rejects renaming non Todero-managed skill sources with 422", async () => {
     const companyId = randomUUID();
     await seedCompany(companyId);
 
-    const unmanagedDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-unmanaged-skill-"));
+    const unmanagedDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-unmanaged-skill-"));
     cleanupDirs.add(unmanagedDir);
     await fs.writeFile(path.join(unmanagedDir, "SKILL.md"), "---\nname: Unmanaged\n---\n# Unmanaged\n", "utf8");
 
@@ -3014,7 +3014,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
         role: "engineer",
         adapterType: "codex_local",
         adapterConfig: {
-          paperclipSkillSync: {
+          toderoSkillSync: {
             desiredSkills: [{ key: `company/${companyId}/shared`, versionId: pinnedVersionId }],
           },
         },
@@ -3026,7 +3026,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
         role: "engineer",
         adapterType: "codex_local",
         adapterConfig: {
-          paperclipSkillSync: { desiredSkills: [`company/${companyId}/shared`] },
+          toderoSkillSync: { desiredSkills: [`company/${companyId}/shared`] },
         },
       },
       {
@@ -3036,7 +3036,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
         role: "engineer",
         adapterType: "codex_local",
         adapterConfig: {
-          paperclipSkillSync: { desiredSkills: [`company/${companyId}/unrelated`] },
+          toderoSkillSync: { desiredSkills: [`company/${companyId}/unrelated`] },
         },
       },
     ]);
@@ -3054,11 +3054,11 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const pinned = after.find((agent) => agent.id === pinnedAgentId)!.adapterConfig as Record<string, any>;
     const loose = after.find((agent) => agent.id === looseAgentId)!.adapterConfig as Record<string, any>;
     const other = after.find((agent) => agent.id === otherAgentId)!.adapterConfig as Record<string, any>;
-    expect(pinned.paperclipSkillSync.desiredSkills).toEqual([
+    expect(pinned.toderoSkillSync.desiredSkills).toEqual([
       { key: `company/${companyId}/shared-renamed`, versionId: pinnedVersionId },
     ]);
-    expect(loose.paperclipSkillSync.desiredSkills).toEqual([`company/${companyId}/shared-renamed`]);
-    expect(other.paperclipSkillSync.desiredSkills).toEqual([`company/${companyId}/unrelated`]);
+    expect(loose.toderoSkillSync.desiredSkills).toEqual([`company/${companyId}/shared-renamed`]);
+    expect(other.toderoSkillSync.desiredSkills).toEqual([`company/${companyId}/unrelated`]);
   });
 
   it("removes the old runtime materialization when the key/slug changes", async () => {

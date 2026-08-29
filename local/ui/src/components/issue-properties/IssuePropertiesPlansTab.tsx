@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, IssueDocument, IssueThreadInteraction } from "@paperclipai/shared";
-import { isArtifactReviewDocumentKey } from "@paperclipai/shared";
+import type { Issue, IssueDocument, IssueThreadInteraction } from "@todero/shared";
+import { isArtifactReviewDocumentKey } from "@todero/shared";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
 import { IssuePlanDecompositionsSection } from "@/components/IssuePlanDecompositionsSection";

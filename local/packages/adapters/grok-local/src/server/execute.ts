@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@todero/adapter-utils";
 import {
   adapterExecutionTargetIsRemote,
   adapterExecutionTargetRemoteCwd,
@@ -16,30 +16,30 @@ import {
   resolveAdapterExecutionTargetCommandForLogs,
   resolveAdapterExecutionTargetTimeoutSec,
   runAdapterExecutionTargetProcess,
-} from "@paperclipai/adapter-utils/execution-target";
+} from "@todero/adapter-utils/execution-target";
 import {
   asBoolean,
   asNumber,
   asString,
   asStringArray,
   buildInvocationEnvForLogs,
-  buildPaperclipEnv,
+  buildToderoEnv,
   buildRuntimeToolsEnv,
   ensureAbsoluteDirectory,
   ensurePathInEnv,
   joinPromptSections,
-  materializePaperclipSkillCopy,
+  materializeToderoSkillCopy,
   parseObject,
-  readPaperclipIssueWorkModeFromContext,
-  readPaperclipRuntimeSkillEntries,
+  readToderoIssueWorkModeFromContext,
+  readToderoRuntimeSkillEntries,
   renderTemplate,
-  renderPaperclipWakePrompt,
-  isPaperclipRecoveryWakePayload,
-  resolveLegacyPaperclipDesiredSkillNames,
-  stringifyPaperclipWakePayload,
-  refreshPaperclipWorkspaceEnvForExecution,
+  renderToderoWakePrompt,
+  isToderoRecoveryWakePayload,
+  resolveLegacyToderoDesiredSkillNames,
+  stringifyToderoWakePayload,
+  refreshToderoWorkspaceEnvForExecution,
   DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 import { DEFAULT_GROK_LOCAL_MODEL } from "../index.js";
 import { resolveManagedGrokHomeDir } from "./grok-home.js";
 import { isGrokUnknownSessionError, parseGrokJsonl } from "./parse.js";
@@ -60,14 +60,14 @@ function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean 
   return typeof raw === "string" && raw.trim().length > 0;
 }
 
-function renderPaperclipEnvNote(env: Record<string, string>): string {
-  const paperclipKeys = Object.keys(env)
+function renderToderoEnvNote(env: Record<string, string>): string {
+  const toderoKeys = Object.keys(env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort();
-  if (paperclipKeys.length === 0) return "";
+  if (toderoKeys.length === 0) return "";
   return [
-    "Paperclip runtime note:",
-    `The following PAPERCLIP_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
+    "Todero runtime note:",
+    `The following PAPERCLIP_* environment variables are available in this run: ${toderoKeys.join(", ")}`,
     "Do not assume these variables are missing without checking your shell environment.",
     "",
     "",
@@ -77,9 +77,9 @@ function renderPaperclipEnvNote(env: Record<string, string>): string {
 function renderApiAccessNote(env: Record<string, string>): string {
   if (!hasNonEmptyEnvValue(env, "PAPERCLIP_API_URL") || !hasNonEmptyEnvValue(env, "PAPERCLIP_API_KEY")) return "";
   return [
-    "Paperclip API access note:",
-    "Use shell commands with curl to make Paperclip API requests when needed.",
-    "Include X-Paperclip-Run-Id on mutating requests.",
+    "Todero API access note:",
+    "Use shell commands with curl to make Todero API requests when needed.",
+    "Include X-Todero-Run-Id on mutating requests.",
     "",
     "",
   ].join("\n");
@@ -130,7 +130,7 @@ async function stageGrokProjectAssets(input: {
       rulesFilePath = input.instructionsFilePath;
       await input.onLog(
         "stdout",
-        `[paperclip] Grok workspace already contains ${instructionsTarget}; using --rules @${input.instructionsFilePath} instead of overwriting it.\n`,
+        `[todero] Grok workspace already contains ${instructionsTarget}; using --rules @${input.instructionsFilePath} instead of overwriting it.\n`,
       );
     }
   } else {
@@ -161,11 +161,11 @@ async function stageGrokProjectAssets(input: {
       if (await pathExists(target)) {
         await input.onLog(
           "stdout",
-          `[paperclip] Grok skill target already exists at ${target}; leaving it unchanged.\n`,
+          `[todero] Grok skill target already exists at ${target}; leaving it unchanged.\n`,
         );
         continue;
       }
-      await materializePaperclipSkillCopy(skill.source, target);
+      await materializeToderoSkillCopy(skill.source, target);
       ensureCleanupDir(target);
       stagedSkillsCount += 1;
     }
@@ -215,15 +215,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const alwaysApprove = asBoolean(config.alwaysApprove, true);
   const disableWebSearch = asBoolean(config.disableWebSearch, true);
 
-  const workspaceContext = parseObject(context.paperclipWorkspace);
+  const workspaceContext = parseObject(context.toderoWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
   const agentHome = asString(workspaceContext.agentHome, "");
-  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
-    ? context.paperclipWorkspaces.filter(
+  const workspaceHints = Array.isArray(context.toderoWorkspaces)
+    ? context.toderoWorkspaces.filter(
         (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
@@ -234,8 +234,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   let effectiveExecutionCwd = adapterExecutionTargetRemoteCwd(executionTarget, cwd);
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
 
-  const grokSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredGrokSkillNames = resolveLegacyPaperclipDesiredSkillNames(config, grokSkillEntries);
+  const grokSkillEntries = await readToderoRuntimeSkillEntries(config, __moduleDir);
+  const desiredGrokSkillNames = resolveLegacyToderoDesiredSkillNames(config, grokSkillEntries);
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
   const stagedAssets = await stageGrokProjectAssets({
     cwd,
@@ -249,7 +249,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   try {
     const envConfig = parseObject(config.env);
     const env: Record<string, string> = {
-      ...buildPaperclipEnv(agent),
+      ...buildToderoEnv(agent),
       ...buildRuntimeToolsEnv(ctx.runtimeTools),
     };
     env.PAPERCLIP_RUN_ID = runId;
@@ -276,8 +276,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const linkedIssueIds = Array.isArray(context.issueIds)
       ? context.issueIds.filter((value: unknown): value is string => typeof value === "string" && value.trim().length > 0)
       : [];
-    const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
-    const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
+    const wakePayloadJson = stringifyToderoWakePayload(context.toderoWake);
+    const issueWorkMode = readToderoIssueWorkModeFromContext(context);
     if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
     if (issueWorkMode) env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
     if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
@@ -286,7 +286,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
     if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
     if (wakePayloadJson) env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
-    refreshPaperclipWorkspaceEnvForExecution({
+    refreshToderoWorkspaceEnvForExecution({
       env,
       envConfig,
       workspaceCwd: effectiveWorkspaceCwd,
@@ -329,7 +329,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (executionTargetIsRemote) {
       await onLog(
         "stdout",
-        `[paperclip] Syncing Grok workspace to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
+        `[todero] Syncing Grok workspace to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
       );
       const preparedExecutionTargetRuntime = await prepareAdapterExecutionTargetRuntime({
         runId,
@@ -345,7 +345,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       restoreRemoteWorkspace = () =>
         preparedExecutionTargetRuntime.restoreWorkspace((line) => onLog("stdout", line));
       effectiveExecutionCwd = preparedExecutionTargetRuntime.workspaceRemoteDir ?? effectiveExecutionCwd;
-      refreshPaperclipWorkspaceEnvForExecution({
+      refreshToderoWorkspaceEnvForExecution({
         env,
         envConfig,
         workspaceCwd: effectiveWorkspaceCwd,
@@ -391,12 +391,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (executionTargetIsRemote && runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[paperclip] Grok session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
+        `[todero] Grok session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
       );
     } else if (runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[paperclip] Grok session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
+        `[todero] Grok session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
       );
     }
 
@@ -410,7 +410,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         notes.push(`Applied fallback instructions via --rules @${stagedAssets.rulesFilePath}.`);
       }
       if (stagedAssets.stagedSkillsCount > 0) {
-        notes.push(`Staged ${stagedAssets.stagedSkillsCount} Paperclip skill(s) into .claude/skills for native Grok discovery.`);
+        notes.push(`Staged ${stagedAssets.stagedSkillsCount} Todero skill(s) into .claude/skills for native Grok discovery.`);
       }
       return notes;
     })();
@@ -424,18 +424,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       run: { id: runId, source: "on_demand" },
       context,
     };
-    const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+    const wakePrompt = renderToderoWakePrompt(context.toderoWake, { resumedSession: Boolean(sessionId) });
     const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
-    const renderedPrompt = shouldUseResumeDeltaPrompt || isPaperclipRecoveryWakePayload(context.paperclipWake)
+    const renderedPrompt = shouldUseResumeDeltaPrompt || isToderoRecoveryWakePayload(context.toderoWake)
       ? ""
       : renderTemplate(promptTemplate, templateData);
-    const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
-    const paperclipEnvNote = renderPaperclipEnvNote(env);
+    const sessionHandoffNote = asString(context.toderoSessionHandoffMarkdown, "").trim();
+    const toderoEnvNote = renderToderoEnvNote(env);
     const apiAccessNote = renderApiAccessNote(env);
     const prompt = joinPromptSections([
       wakePrompt,
       sessionHandoffNote,
-      paperclipEnvNote,
+      toderoEnvNote,
       apiAccessNote,
       renderedPrompt,
     ]);
@@ -443,7 +443,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       promptChars: prompt.length,
       wakePromptChars: wakePrompt.length,
       sessionHandoffChars: sessionHandoffNote.length,
-      runtimeNoteChars: paperclipEnvNote.length + apiAccessNote.length,
+      runtimeNoteChars: toderoEnvNote.length + apiAccessNote.length,
       heartbeatPromptChars: renderedPrompt.length,
     };
 
@@ -593,7 +593,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ) {
       await onLog(
         "stdout",
-        `[paperclip] Grok resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+        `[todero] Grok resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toResult(retry, true, true);

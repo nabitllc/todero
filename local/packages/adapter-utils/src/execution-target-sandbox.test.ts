@@ -19,7 +19,7 @@ import {
   adapterExecutionTargetEnablesSandboxDuplexBridge,
   adapterExecutionTargetSessionIdentity,
   adapterExecutionTargetToRemoteSpec,
-  adapterExecutionTargetUsesPaperclipBridge,
+  adapterExecutionTargetUsesToderoBridge,
   ensureAdapterExecutionTargetCommandResolvable,
   formatAdapterExecutionTimeoutErrorMessage,
   formatAdapterExecutionTimeoutStartLogLine,
@@ -30,7 +30,7 @@ import {
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
   startAdapterExecutionTargetProcessSessionBridge,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
   type AdapterSandboxExecutionTarget,
   type EffectiveExecutionCapabilities,
   type EffectiveSandboxCapabilities,
@@ -353,7 +353,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("preserves stdin when wrapping sandbox adapter commands for run-log streaming", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-run-log-stdin-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-run-log-stdin-"));
     cleanupDirs.push(rootDir);
     const target: AdapterSandboxExecutionTarget = {
       kind: "remote",
@@ -364,7 +364,7 @@ describe("sandbox adapter execution targets", () => {
       streamRunLogs: true,
       runner: createLocalSandboxRunner(),
     };
-    const logsDir = path.posix.join(rootDir, ".paperclip-runtime", "bridge", "logs");
+    const logsDir = path.posix.join(rootDir, ".todero-runtime", "bridge", "logs");
     const runLogTail = createSandboxRunLogTailFactory({
       runner: target.runner!,
       remoteCwd: rootDir,
@@ -395,7 +395,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("creates the process session directories only in the launch exec, not in upfront makeDir execs", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-makedir-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-makedir-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "noop-acp-child.mjs");
     await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -420,7 +420,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-makedir",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -455,7 +455,7 @@ describe("sandbox adapter execution targets", () => {
     // that token. This test drives the bridge with a getter that returns a known
     // token, lets the first poll tick fire, and proves the poll exec reads that
     // token from the active step store.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-poll-parent-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-poll-parent-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "noop-acp-child.mjs");
     await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -493,7 +493,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-poll-parent",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -523,7 +523,7 @@ describe("sandbox adapter execution targets", () => {
     // With no `getRuntimeParentContext`, the poll tick runs with an empty active
     // step store, exactly like the earlier `runWithoutActiveStep` behavior. So a
     // poll `sandbox.exec` span opens unparented with no stale startup flag.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-poll-nogetter-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-poll-nogetter-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "noop-acp-child.mjs");
     await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -557,7 +557,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-poll-nogetter",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -585,7 +585,7 @@ describe("sandbox adapter execution targets", () => {
     // message in the `data` handler, not once at connect time. This test opens a
     // socket while `connectParent` is live, switches the getter to `turnParent`,
     // sends one stdin line, and proves the stdin write ran under `turnParent`.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stdin-parent-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stdin-parent-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "noop-acp-child.mjs");
     await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -604,10 +604,10 @@ describe("sandbox adapter execution targets", () => {
     const runner = {
       execute: async (input: Parameters<typeof delegate.execute>[0]) => {
         // Record the active step for the first exec that writes the stdin file.
-        // The `.paperclip-upload` temp path under the `stdin` directory is unique
+        // The `.todero-upload` temp path under the `stdin` directory is unique
         // to the stdin-write path; the poll loop reads the `events` directory.
         const script = (input.args ?? []).join("\n");
-        if (stdinWriteStep === "unset" && /\/stdin\/[^\s']*paperclip-upload/.test(script)) {
+        if (stdinWriteStep === "unset" && /\/stdin\/[^\s']*todero-upload/.test(script)) {
           stdinWriteStep = getActiveStepContext();
           resolveStdinWrite();
         }
@@ -626,7 +626,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-stdin-parent",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -685,7 +685,7 @@ describe("sandbox adapter execution targets", () => {
     // message to the agent in a `sandbox.agentSession.sendInput` span. This test
     // connects a socket, sends one stdin line, and proves the handler opens that
     // wrapper span around the write.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-sendinput-span-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-sendinput-span-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "noop-acp-child.mjs");
     await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -708,7 +708,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-sendinput-span",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -757,7 +757,7 @@ describe("sandbox adapter execution targets", () => {
     // With a span runner injected, the poll timer wraps each 100 ms poll tick in
     // a `sandbox.agentSession.pollOutput` span. This test lets the first poll tick
     // fire and proves the timer opens that wrapper span.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-poll-span-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-poll-span-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "noop-acp-child.mjs");
     await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -780,7 +780,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-poll-span",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -806,7 +806,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("bridges bidirectional sandbox process sessions through a local ACPX-spawnable proxy", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "fake-acp-child.mjs");
     await writeFile(
@@ -831,7 +831,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -844,7 +844,7 @@ describe("sandbox adapter execution targets", () => {
 
     try {
       const result = await runProxyWithInput(bridge!.agentCommand, "hello\n");
-      const report = await describeProxyRun(result, path.posix.join(rootDir, ".paperclip-runtime", "acpx"));
+      const report = await describeProxyRun(result, path.posix.join(rootDir, ".todero-runtime", "acpx"));
       expect(result.code, report).toBe(0);
       expect(result.stdout, report).toBe("out:hello\n");
       expect(result.stderr, report).toBe("err:hello\n");
@@ -854,7 +854,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("buffers sandbox process session output until the local proxy connects", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-buffer-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-buffer-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "fast-acp-child.mjs");
     await writeFile(
@@ -878,7 +878,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-buffer",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -901,7 +901,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("delivers full output when the sandbox child exits immediately after writing", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-fast-exit-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-fast-exit-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "instant-exit-acp-child.mjs");
     await writeFile(
@@ -924,7 +924,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-fast-exit",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -946,7 +946,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("ignores unauthenticated connections to the process session bridge", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-auth-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-auth-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "guarded-acp-child.mjs");
     await writeFile(childPath, "process.stdout.write('guarded-out\\n');", "utf8");
@@ -962,7 +962,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-auth",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -1012,7 +1012,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("streams sandbox process session output before the remote child exits", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-"));
     cleanupDirs.push(rootDir);
     const childPath = path.join(rootDir, "streaming-acp-child.mjs");
     await writeFile(
@@ -1042,7 +1042,7 @@ describe("sandbox adapter execution targets", () => {
     const bridge = await startAdapterExecutionTargetProcessSessionBridge({
       runId: "run-process-session-stream",
       target,
-      runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+      runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
       adapterKey: "acpx",
       command: process.execPath,
       args: [childPath],
@@ -1103,7 +1103,7 @@ describe("sandbox adapter execution targets", () => {
 
   describe("streamed output (streamOutputViaSession)", () => {
     it("bridges bidirectional sessions when the wrapper streams output to stdout", async () => {
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-echo-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-echo-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "echo-acp-child.mjs");
       await writeFile(
@@ -1128,7 +1128,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-echo",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1142,7 +1142,7 @@ describe("sandbox adapter execution targets", () => {
 
       try {
         const result = await runProxyWithInput(bridge!.agentCommand, "hello\n");
-        const report = await describeProxyRun(result, path.posix.join(rootDir, ".paperclip-runtime", "acpx"));
+        const report = await describeProxyRun(result, path.posix.join(rootDir, ".todero-runtime", "acpx"));
         expect(result.code, report).toBe(0);
         expect(result.stdout, report).toBe("out:hello\n");
         expect(result.stderr, report).toBe("err:hello\n");
@@ -1157,7 +1157,7 @@ describe("sandbox adapter execution targets", () => {
       // step) and stay open around the launch. Record the opened span names and
       // prove `sandbox.agentProcess` is among them, and that a normal exchange
       // still works through the wrap.
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-span-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-span-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "echo-acp-child.mjs");
       await writeFile(
@@ -1182,7 +1182,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-span",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1204,7 +1204,7 @@ describe("sandbox adapter execution targets", () => {
         // frame flows, so it is observable as soon as the handle resolves.
         expect(spanNames).toContain("sandbox.agentProcess");
         const result = await runProxyWithInput(bridge!.agentCommand, "hello\n");
-        const report = await describeProxyRun(result, path.posix.join(rootDir, ".paperclip-runtime", "acpx"));
+        const report = await describeProxyRun(result, path.posix.join(rootDir, ".todero-runtime", "acpx"));
         expect(result.code, report).toBe(0);
         expect(result.stdout, report).toBe("out:hello\n");
       } finally {
@@ -1218,7 +1218,7 @@ describe("sandbox adapter execution targets", () => {
       // `bridge.process-session` bring-up step — otherwise it dangles past its
       // parent and overlaps `agent.turn`. Build the real run-rooted runner from a
       // recording trace context and assert the recorded parent.
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-parent-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-parent-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "noop-acp-child.mjs");
       await writeFile(childPath, "process.stdin.on('data', () => {});\n", "utf8");
@@ -1241,7 +1241,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-parent",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1269,7 +1269,7 @@ describe("sandbox adapter execution targets", () => {
       // at `stop()`, which the caller awaits before it ends `task.run`. Use a
       // child that ignores stdin and never exits on its own, so the launch
       // command stays pending across `stop()`, and prove the span ends anyway.
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-linger-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-linger-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "linger-acp-child.mjs");
       await writeFile(
@@ -1296,7 +1296,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-linger",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1334,7 +1334,7 @@ describe("sandbox adapter execution targets", () => {
     });
 
     it("buffers streamed output until the local proxy connects", async () => {
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-buffer-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-buffer-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "fast-stream-child.mjs");
       await writeFile(
@@ -1358,7 +1358,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-buffer",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1384,7 +1384,7 @@ describe("sandbox adapter execution targets", () => {
     });
 
     it("delivers full streamed output when the sandbox child exits immediately", async () => {
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-fast-exit-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-fast-exit-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "instant-stream-child.mjs");
       await writeFile(
@@ -1407,7 +1407,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-fast-exit",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1430,7 +1430,7 @@ describe("sandbox adapter execution targets", () => {
     });
 
     it("streams live output before the child exits and never writes output event files", async () => {
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-live-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-live-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "live-stream-child.mjs");
       await writeFile(
@@ -1460,7 +1460,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-live",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1515,7 +1515,7 @@ describe("sandbox adapter execution targets", () => {
         // The streamed path uses the stdout wrapper, not the output-file poll, so
         // no `events` directory is ever created under the session runtime tree.
         const hasEventsDir = await readdir(
-          path.posix.join(rootDir, ".paperclip-runtime", "acpx", "process-sessions"),
+          path.posix.join(rootDir, ".todero-runtime", "acpx", "process-sessions"),
           { withFileTypes: true, recursive: true },
         )
           .then((entries) => entries.some((entry) => entry.isDirectory() && entry.name === "events"))
@@ -1538,7 +1538,7 @@ describe("sandbox adapter execution targets", () => {
       // teardown) must run concurrently with the agent, so each must force
       // itself off the session. On the session they queue behind the agent
       // command that never returns, and the first handshake write never drains.
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-process-session-stream-isolation-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-process-session-stream-isolation-"));
       cleanupDirs.push(rootDir);
       const childPath = path.join(rootDir, "echo-acp-child.mjs");
       await writeFile(
@@ -1582,7 +1582,7 @@ describe("sandbox adapter execution targets", () => {
       const bridge = await startAdapterExecutionTargetProcessSessionBridge({
         runId: "run-stream-isolation",
         target,
-        runtimeRootDir: path.posix.join(rootDir, ".paperclip-runtime", "acpx"),
+        runtimeRootDir: path.posix.join(rootDir, ".todero-runtime", "acpx"),
         adapterKey: "acpx",
         command: process.execPath,
         args: [childPath],
@@ -1600,7 +1600,7 @@ describe("sandbox adapter execution targets", () => {
         const result = await runProxyWithInput(bridge!.agentCommand, "hello\n");
         expect(
           result.stdout,
-          await describeProxyRun(result, path.posix.join(rootDir, ".paperclip-runtime", "acpx")),
+          await describeProxyRun(result, path.posix.join(rootDir, ".todero-runtime", "acpx")),
         ).toBe("out:hello\n");
 
         // Exactly one exec runs on the persistent session: the long-lived agent
@@ -1954,7 +1954,7 @@ describe("sandbox adapter execution targets", () => {
       spec: {
         host: "ssh.example.test",
         port: 22,
-        username: "paperclip",
+        username: "todero",
         remoteWorkspacePath: "/workspace",
         remoteCwd: "/workspace",
         privateKey: null,
@@ -1963,12 +1963,12 @@ describe("sandbox adapter execution targets", () => {
       },
     };
 
-    expect(adapterExecutionTargetUsesPaperclipBridge(target)).toBe(true);
+    expect(adapterExecutionTargetUsesToderoBridge(target)).toBe(true);
     expect(adapterExecutionTargetSessionIdentity(target)).toEqual({
       transport: "ssh",
       host: "ssh.example.test",
       port: 22,
-      username: "paperclip",
+      username: "todero",
       remoteCwd: "/workspace",
     });
   });
@@ -2008,11 +2008,11 @@ describe("sandbox adapter execution targets", () => {
     }));
   });
 
-  it("starts a localhost Paperclip bridge for sandbox targets in bridge mode", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-"));
+  it("starts a localhost Todero bridge for sandbox targets in bridge mode", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
@@ -2021,7 +2021,7 @@ describe("sandbox adapter execution targets", () => {
         method: req.method ?? "GET",
         url: req.url ?? "/",
         auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
+        runId: typeof req.headers["x-todero-run-id"] === "string" ? req.headers["x-todero-run-id"] : null,
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -2046,7 +2046,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge",
       target,
       runtimeRootDir,
@@ -2082,10 +2082,10 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("creates a sandbox run log tail factory when bridge streaming is enabled", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-stream-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-stream-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const logs: Array<{ stream: "stdout" | "stderr"; chunk: string }> = [];
@@ -2101,7 +2101,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-stream",
       target,
       runtimeRootDir,
@@ -2126,10 +2126,10 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("defaults sandbox run log streaming on and honors the explicit opt-out", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-stream-default-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-stream-default-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const baseTarget: AdapterSandboxExecutionTarget = {
@@ -2143,7 +2143,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const defaultBridge = await startAdapterExecutionTargetPaperclipBridge({
+    const defaultBridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-stream-default",
       target: baseTarget,
       runtimeRootDir,
@@ -2157,7 +2157,7 @@ describe("sandbox adapter execution targets", () => {
       await defaultBridge?.stop();
     }
 
-    const optOutBridge = await startAdapterExecutionTargetPaperclipBridge({
+    const optOutBridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-stream-opt-out",
       target: { ...baseTarget, streamRunLogs: false },
       runtimeRootDir,
@@ -2213,7 +2213,7 @@ describe("sandbox adapter execution targets", () => {
     const tail = createSandboxRunLogTailFactory({
       runner,
       remoteCwd: "/workspace",
-      logsDir: "/workspace/.paperclip-runtime/codex/paperclip-bridge/queue/logs",
+      logsDir: "/workspace/.todero-runtime/codex/todero-bridge/queue/logs",
       pollIntervalMs: 1,
       maxChunkBytesPerTick: 4,
       tickTimeoutMs: 50,
@@ -2267,7 +2267,7 @@ describe("sandbox adapter execution targets", () => {
     const tail = createSandboxRunLogTailFactory({
       runner,
       remoteCwd: "/workspace",
-      logsDir: "/workspace/.paperclip-runtime/codex/paperclip-bridge/queue/logs",
+      logsDir: "/workspace/.todero-runtime/codex/todero-bridge/queue/logs",
       pollIntervalMs: 1,
       maxChunkBytesPerTick: 7,
       tickTimeoutMs: 50,
@@ -2301,7 +2301,7 @@ describe("sandbox adapter execution targets", () => {
     const tail = createSandboxRunLogTailFactory({
       runner,
       remoteCwd: "/workspace",
-      logsDir: "/workspace/.paperclip-runtime/codex/paperclip-bridge/queue/logs",
+      logsDir: "/workspace/.todero-runtime/codex/todero-bridge/queue/logs",
       pollIntervalMs: 1,
       tickTimeoutMs: 50,
       maxConsecutiveFailures: 1,
@@ -2316,15 +2316,15 @@ describe("sandbox adapter execution targets", () => {
 
     expect(combinedStream(events, "stdout")).toBe("final out\n");
     expect(combinedStream(events, "stderr")).toBe(
-      "final err\n[paperclip] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
+      "final err\n[todero] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
     );
   });
 
-  it("exposes the Paperclip bridge to the sandbox shell surface", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-shell-"));
+  it("exposes the Todero bridge to the sandbox shell surface", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-shell-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "claude");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "claude");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
@@ -2333,7 +2333,7 @@ describe("sandbox adapter execution targets", () => {
         method: req.method ?? "GET",
         url: req.url ?? "/",
         auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
+        runId: typeof req.headers["x-todero-run-id"] === "string" ? req.headers["x-todero-run-id"] : null,
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -2362,7 +2362,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-shell",
       target,
       runtimeRootDir,
@@ -2435,10 +2435,10 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("uses the effective adapter timeout when starting the sandbox callback bridge", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-timeout-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-timeout-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const delegateRunner = createLocalSandboxRunner();
@@ -2469,7 +2469,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-timeout",
       target,
       runtimeRootDir,
@@ -2498,10 +2498,10 @@ describe("sandbox adapter execution targets", () => {
     // a retryable 502. The in-sandbox server maps the indeterminate 504 to a
     // non-retryable 409. A retryable status would repeat the mutation with a new
     // request id outside the broker deduplication set.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-limit-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-limit-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
@@ -2514,7 +2514,7 @@ describe("sandbox adapter execution targets", () => {
         method: req.method ?? "GET",
         url: req.url ?? "/",
         auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
+        runId: typeof req.headers["x-todero-run-id"] === "string" ? req.headers["x-todero-run-id"] : null,
       });
       res.writeHead(201, {
         "content-type": "application/json",
@@ -2542,7 +2542,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-limit",
       target,
       runtimeRootDir,
@@ -2564,7 +2564,7 @@ describe("sandbox adapter execution targets", () => {
       // The indeterminate 504 maps to a non-retryable 409, so the caller does not
       // retry the committed mutation.
       expect(response.status).toBe(409);
-      expect(response.headers.get("x-paperclip-bridge-outcome")).toBe("indeterminate");
+      expect(response.headers.get("x-todero-bridge-outcome")).toBe("indeterminate");
       await expect(response.json()).resolves.toEqual({
         error: "Bridge response body exceeded the configured size limit of 512 bytes.",
         outcome: "indeterminate",
@@ -2590,10 +2590,10 @@ describe("sandbox adapter execution targets", () => {
     // retryable 502 with no indeterminate marker, not the non-retryable 504 the
     // forward returns for a mutating method. The in-sandbox server passes the 502
     // through, so the caller can retry the safe read.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-safe-limit-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-safe-limit-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
@@ -2603,7 +2603,7 @@ describe("sandbox adapter execution targets", () => {
         method: req.method ?? "GET",
         url: req.url ?? "/",
         auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
+        runId: typeof req.headers["x-todero-run-id"] === "string" ? req.headers["x-todero-run-id"] : null,
       });
       res.writeHead(200, {
         "content-type": "application/json",
@@ -2631,7 +2631,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-safe-limit",
       target,
       runtimeRootDir,
@@ -2651,7 +2651,7 @@ describe("sandbox adapter execution targets", () => {
       // The forward returns a retryable 502 with no indeterminate marker, so the
       // server passes it through instead of mapping it to a terminal 409.
       expect(response.status).toBe(502);
-      expect(response.headers.get("x-paperclip-bridge-outcome")).toBeNull();
+      expect(response.headers.get("x-todero-bridge-outcome")).toBeNull();
       await expect(response.json()).resolves.toEqual({
         error: "Bridge response body exceeded the configured size limit of 512 bytes.",
       });
@@ -2669,21 +2669,21 @@ describe("sandbox adapter execution targets", () => {
 
   it("forwards the host indeterminate-outcome header so the sandbox server maps the 504 to a non-retryable 409", async () => {
     // The host marks a possibly-committed mutation with a 504 and the
-    // `x-paperclip-bridge-outcome: indeterminate` header. The forward must keep
+    // `x-todero-bridge-outcome: indeterminate` header. The forward must keep
     // that header, so the in-sandbox server maps the 504 to a non-retryable 409.
     // If the forward drops the header, the client sees a retryable 504 and a
     // retry repeats a mutation that already committed.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-outcome-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-outcome-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "codex");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "codex");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const responseBody = JSON.stringify({ error: "Mutation outcome is indeterminate.", outcome: "indeterminate", retryable: false });
     const apiServer = createServer((_req, res) => {
       res.writeHead(504, {
         "content-type": "application/json",
-        "x-paperclip-bridge-outcome": "indeterminate",
+        "x-todero-bridge-outcome": "indeterminate",
       });
       res.end(responseBody);
     });
@@ -2707,7 +2707,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-outcome",
       target,
       runtimeRootDir,
@@ -2729,7 +2729,7 @@ describe("sandbox adapter execution targets", () => {
       expect(response.status).toBe(409);
       // The outcome header and body still reach the client, so a caller that
       // reads them still sees the indeterminate result.
-      expect(response.headers.get("x-paperclip-bridge-outcome")).toBe("indeterminate");
+      expect(response.headers.get("x-todero-bridge-outcome")).toBe("indeterminate");
       await expect(response.json()).resolves.toEqual({
         error: "Mutation outcome is indeterminate.",
         outcome: "indeterminate",
@@ -2742,10 +2742,10 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("forwards bridge traffic to the local listen origin even when public API URLs are configured", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-local-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-local-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "claude");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "claude");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const requests: Array<{ method: string; url: string; auth: string | null; runId: string | null }> = [];
@@ -2754,7 +2754,7 @@ describe("sandbox adapter execution targets", () => {
         method: req.method ?? "GET",
         url: req.url ?? "/",
         auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
+        runId: typeof req.headers["x-todero-run-id"] === "string" ? req.headers["x-todero-run-id"] : null,
       });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
@@ -2789,7 +2789,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-local",
       target,
       runtimeRootDir,
@@ -2820,10 +2820,10 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("lets an explicit hostApiUrl input override the bridge forward target", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-execution-target-bridge-override-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-execution-target-bridge-override-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
-    const runtimeRootDir = path.join(remoteCwd, ".paperclip-runtime", "claude");
+    const runtimeRootDir = path.join(remoteCwd, ".todero-runtime", "claude");
     await mkdir(runtimeRootDir, { recursive: true });
 
     const requests: string[] = [];
@@ -2859,7 +2859,7 @@ describe("sandbox adapter execution targets", () => {
       timeoutMs: 30_000,
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-bridge-override",
       target,
       runtimeRootDir,
@@ -3164,7 +3164,7 @@ describe("sandbox adapter execution targets", () => {
         method: req.method ?? "GET",
         url: req.url ?? "/",
         auth: req.headers.authorization ?? null,
-        runId: typeof req.headers["x-paperclip-run-id"] === "string" ? req.headers["x-paperclip-run-id"] : null,
+        runId: typeof req.headers["x-todero-run-id"] === "string" ? req.headers["x-todero-run-id"] : null,
         headers,
       });
       res.writeHead(200, { "content-type": "application/json" });
@@ -3189,7 +3189,7 @@ describe("sandbox adapter execution targets", () => {
     // The channel open itself fails (a provider startup fault, before any
     // READY line or preface is possible). The host must fall back to the
     // file bridge and record the typed open-failure reason, never hang.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-startup-fail-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-startup-fail-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3212,10 +3212,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-startup-fail",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3235,7 +3235,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("test_daytona_selects_http2_v1", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-select-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-select-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3259,10 +3259,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-http2",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3304,7 +3304,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("streams run logs on the http2 path under the same gate and log line as the file path", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-runlog-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-runlog-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3322,10 +3322,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-duplex-log",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3350,7 +3350,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("returns no run-log tail on the http2 path when streaming is opted out", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-runlog-off-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-runlog-off-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3367,10 +3367,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-http2-log-off",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3386,7 +3386,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("routes http2 channel-open and fallback records to a recorder attached on the server seam", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-recorder-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-recorder-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3414,10 +3414,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
       duplexObservabilityRecorder: recorder,
     };
-    const openBridge = await startAdapterExecutionTargetPaperclipBridge({
+    const openBridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-http2-open",
       target: openTarget,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3446,10 +3446,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
       duplexObservabilityRecorder: recorder,
     };
-    const fallbackBridge = await startAdapterExecutionTargetPaperclipBridge({
+    const fallbackBridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-duplex-fallback",
       target: fallbackTarget,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3471,7 +3471,7 @@ describe("sandbox adapter execution targets", () => {
     { name: "the kill switch is off with the capability granted", enable: false, capability: true },
     { name: "the capability is absent with the kill switch on", enable: true, capability: false },
   ])("selects the file bridge when $name", async ({ enable, capability }) => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-gate-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-gate-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3487,10 +3487,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(capability),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-gate",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3530,7 +3530,7 @@ describe("sandbox adapter execution targets", () => {
       onOpen: () => {},
     },
   ])("fails closed to the file bridge on $name and leaves no live session", async ({ onOpen }) => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-fail-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-fail-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3546,10 +3546,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-fail",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3583,7 +3583,7 @@ describe("sandbox adapter execution targets", () => {
   ])(
     "rejects a READY frame that carries $name and never sends the bridge token there",
     async ({ buildReady }) => {
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-addr-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-addr-"));
       cleanupDirs.push(rootDir);
       const remoteCwd = path.join(rootDir, "workspace");
       await mkdir(remoteCwd, { recursive: true });
@@ -3621,10 +3621,10 @@ describe("sandbox adapter execution targets", () => {
         effectiveCapabilities: duplexCapabilities(true),
       };
 
-      const bridge = await startAdapterExecutionTargetPaperclipBridge({
+      const bridge = await startAdapterExecutionTargetToderoBridge({
         runId: "run-addr",
         target,
-        runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+        runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
         adapterKey: "codex",
         hostApiToken: "real-run-jwt",
         hostApiUrl: api.origin,
@@ -3651,7 +3651,7 @@ describe("sandbox adapter execution targets", () => {
   );
 
   it("test_route_allowlist_header_cleanup_and_token_replacement_hold_on_http2", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-403-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-403-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3673,10 +3673,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-http2-403",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3774,7 +3774,7 @@ describe("sandbox adapter execution targets", () => {
   });
 
   it("records an http2 request span with latency and the fixed dimension keys", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-obs-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-obs-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3797,10 +3797,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-obs",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3846,7 +3846,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("increments the fallback counter with an approved reason when the capability is absent", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-fb-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-fb-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -3863,10 +3863,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(false),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-fb",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -3918,7 +3918,7 @@ describe("sandbox adapter execution targets", () => {
   ])(
     "names the open-failure stage $expectedReason and falls back to the file bridge on $name",
     async ({ error, expectedReason }) => {
-      const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-stage-"));
+      const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-stage-"));
       cleanupDirs.push(rootDir);
       const remoteCwd = path.join(rootDir, "workspace");
       await mkdir(remoteCwd, { recursive: true });
@@ -3941,10 +3941,10 @@ describe("sandbox adapter execution targets", () => {
         effectiveCapabilities: duplexCapabilities(true),
       };
 
-      const bridge = await startAdapterExecutionTargetPaperclipBridge({
+      const bridge = await startAdapterExecutionTargetToderoBridge({
         runId: "run-stage",
         target,
-        runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+        runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
         adapterKey: "codex",
         hostApiToken: "real-run-jwt",
         hostApiUrl: api.origin,
@@ -3979,7 +3979,7 @@ describe("sandbox adapter execution targets", () => {
     { name: "before any dispatch", dispatchFirst: false, expectedClass: "pre_dispatch" },
     { name: "after a dispatch", dispatchFirst: true, expectedClass: "post_dispatch" },
   ])("increments the loss counter with the loss class $name", async ({ dispatchFirst, expectedClass }) => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-loss-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-loss-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4004,10 +4004,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-loss",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4044,7 +4044,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("keeps serving the request path when the telemetry recorder throws", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-guard-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-guard-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4067,10 +4067,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-guard",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4104,7 +4104,7 @@ describe("sandbox adapter execution targets", () => {
     // error string has no code path into a sink on the http2_v1 transport, so
     // this test proves the property that does need a live run: the route,
     // the query, the body, and both tokens never ride a sink either.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-redact-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-redact-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4138,12 +4138,12 @@ describe("sandbox adapter execution targets", () => {
 
     const previousDebug = process.env.PAPERCLIP_BRIDGE_DEBUG;
     process.env.PAPERCLIP_BRIDGE_DEBUG = "1";
-    let bridge: Awaited<ReturnType<typeof startAdapterExecutionTargetPaperclipBridge>> = null;
+    let bridge: Awaited<ReturnType<typeof startAdapterExecutionTargetToderoBridge>> = null;
     try {
-      bridge = await startAdapterExecutionTargetPaperclipBridge({
+      bridge = await startAdapterExecutionTargetToderoBridge({
         runId: "run-redact",
         target,
-        runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+        runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
         adapterKey: "codex",
         hostApiToken: AGENT_TOKEN_SENTINEL,
         hostApiUrl: api.origin,
@@ -4194,7 +4194,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("maps a sentinel provider key to the constant other across every sink", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-prov-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-prov-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4218,10 +4218,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-prov",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4264,7 +4264,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("caps the pre-READY readiness buffer and falls back with a contaminated reason", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-cap-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-cap-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4289,10 +4289,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-cap",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4318,7 +4318,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("caps the pre-READY buffer under many small newline-less chunks", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-cap-small-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-cap-small-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4347,10 +4347,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-cap-small",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4375,7 +4375,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("bounds the pre-READY newline-scan work by the bytes received", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-scan-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-scan-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4405,10 +4405,10 @@ describe("sandbox adapter execution targets", () => {
     };
 
     __duplexReadinessTesting.resetNewlineScanUnits();
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-scan-bound",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4431,7 +4431,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("bounds the pre-READY buffer growth-copy work by the bytes received", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-growth-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-growth-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4462,10 +4462,10 @@ describe("sandbox adapter execution targets", () => {
     };
 
     __duplexReadinessTesting.resetBufferGrowthCopyUnits();
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-growth-bound",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4489,7 +4489,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("bounds the pre-READY skip scan work by the bytes received", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-blank-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-blank-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4520,10 +4520,10 @@ describe("sandbox adapter execution targets", () => {
     };
 
     __duplexReadinessTesting.resetNewlineScanUnits();
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-blank-scan",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4551,7 +4551,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("test_a_prologue_of_any_length_before_the_ready_line_is_discarded", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-noise-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-noise-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4580,10 +4580,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-noise-ready",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4607,7 +4607,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("settles a wrong-nonce READY frame as a nonce mismatch, even after a noise line", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-noise-nonce-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-noise-nonce-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4631,10 +4631,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-noise-nonce",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4658,7 +4658,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("enforces the buffer cap on an over-cap blank prefix before it accepts a valid READY frame", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-capbypass-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-capbypass-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4688,10 +4688,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-cap-bypass",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4716,7 +4716,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("records the channel-open span with the fallback_reason dimension on the fallback path", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-duplex-openspan-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-duplex-openspan-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4739,10 +4739,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-open-span",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4769,7 +4769,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("drops a header outside the allowlist on the host http2 forward path", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-hdr-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-hdr-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4791,10 +4791,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-hdr",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4832,7 +4832,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("selects the http2 transport for a large forward budget", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-budget-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-budget-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4858,10 +4858,10 @@ describe("sandbox adapter execution targets", () => {
     // holds no nested-budget derivation (that budget set belonged to the retired
     // duplex_v1 broker only), so a large forward budget must still select and
     // serve normally.
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-budget",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4885,7 +4885,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("test_a_missing_preface_aborts_the_open_and_falls_back_to_queue_v1", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-no-preface-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-no-preface-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4910,10 +4910,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-no-preface",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4939,7 +4939,7 @@ describe("sandbox adapter execution targets", () => {
   }, 20000);
 
   it("test_disabled_flag_selects_queue_v1", async () => {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-disabled-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-disabled-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -4957,10 +4957,10 @@ describe("sandbox adapter execution targets", () => {
     };
 
     // The kill switch is off. The host must never open the channel at all.
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-disabled",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -4983,7 +4983,7 @@ describe("sandbox adapter execution targets", () => {
     // The open attempt runs once per run, with no retry loop: a preface
     // failure falls through to the file bridge exactly one time, and the
     // host never re-attempts http2_v1 afterward in the same run.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-one-way-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-one-way-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5003,10 +5003,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-one-way",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5038,7 +5038,7 @@ describe("sandbox adapter execution targets", () => {
     // READY: it holds the channel open, with no client preface arriving
     // (so the http2 server, if bound, would try to write its own SETTINGS
     // frame), and asserts zero bytes crossed the channel the whole time.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-no-early-write-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-no-early-write-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5089,10 +5089,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-no-early-write",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5118,7 +5118,7 @@ describe("sandbox adapter execution targets", () => {
     // bytes are deliberately sentinel-marked and syntactically invalid (not
     // valid UTF-8 JSON), then a valid READY frame. No log line — on any
     // stream — may contain the sentinel bytes.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-invalid-ready-bytes-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-invalid-ready-bytes-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5142,10 +5142,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-invalid-ready-bytes",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5169,7 +5169,7 @@ describe("sandbox adapter execution targets", () => {
     // A loss ordered after a host-observed orderly completion is a normal
     // teardown, not a failure: the run already completed. The disposition
     // latch must keep the success and emit no loss event for it.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-orderly-close-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-orderly-close-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5191,10 +5191,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-orderly-close",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5224,7 +5224,7 @@ describe("sandbox adapter execution targets", () => {
     // retryable: the host answers 502 with no indeterminate marker, the same
     // rule `forwardBridgeRequest` already applies on every transport. This
     // proves the http2_v1 forward handler reuses that one function unchanged.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-safe-retry-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-safe-retry-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5246,10 +5246,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-safe-retry",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5267,7 +5267,7 @@ describe("sandbox adapter execution targets", () => {
         headers: { authorization: `Bearer ${bridgeToken}` },
       });
       expect(response.status).toBe(502);
-      expect(response.headers["x-paperclip-bridge-outcome"]).toBeUndefined();
+      expect(response.headers["x-todero-bridge-outcome"]).toBeUndefined();
     } finally {
       sessionRef.current?.close();
       await bridge?.stop();
@@ -5280,7 +5280,7 @@ describe("sandbox adapter execution targets", () => {
     // failed, so a retry could double-apply it. The host answers a
     // non-retryable 504 with the indeterminate marker instead — the same
     // rule `forwardBridgeRequest` already applies on every transport.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-unsafe-indeterminate-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-unsafe-indeterminate-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5302,10 +5302,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-unsafe-indeterminate",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5322,7 +5322,7 @@ describe("sandbox adapter execution targets", () => {
         body: JSON.stringify({ body: "hello" }),
       });
       expect(response.status).toBe(504);
-      expect(response.headers["x-paperclip-bridge-outcome"]).toBe("indeterminate");
+      expect(response.headers["x-todero-bridge-outcome"]).toBe("indeterminate");
     } finally {
       sessionRef.current?.close();
       await bridge?.stop();
@@ -5357,7 +5357,7 @@ describe("sandbox adapter execution targets", () => {
     }
     const apiOrigin = `http://127.0.0.1:${apiAddress.port}`;
 
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-abort-forward-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-abort-forward-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5378,10 +5378,10 @@ describe("sandbox adapter execution targets", () => {
       effectiveCapabilities: duplexCapabilities(true),
     };
 
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-abort-forward",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: apiOrigin,
@@ -5422,7 +5422,7 @@ describe("sandbox adapter execution targets", () => {
   // ---------------------------------------------------------------------------
 
   async function runReadinessReplay(emit: (ctx: Http2OpenContext) => void) {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-pty-replay-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-pty-replay-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5439,10 +5439,10 @@ describe("sandbox adapter execution targets", () => {
       runner,
       effectiveCapabilities: duplexCapabilities(true),
     };
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-pty-replay",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5461,7 +5461,7 @@ describe("sandbox adapter execution targets", () => {
   it("PTY replay: accepts READY after an echoed prompt and wrapper line", async () => {
     const { mode } = await runReadinessReplay((ctx) => {
       ctx.emitRaw(
-        "daytona@212487a7f3c9:~$ exec 2>'/tmp/paperclip-duplex-x.log'; stty raw -echo; " +
+        "daytona@212487a7f3c9:~$ exec 2>'/tmp/todero-duplex-x.log'; stty raw -echo; " +
           "exec 'bash' '-c' 'exec env PAPERCLIP_BRIDGE_NONCE=" + ctx.nonce + " node gateway.mjs'\r\n",
       );
       ctx.emitRaw('{"version":2,"type":"ready","nonce":"' + ctx.nonce + '"}\n');
@@ -5559,7 +5559,7 @@ describe("sandbox adapter execution targets", () => {
     // HTTP/2 server. A pre-preface byte would make the server report a
     // `PROTOCOL_ERROR`; this test proves the real session opens cleanly
     // instead, which only holds when the offset is exact.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-preface-offset-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-preface-offset-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5582,10 +5582,10 @@ describe("sandbox adapter execution targets", () => {
       runner,
       effectiveCapabilities: duplexCapabilities(true),
     };
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-preface-offset",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,
@@ -5614,7 +5614,7 @@ describe("sandbox adapter execution targets", () => {
     // the shell. This test embeds the exact preface bytes in the pre-READY
     // noise, then proves a session still starts only at the REAL preface
     // that follows READY.
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-http2-preface-lookalike-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-http2-preface-lookalike-"));
     cleanupDirs.push(rootDir);
     const remoteCwd = path.join(rootDir, "workspace");
     await mkdir(remoteCwd, { recursive: true });
@@ -5637,10 +5637,10 @@ describe("sandbox adapter execution targets", () => {
       runner,
       effectiveCapabilities: duplexCapabilities(true),
     };
-    const bridge = await startAdapterExecutionTargetPaperclipBridge({
+    const bridge = await startAdapterExecutionTargetToderoBridge({
       runId: "run-preface-lookalike",
       target,
-      runtimeRootDir: path.join(remoteCwd, ".paperclip-runtime", "codex"),
+      runtimeRootDir: path.join(remoteCwd, ".todero-runtime", "codex"),
       adapterKey: "codex",
       hostApiToken: "real-run-jwt",
       hostApiUrl: api.origin,

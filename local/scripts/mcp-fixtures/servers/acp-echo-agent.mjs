@@ -9,11 +9,11 @@ function writeMessage(message) {
 async function handleRequest(request) {
   if (request.method === "initialize") {
     process.stderr.write("Error handling request { method: 'nes/close' } { code: -32601 }\n");
-    process.stderr.write("paperclip-acp-echo-agent started\n");
+    process.stderr.write("todero-acp-echo-agent started\n");
     return {
       protocolVersion: 1,
       agentCapabilities: { loadSession: false, sessionCapabilities: { close: {} } },
-      agentInfo: { name: "paperclip-acp-echo-agent", version: "1.0.0" },
+      agentInfo: { name: "todero-acp-echo-agent", version: "1.0.0" },
     };
   }
   if (request.method === "session/new") return { sessionId: randomUUID() };

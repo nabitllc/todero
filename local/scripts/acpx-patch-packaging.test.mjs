@@ -64,7 +64,7 @@ test("bundled package staging materializes publishConfig entrypoints", () => {
 
 test("bundled package staging materializes workspace dependency versions", () => {
   const staged = materializePublishManifest({
-    name: "@paperclipai/example",
+    name: "@todero/example",
     version: "2026.723.0",
     dependencies: { exact: "workspace:*", caret: "workspace:^", tilde: "workspace:~" },
   });
@@ -79,10 +79,10 @@ test("bundled package staging materializes workspace dependency versions", () =>
 test("bundled package staging installs only dependencies included in the tarball", () => {
   const installManifest = createBundledInstallManifest(
     {
-      name: "@paperclipai/db",
+      name: "@todero/db",
       version: "2026.723.0-canary.8",
       dependencies: {
-        "@paperclipai/shared": "2026.723.0-canary.8",
+        "@todero/shared": "2026.723.0-canary.8",
         "drizzle-orm": "^0.45.2",
         "embedded-postgres": "^18.1.0-beta.16",
       },
@@ -98,7 +98,7 @@ test("bundled package staging installs only dependencies included in the tarball
 });
 
 test("bundled package staging rebuilds npm dependencies and applies the acpx patch", (t) => {
-  const fixtureDir = mkdtempSync(join(tmpdir(), "paperclip-bundled-stage-"));
+  const fixtureDir = mkdtempSync(join(tmpdir(), "todero-bundled-stage-"));
   const sourceDir = join(fixtureDir, "source");
   const destinationDir = join(fixtureDir, "destination");
   const binDir = join(fixtureDir, "bin");

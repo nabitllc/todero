@@ -11,7 +11,7 @@ describe("resolveSessionKey", () => {
         runId: "run-123",
         issueId: null,
       }),
-    ).toBe("agent:meridian:paperclip:run:run-123");
+    ).toBe("agent:meridian:todero:run:run-123");
   });
 
   it("prefixes issue-scoped session keys with the configured agent", () => {
@@ -23,45 +23,45 @@ describe("resolveSessionKey", () => {
         runId: "run-123",
         issueId: "issue-456",
       }),
-    ).toBe("agent:meridian:paperclip:issue:issue-456");
+    ).toBe("agent:meridian:todero:issue:issue-456");
   });
 
   it("prefixes fixed session keys with the configured agent", () => {
     expect(
       resolveSessionKey({
         strategy: "fixed",
-        configuredSessionKey: "paperclip",
+        configuredSessionKey: "todero",
         agentId: "meridian",
         runId: "run-123",
         issueId: null,
       }),
-    ).toBe("agent:meridian:paperclip");
+    ).toBe("agent:meridian:todero");
   });
 
   it("does not double-prefix an already-routed session key", () => {
     expect(
       resolveSessionKey({
         strategy: "fixed",
-        configuredSessionKey: "agent:meridian:paperclip",
+        configuredSessionKey: "agent:meridian:todero",
         agentId: "meridian",
         runId: "run-123",
         issueId: null,
       }),
-    ).toBe("agent:meridian:paperclip");
+    ).toBe("agent:meridian:todero");
   });
 });
 
 describe("buildAgentParams", () => {
-  it("strips root-level paperclip fields from gateway agent params", () => {
+  it("strips root-level todero fields from gateway agent params", () => {
     expect(
       buildAgentParams({
         payloadTemplate: {
           text: "old text",
-          paperclip: { stale: true },
+          todero: { stale: true },
           keep: "value",
         },
         message: "wake text",
-        sessionKey: "agent:meridian:paperclip:issue:issue-456",
+        sessionKey: "agent:meridian:todero:issue:issue-456",
         runId: "run-123",
         configuredAgentId: "meridian",
         waitTimeoutMs: 30_000,
@@ -69,7 +69,7 @@ describe("buildAgentParams", () => {
     ).toEqual({
       keep: "value",
       message: "wake text",
-      sessionKey: "agent:meridian:paperclip:issue:issue-456",
+      sessionKey: "agent:meridian:todero:issue:issue-456",
       idempotencyKey: "run-123",
       agentId: "meridian",
       timeout: 30_000,
@@ -84,7 +84,7 @@ describe("buildAgentParams", () => {
           timeout: 5_000,
         },
         message: "wake text",
-        sessionKey: "paperclip",
+        sessionKey: "todero",
         runId: "run-123",
         configuredAgentId: "configured-agent",
         waitTimeoutMs: 30_000,
@@ -93,19 +93,19 @@ describe("buildAgentParams", () => {
       agentId: "template-agent",
       timeout: 5_000,
       message: "wake text",
-      sessionKey: "paperclip",
+      sessionKey: "todero",
       idempotencyKey: "run-123",
     });
   });
 });
 
 describe("resolveClaimedApiKeyPath", () => {
-  const DEFAULT_PATH = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
+  const DEFAULT_PATH = "~/.openclaw/workspace/todero-claimed-api-key.json";
 
   it("returns the configured per-agent path when set", () => {
     expect(
-      resolveClaimedApiKeyPath("~/.openclaw/workspace/paperclip-keys/happy.json"),
-    ).toBe("~/.openclaw/workspace/paperclip-keys/happy.json");
+      resolveClaimedApiKeyPath("~/.openclaw/workspace/todero-keys/happy.json"),
+    ).toBe("~/.openclaw/workspace/todero-keys/happy.json");
   });
 
   it("falls back to the shared default when value is empty", () => {

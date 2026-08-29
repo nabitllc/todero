@@ -458,9 +458,9 @@ describe("agent instructions bundle routes", () => {
     );
   });
 
-  it("preserves paperclip skill-sync selections when switching adapters", async () => {
+  it("preserves todero skill-sync selections when switching adapters", async () => {
     // Desired skills live inside the per-adapter config under
-    // `paperclipSkillSync`, yet they are adapter-agnostic company-level
+    // `toderoSkillSync`, yet they are adapter-agnostic company-level
     // selections. Switching adapter type must not silently wipe them — the
     // server carries them over from the existing config the same way it
     // preserves env/cwd and the instructions bundle.
@@ -469,7 +469,7 @@ describe("agent instructions bundle routes", () => {
       adapterType: "claude_local",
       adapterConfig: {
         model: "claude-sonnet-4",
-        paperclipSkillSync: { desiredSkills: ["research", "code-review"] },
+        toderoSkillSync: { desiredSkills: ["research", "code-review"] },
       },
     });
 
@@ -490,7 +490,7 @@ describe("agent instructions bundle routes", () => {
         adapterType: "codex_local",
         adapterConfig: expect.objectContaining({
           model: "gpt-5.4",
-          paperclipSkillSync: { desiredSkills: ["research", "code-review"] },
+          toderoSkillSync: { desiredSkills: ["research", "code-review"] },
         }),
       }),
       expect.any(Object),

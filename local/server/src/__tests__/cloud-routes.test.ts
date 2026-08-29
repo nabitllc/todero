@@ -58,7 +58,7 @@ describe("GET /api/cloud/stacks", () => {
 
     const res = await request(app)
       .get("/api/cloud/stacks?userId=client-supplied-user")
-      .set("x-paperclip-cloud-user-id", "spoofed-header-user")
+      .set("x-todero-cloud-user-id", "spoofed-header-user")
       .set("authorization", "Bearer client-token");
 
     expect(res.status).toBe(200);
@@ -72,8 +72,8 @@ describe("GET /api/cloud/stacks", () => {
     expect(init?.headers).toEqual({
       accept: "application/json",
       authorization: "Bearer tenant-secret",
-      "x-paperclip-cloud-user-id": "actor-user",
-      "x-paperclip-cloud-stack-id": "stack-current",
+      "x-todero-cloud-user-id": "actor-user",
+      "x-todero-cloud-stack-id": "stack-current",
     });
     expect(JSON.stringify(init)).not.toContain("client-supplied-user");
     expect(JSON.stringify(init)).not.toContain("spoofed-header-user");
@@ -102,7 +102,7 @@ describe("GET /api/cloud/stacks", () => {
   it("keeps cache entries isolated by the server-derived actor user id", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
       const headers = new Headers(init?.headers);
-      return jsonResponse({ userId: headers.get("x-paperclip-cloud-user-id") });
+      return jsonResponse({ userId: headers.get("x-todero-cloud-user-id") });
     });
     const app = express();
     app.use((req, _res, next) => {

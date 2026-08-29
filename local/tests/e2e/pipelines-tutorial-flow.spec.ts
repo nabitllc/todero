@@ -287,7 +287,7 @@ test.describe("Pipelines tutorial UI flow", () => {
       baseURL: BASE_URL,
       extraHTTPHeaders: {
         Authorization: `Bearer ${key.token}`,
-        "X-Paperclip-Run-Id": key.runId,
+        "X-Todero-Run-Id": key.runId,
       },
     });
 
@@ -453,7 +453,7 @@ test.describe("Pipelines tutorial UI flow", () => {
     try {
       await page.goto("/");
       await page.evaluate((companyId) => {
-        window.localStorage.setItem("paperclip.selectedCompanyId", companyId);
+        window.localStorage.setItem("todero.selectedCompanyId", companyId);
       }, company.id);
       const companyPath = `/${company.issuePrefix}`;
 

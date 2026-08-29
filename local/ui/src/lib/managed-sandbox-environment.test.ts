@@ -7,8 +7,8 @@ import {
 
 describe("managed sandbox environment helpers", () => {
   it("identifies platform-managed rows by the provisioner marker", () => {
-    expect(isPlatformManagedEnvironment({ metadata: { managedByPaperclip: true } })).toBe(true);
-    expect(isPlatformManagedEnvironment({ metadata: { managedByPaperclip: false } })).toBe(false);
+    expect(isPlatformManagedEnvironment({ metadata: { managedByTodero: true } })).toBe(true);
+    expect(isPlatformManagedEnvironment({ metadata: { managedByTodero: false } })).toBe(false);
     expect(isPlatformManagedEnvironment({ metadata: { source: "manual" } })).toBe(false);
     expect(isPlatformManagedEnvironment({ metadata: null })).toBe(false);
     expect(isPlatformManagedEnvironment(null)).toBe(false);
@@ -17,11 +17,11 @@ describe("managed sandbox environment helpers", () => {
   it("labels platform-managed rows by name alone and keeps the driver suffix elsewhere", () => {
     expect(
       environmentDisplayLabel({
-        name: "Paperclip Computer",
+        name: "Todero Computer",
         driver: "sandbox",
-        metadata: { managedByPaperclip: true },
+        metadata: { managedByTodero: true },
       }),
-    ).toBe("Paperclip Computer");
+    ).toBe("Todero Computer");
     expect(
       environmentDisplayLabel({ name: "E2B", driver: "sandbox", metadata: null }),
     ).toBe("E2B · sandbox");

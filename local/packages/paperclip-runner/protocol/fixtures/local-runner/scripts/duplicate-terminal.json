@@ -1,11 +1,11 @@
 {
-  "schema": "paperclip.fake_harness.script.v1",
+  "schema": "todero.fake_harness.script.v1",
   "name": "duplicate-terminal",
   "steps": [
     {
       "kind": "result",
       "payload": {
-        "schema": "paperclip.run_result.v1",
+        "schema": "todero.run_result.v1",
         "reportedWorkDisposition": "done",
         "summary": "The duplicate terminal guard accepted one result.",
         "completionClaim": {
@@ -25,7 +25,7 @@
     {
       "kind": "terminal",
       "payload": {
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": "completed",
         "runTerminalState": "succeeded",
         "reportedWorkDisposition": "done"
@@ -34,7 +34,7 @@
     {
       "kind": "terminal",
       "payload": {
-        "schema": "paperclip.prp.terminal.v1",
+        "schema": "todero.prp.terminal.v1",
         "turnTerminalState": "failed",
         "runTerminalState": "failed",
         "reportedWorkDisposition": "yielded"

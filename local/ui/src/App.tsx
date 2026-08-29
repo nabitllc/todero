@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import type { ToolConnectionCredentialSource } from "@paperclipai/shared";
+import type { ToolConnectionCredentialSource } from "@todero/shared";
 import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
@@ -18,7 +18,7 @@ import { Cases } from "./pages/Cases";
 import { CaseDetail } from "./pages/CaseDetail";
 import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
 import { CloudAccessGate } from "./components/CloudAccessGate";
-import { PaperclipLoading } from "./components/AnimatedPaperclipIcon";
+import { ToderoLoading } from "./components/AnimatedToderoIcon";
 import { Dashboard } from "./pages/Dashboard";
 import { DashboardLive } from "./pages/DashboardLive";
 import { Timeline } from "./pages/Timeline";
@@ -135,7 +135,7 @@ function boardRoutes() {
         <Route
           path="company/export/*"
           element={(
-            <Suspense fallback={<PaperclipLoading />}>
+            <Suspense fallback={<ToderoLoading />}>
               <CompanyExport />
             </Suspense>
           )}
@@ -405,7 +405,7 @@ function LegacySettingsRedirect() {
   const { hidden: hiddenSettings } = useHiddenSettings();
 
   if (loading) {
-    return <PaperclipLoading />;
+    return <ToderoLoading />;
   }
 
   const targetCompany =
@@ -508,7 +508,7 @@ export function OnboardingRoutePage() {
             <p className="text-sm text-muted-foreground">
               {t("app.cloudCreateUnavailable", {
                 defaultValue:
-                  "Organizations are created in Paperclip Cloud. This instance can't reach it right now — try again from your Cloud portfolio.",
+                  "Organizations are created in Todero Cloud. This instance can't reach it right now — try again from your Cloud portfolio.",
               })}
             </p>
           ) : (
@@ -544,7 +544,7 @@ function CompanyRootRedirect() {
   const location = useLocation();
 
   if (loading) {
-    return <PaperclipLoading />;
+    return <ToderoLoading />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
@@ -575,7 +575,7 @@ function UnprefixedBoardRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
 
   if (loading) {
-    return <PaperclipLoading />;
+    return <ToderoLoading />;
   }
 
   const targetCompany = selectedCompany ?? companies[0] ?? null;
@@ -623,7 +623,7 @@ function NoCompaniesStartPage() {
             <p className="text-sm text-muted-foreground">
               {t("app.cloudCreateUnavailable", {
                 defaultValue:
-                  "Organizations are created in Paperclip Cloud. This instance can't reach it right now — try again from your Cloud portfolio.",
+                  "Organizations are created in Todero Cloud. This instance can't reach it right now — try again from your Cloud portfolio.",
               })}
             </p>
           ) : (

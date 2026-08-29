@@ -2,7 +2,7 @@
  * Forcing a managed runtime's listeners onto loopback through argv (PAP-17256).
  *
  * The broker only exposes a port whose listener /proc proves to be loopback-only,
- * so an exposed Paperclip dev runtime MUST bind `127.0.0.1`. The server used to
+ * so an exposed Todero dev runtime MUST bind `127.0.0.1`. The server used to
  * request that with env vars alone (`PAPERCLIP_BIND` / `PAPERCLIP_BIND_HOST`),
  * which is not sufficient: the process that has to honour them is the *guest
  * checkout's* `scripts/dev-runner.ts`, and a checkout that predates managed
@@ -39,7 +39,7 @@ export function commandSelectsBindMode(command: string): boolean {
 }
 
 /**
- * A Paperclip dev-runner invocation — the only shape that understands
+ * A Todero dev-runner invocation — the only shape that understands
  * `--bind` / `--bind-host`.
  *
  * Deliberately keyed on the *command*, not the service name. `--bind` means
@@ -50,26 +50,26 @@ export function commandSelectsBindMode(command: string): boolean {
 const PAPERCLIP_DEV_RUNNER_COMMAND =
   /(?:^|[\s;&|])(?:(?:pnpm|npm|yarn|bun)(?:\s+run)?\s+dev(?::once|:watch|:server)?(?=\s|$)|[^\s]*dev-runner(?:\.[cm]?[jt]s)?(?=\s|$))/;
 
-export function isPaperclipDevRunnerCommand(command: string): boolean {
+export function isToderoDevRunnerCommand(command: string): boolean {
   return PAPERCLIP_DEV_RUNNER_COMMAND.test(command);
 }
 
 /**
- * Rewrite a Paperclip dev-runner command so it explicitly requests the loopback
+ * Rewrite a Todero dev-runner command so it explicitly requests the loopback
  * bind, replacing whatever bind selection it carried.
  *
  * A command that is not a dev-runner invocation is returned untouched — see
- * {@link isPaperclipDevRunnerCommand} for why that guard is not optional.
+ * {@link isToderoDevRunnerCommand} for why that guard is not optional.
  *
  * The legacy `--tailscale-auth` / `--authenticated-private` aliases are
  * deliberately *left in place*: an explicit `--bind` already wins over them in
  * every dev-runner version, they still correctly select the authenticated
- * deployment mode an exposed lane wants, and `isPaperclipDevRuntimeService`
+ * deployment mode an exposed lane wants, and `isToderoDevRuntimeService`
  * matches on `--tailscale-auth` as a substring, so stripping it would silently
  * change readiness handling.
  */
 export function forceLoopbackBindInCommand(command: string): string {
-  if (!isPaperclipDevRunnerCommand(command)) return command;
+  if (!isToderoDevRunnerCommand(command)) return command;
   const stripped = command.replace(BIND_SELECTING_ARG, "").trim();
   if (stripped.length === 0) return command;
   return `${stripped} --bind ${RUNTIME_EXPOSURE_BIND_MODE}`;
@@ -81,7 +81,7 @@ export function forceLoopbackBindInCommand(command: string): string {
  * An exposed runtime's listener is loopback-only by construction, so probing it
  * on any other host cannot work. The live config happens to declare a loopback
  * readiness URL, but the fallback target is the service's display URL — a
- * MagicDNS name like `http://paperclip-dev:42003` — which only ever answered
+ * MagicDNS name like `http://todero-dev:42003` — which only ever answered
  * because the guest was wrongly bound to the wildcard. Normalising here keeps
  * the loopback fix from turning that latent mismatch into a readiness timeout.
  */

@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, getTableColumns, gte, isNull, lte, ne, or } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   companies,
@@ -17,11 +17,11 @@ import {
   issueComments,
   issueDocuments,
   issues,
-} from "@paperclipai/db";
-import { readPaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
-import { claudeConfigDir, parseClaudeStreamJson } from "@paperclipai/adapter-claude-local/server";
-import { codexHomeDir, parseCodexJsonl } from "@paperclipai/adapter-codex-local/server";
-import { parseOpenCodeJsonl } from "@paperclipai/adapter-opencode-local/server";
+} from "@todero/db";
+import { readToderoSkillSyncPreference } from "@todero/adapter-utils/server-utils";
+import { claudeConfigDir, parseClaudeStreamJson } from "@todero/adapter-claude-local/server";
+import { codexHomeDir, parseCodexJsonl } from "@todero/adapter-codex-local/server";
+import { parseOpenCodeJsonl } from "@todero/adapter-opencode-local/server";
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
@@ -35,8 +35,8 @@ import {
   type FeedbackTraceStatus,
   type FeedbackTraceTargetSummary,
   type FeedbackVoteValue,
-} from "@paperclipai/shared";
-import { resolveHomeAwarePath, resolvePaperclipInstanceRoot } from "../home-paths.js";
+} from "@todero/shared";
+import { resolveHomeAwarePath, resolveToderoInstanceRoot } from "../home-paths.js";
 import { notFound, unprocessable } from "../errors.js";
 import { agentInstructionsService } from "./agent-instructions.js";
 import {
@@ -49,9 +49,9 @@ import {
 import { getRunLogStore } from "./run-log-store.js";
 import { getOperatorSettingDefaults } from "./setting-defaults.js";
 
-const FEEDBACK_SCHEMA_VERSION = "paperclip-feedback-envelope-v2";
-const FEEDBACK_BUNDLE_VERSION = "paperclip-feedback-bundle-v2";
-const FEEDBACK_PAYLOAD_VERSION = "paperclip-feedback-v1";
+const FEEDBACK_SCHEMA_VERSION = "todero-feedback-envelope-v2";
+const FEEDBACK_BUNDLE_VERSION = "todero-feedback-bundle-v2";
+const FEEDBACK_PAYLOAD_VERSION = "todero-feedback-v1";
 const FEEDBACK_DESTINATION = "paperclip_labs_feedback_v1";
 const FEEDBACK_CONTEXT_WINDOW = 3;
 const MAX_EXCERPT_CHARS = 200;
@@ -390,7 +390,7 @@ async function buildCodexTraceFiles(input: {
   }
 
   const managedRoot = path.join(
-    resolvePaperclipInstanceRoot(),
+    resolveToderoInstanceRoot(),
     "companies",
     input.companyId,
     "codex-home",
@@ -1114,7 +1114,7 @@ async function buildAgentContext(
 
   const adapterConfig = asRecord(agent.adapterConfig) ?? {};
   const runtimeConfig = asRecord(agent.runtimeConfig) ?? {};
-  const desiredSkillRefs = uniqueNonEmpty(readPaperclipSkillSyncPreference(adapterConfig).desiredSkills).slice(0, MAX_SKILLS);
+  const desiredSkillRefs = uniqueNonEmpty(readToderoSkillSyncPreference(adapterConfig).desiredSkills).slice(0, MAX_SKILLS);
   const availableSkills = desiredSkillRefs.length === 0
     ? []
     : await db
@@ -1322,7 +1322,7 @@ async function buildAgentContext(
         entryBody,
       }
       : null,
-    paperclip: {
+    todero: {
       schemaVersion: FEEDBACK_SCHEMA_VERSION,
       bundleVersion: FEEDBACK_BUNDLE_VERSION,
     },
@@ -1380,7 +1380,7 @@ async function buildPayloadArtifacts(
   const basePayload = {
     schemaVersion: FEEDBACK_SCHEMA_VERSION,
     bundleVersion: FEEDBACK_BUNDLE_VERSION,
-    sourceApp: "paperclip",
+    sourceApp: "todero",
     capturedAt: input.now.toISOString(),
     consentVersion: input.consentVersion,
     vote: {
@@ -1459,7 +1459,7 @@ async function buildFeedbackTraceBundleFromRow(
   const files: FeedbackTraceBundleFile[] = [];
   const sourceRunId = resolveSourceRunId(payloadSnapshot);
 
-  let paperclipRun: Record<string, unknown> | null = null;
+  let toderoRun: Record<string, unknown> | null = null;
   let rawAdapterTrace: Record<string, unknown> | null = null;
   let normalizedAdapterTrace: Record<string, unknown> | null = null;
   let adapterType: string | null = null;
@@ -1516,7 +1516,7 @@ async function buildFeedbackTraceBundleFromRow(
         .map((entry) => entry.chunk)
         .join("");
 
-      paperclipRun = sanitizeFeedbackValue(
+      toderoRun = sanitizeFeedbackValue(
         {
           id: run.id,
           companyId: run.companyId,
@@ -1546,25 +1546,25 @@ async function buildFeedbackTraceBundleFromRow(
           eventCount: events.length,
         },
         state,
-        "bundle.paperclipRun",
+        "bundle.toderoRun",
         MAX_TRACE_FILE_CHARS,
       ) as Record<string, unknown>;
 
       files.push(makeBundleFile({
-        path: "paperclip/run.json",
+        path: "todero/run.json",
         contentType: "application/json",
         source: "paperclip_run",
-        contents: `${JSON.stringify(paperclipRun, null, 2)}\n`,
+        contents: `${JSON.stringify(toderoRun, null, 2)}\n`,
       }));
 
       const sanitizedEvents = sanitizeFeedbackValue(
         events,
         state,
-        "bundle.paperclipRun.events",
+        "bundle.toderoRun.events",
         MAX_TRACE_FILE_CHARS,
       );
       files.push(makeBundleFile({
-        path: "paperclip/run-events.json",
+        path: "todero/run-events.json",
         contentType: "application/json",
         source: "paperclip_run_events",
         contents: `${JSON.stringify(sanitizedEvents, null, 2)}\n`,
@@ -1572,10 +1572,10 @@ async function buildFeedbackTraceBundleFromRow(
 
       if (logText) {
         files.push(makeBundleFile({
-          path: "paperclip/run-log.ndjson",
+          path: "todero/run-log.ndjson",
           contentType: "application/x-ndjson",
           source: "paperclip_run_log",
-          contents: `${sanitizeFeedbackText(logText, state, "bundle.paperclipRun.log", MAX_TRACE_FILE_CHARS)}\n`,
+          contents: `${sanitizeFeedbackText(logText, state, "bundle.toderoRun.log", MAX_TRACE_FILE_CHARS)}\n`,
         }));
       } else {
         appendNote(notes, "run_log_missing");
@@ -1676,7 +1676,7 @@ async function buildFeedbackTraceBundleFromRow(
     notes,
     envelope,
     surface,
-    paperclipRun,
+    toderoRun,
     rawAdapterTrace,
     normalizedAdapterTrace,
     privacy,

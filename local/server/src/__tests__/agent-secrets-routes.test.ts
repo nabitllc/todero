@@ -17,8 +17,8 @@ import {
   createDb,
   heartbeatRuns,
   secretAccessEvents,
-} from "@paperclipai/db";
-import { LOW_TRUST_REVIEW_PRESET, type AgentApiKeyScope } from "@paperclipai/shared";
+} from "@todero/db";
+import { LOW_TRUST_REVIEW_PRESET, type AgentApiKeyScope } from "@todero/shared";
 import { errorHandler } from "../middleware/error-handler.js";
 import { secretRoutes } from "../routes/secrets.js";
 import { secretService } from "../services/secrets.js";
@@ -35,7 +35,7 @@ describeEmbeddedPostgres("agent secret routes", () => {
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-agent-secret-routes-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-agent-secret-routes-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
@@ -170,7 +170,7 @@ describeEmbeddedPostgres("agent secret routes", () => {
     });
     await db.update(heartbeatRuns).set({
       contextSnapshot: {
-        paperclipSecrets: {
+        toderoSecrets: {
           manifest: [{
             bindingId: projectBinding.id,
             secretId: projectSecret.id,
@@ -200,7 +200,7 @@ describeEmbeddedPostgres("agent secret routes", () => {
     const [registeredRun] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, fixture.heartbeatRunId));
     expect(JSON.stringify(registeredRun.contextSnapshot)).not.toContain("env-secret-value");
     expect(registeredRun.contextSnapshot).toMatchObject({
-      paperclipSecretRedactions: [expect.objectContaining({ fingerprintSha256: expect.any(String), material: expect.any(Object) })],
+      toderoSecretRedactions: [expect.objectContaining({ fingerprintSha256: expect.any(String), material: expect.any(Object) })],
     });
     expect(await db.select().from(secretAccessEvents)).toEqual([
       expect.objectContaining({ secretId: envSecret.id, outcome: "success", consumerType: "agent_api" }),
@@ -243,9 +243,9 @@ describeEmbeddedPostgres("agent secret routes", () => {
 
     const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, fixture.heartbeatRunId));
     expect(run.contextSnapshot).toMatchObject({
-      paperclipSecretRedactions: [expect.objectContaining({ fingerprintSha256: expect.any(String) })],
+      toderoSecretRedactions: [expect.objectContaining({ fingerprintSha256: expect.any(String) })],
     });
-    expect((run.contextSnapshot as { paperclipSecretRedactions: unknown[] }).paperclipSecretRedactions).toHaveLength(1);
+    expect((run.contextSnapshot as { toderoSecretRedactions: unknown[] }).toderoSecretRedactions).toHaveLength(1);
   });
 
   it("denies low-trust, task-bridge, and skill-test callers on both routes", async () => {

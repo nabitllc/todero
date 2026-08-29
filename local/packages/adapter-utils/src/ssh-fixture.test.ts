@@ -41,7 +41,7 @@ const fixtureTeardowns: FixtureTeardownEntry[] = [];
 // start (mkdir, writeFile, git init) still leaves the root directory queued
 // for removal.
 async function createFixtureRootDir(): Promise<string> {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-ssh-fixture-"));
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-ssh-fixture-"));
   fixtureTeardowns.push({ rootDir, state: null });
   return rootDir;
 }
@@ -453,8 +453,8 @@ describe("ssh env-lab fixture", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteCwd: "/srv/paperclip/workspace",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteCwd: "/srv/todero/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         knownHosts: null,
         strictHostKeyChecking: true,
@@ -483,7 +483,7 @@ describe("ssh env-lab fixture", () => {
     // The last ssh argument wraps the script as `sh -c '...'`, so the inner
     // quotes are escaped. Assert the command still runs: cd, env, and the argv.
     expect(remoteScript).toContain("cd ");
-    expect(remoteScript).toContain("/srv/paperclip/workspace");
+    expect(remoteScript).toContain("/srv/todero/workspace");
     expect(remoteScript).toContain("exec env ");
     expect(remoteScript).toContain("node");
     expect(remoteScript).toContain("--version");
@@ -497,8 +497,8 @@ describe("ssh env-lab fixture", () => {
           host: "ssh.example.test",
           port: 22,
           username: "ssh-user",
-          remoteCwd: "/srv/paperclip/workspace",
-          remoteWorkspacePath: "/srv/paperclip/workspace",
+          remoteCwd: "/srv/todero/workspace",
+          remoteWorkspacePath: "/srv/todero/workspace",
           privateKey: null,
           knownHosts: null,
           strictHostKeyChecking: true,
@@ -518,7 +518,7 @@ describe("ssh env-lab fixture", () => {
     const localDir = path.join(rootDir, "local-overlay");
 
     await mkdir(localDir, { recursive: true });
-    await writeFile(path.join(localDir, "message.txt"), "hello from paperclip\n", "utf8");
+    await writeFile(path.join(localDir, "message.txt"), "hello from todero\n", "utf8");
     await writeFile(path.join(localDir, "._message.txt"), "should never sync\n", "utf8");
 
     const started = await startSshEnvLabFixtureOrSkip(statePath, "SSH env-lab fixture test");
@@ -540,7 +540,7 @@ describe("ssh env-lab fixture", () => {
       `cat ${JSON.stringify(path.posix.join(remoteDir, "message.txt"))} && if [ -e ${JSON.stringify(path.posix.join(remoteDir, "._message.txt"))} ]; then echo appledouble-present; fi`,
     );
 
-    expect(result.stdout).toContain("hello from paperclip");
+    expect(result.stdout).toContain("hello from todero");
     expect(result.stdout).not.toContain("appledouble-present");
   }, SSH_FIXTURE_TEST_TIMEOUT_MS);
 
@@ -644,8 +644,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.bin"), Buffer.alloc(256 * 1024, 7));
     await git(localRepo, ["add", "tracked.bin"]);
     await git(localRepo, ["commit", "-m", "initial"]);
@@ -720,8 +720,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.txt"), "base\n", "utf8");
     await writeFile(path.join(localRepo, "._tracked.txt"), "should stay local only\n", "utf8");
     await git(localRepo, ["add", "tracked.txt"]);
@@ -754,7 +754,7 @@ describe("ssh env-lab fixture", () => {
 
     await runSshCommand(
       config,
-      `cd ${JSON.stringify(started.workspaceDir)} && git config user.name "Paperclip SSH" && git config user.email "ssh@paperclip.dev" && git add tracked.txt untracked.txt && git commit -m "remote update" >/dev/null && printf "remote dirty\\n" > tracked.txt && printf "remote extra\\n" > remote-only.txt`,
+      `cd ${JSON.stringify(started.workspaceDir)} && git config user.name "Todero SSH" && git config user.email "ssh@todero.dev" && git add tracked.txt untracked.txt && git commit -m "remote update" >/dev/null && printf "remote dirty\\n" > tracked.txt && printf "remote extra\\n" > remote-only.txt`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
 
@@ -779,8 +779,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.txt"), "base\n", "utf8");
     await git(localRepo, ["add", "tracked.txt"]);
     await git(localRepo, ["commit", "-m", "initial"]);
@@ -836,8 +836,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.txt"), "base\n", "utf8");
     await git(localRepo, ["add", "tracked.txt"]);
     await git(localRepo, ["commit", "-m", "initial"]);
@@ -891,8 +891,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.txt"), "base\n", "utf8");
     await git(localRepo, ["add", "tracked.txt"]);
     await git(localRepo, ["commit", "-m", "initial"]);
@@ -914,7 +914,7 @@ describe("ssh env-lab fixture", () => {
 
     await runSshCommand(
       config,
-      `cd ${JSON.stringify(prepared.workspaceRemoteDir)} && git config user.name "Paperclip SSH" && git config user.email "ssh@paperclip.dev" && printf "committed\\n" > tracked.txt && git add tracked.txt && git commit -m "remote update" >/dev/null && printf "dirty remote\\n" > tracked.txt`,
+      `cd ${JSON.stringify(prepared.workspaceRemoteDir)} && git config user.name "Todero SSH" && git config user.email "ssh@todero.dev" && printf "committed\\n" > tracked.txt && git add tracked.txt && git commit -m "remote update" >/dev/null && printf "dirty remote\\n" > tracked.txt`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
 
@@ -936,8 +936,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.txt"), "base\n", "utf8");
     await git(localRepo, ["add", "tracked.txt"]);
     await git(localRepo, ["commit", "-m", "initial"]);
@@ -969,7 +969,7 @@ describe("ssh env-lab fixture", () => {
     // sync-back alone — no `git push`, no fetch from any origin.
     await runSshCommand(
       config,
-      `cd ${JSON.stringify(prepared.workspaceRemoteDir)} && git config user.name "Paperclip SSH" && git config user.email "ssh@paperclip.dev" && printf "deliverable\\n" > tracked.txt && git add tracked.txt && git commit -m "remote-only commit" >/dev/null`,
+      `cd ${JSON.stringify(prepared.workspaceRemoteDir)} && git config user.name "Todero SSH" && git config user.email "ssh@todero.dev" && printf "deliverable\\n" > tracked.txt && git add tracked.txt && git commit -m "remote-only commit" >/dev/null`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
 
@@ -993,8 +993,8 @@ describe("ssh env-lab fixture", () => {
     await mkdir(localRepo, { recursive: true });
     await git(localRepo, ["init"]);
     await git(localRepo, ["checkout", "-b", "main"]);
-    await git(localRepo, ["config", "user.name", "Paperclip Test"]);
-    await git(localRepo, ["config", "user.email", "test@paperclip.dev"]);
+    await git(localRepo, ["config", "user.name", "Todero Test"]);
+    await git(localRepo, ["config", "user.email", "test@todero.dev"]);
     await writeFile(path.join(localRepo, "tracked.txt"), "base\n", "utf8");
     await git(localRepo, ["add", "tracked.txt"]);
     await git(localRepo, ["commit", "-m", "initial"]);
@@ -1022,12 +1022,12 @@ describe("ssh env-lab fixture", () => {
 
     await runSshCommand(
       config,
-      `cd ${JSON.stringify(preparedA.workspaceRemoteDir)} && git config user.name "Paperclip SSH" && git config user.email "ssh@paperclip.dev" && printf "from run a\\n" > run-a.txt && git add run-a.txt && git commit -m "remote update a" >/dev/null`,
+      `cd ${JSON.stringify(preparedA.workspaceRemoteDir)} && git config user.name "Todero SSH" && git config user.email "ssh@todero.dev" && printf "from run a\\n" > run-a.txt && git add run-a.txt && git commit -m "remote update a" >/dev/null`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
     await runSshCommand(
       config,
-      `cd ${JSON.stringify(preparedB.workspaceRemoteDir)} && git config user.name "Paperclip SSH" && git config user.email "ssh@paperclip.dev" && printf "from run b\\n" > run-b.txt && git add run-b.txt && git commit -m "remote update b" >/dev/null`,
+      `cd ${JSON.stringify(preparedB.workspaceRemoteDir)} && git config user.name "Todero SSH" && git config user.email "ssh@todero.dev" && printf "from run b\\n" > run-b.txt && git add run-b.txt && git commit -m "remote update b" >/dev/null`,
       { timeoutMs: 30_000, maxBuffer: 256 * 1024 },
     );
 
@@ -1038,7 +1038,7 @@ describe("ssh env-lab fixture", () => {
 
     await expect(readFile(path.join(localRepo, "run-a.txt"), "utf8")).resolves.toBe("from run a\n");
     await expect(readFile(path.join(localRepo, "run-b.txt"), "utf8")).resolves.toBe("from run b\n");
-    expect(await git(localRepo, ["log", "-1", "--pretty=%s"])).toContain("Paperclip SSH sync merge");
+    expect(await git(localRepo, ["log", "-1", "--pretty=%s"])).toContain("Todero SSH sync merge");
 
     const recentSubjects = await git(localRepo, ["log", "--pretty=%s", "-3"]);
     expect(recentSubjects).toContain("remote update a");

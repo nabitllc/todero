@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
-import type { Agent, Issue, PluginManagedRoutineResolution, Project } from "@paperclipai/plugin-sdk";
+import { createTestHarness } from "@todero/plugin-sdk/testing";
+import type { Agent, Issue, PluginManagedRoutineResolution, Project } from "@todero/plugin-sdk";
 import manifest, {
   CURSOR_WINDOW_ROUTINE_KEY,
   INDEX_REFRESH_ROUTINE_KEY,
@@ -557,7 +557,7 @@ function existingProject(): Project {
   };
 }
 
-function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
+function toderoIssue(overrides: Partial<Issue> = {}): Issue {
   const now = new Date();
   return {
     id: "66666666-6666-4666-8666-666666666666",
@@ -567,7 +567,7 @@ function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
     goalId: null,
     parentId: null,
     title: "Design event ingestion controls",
-    description: "Decide which Paperclip issues, comments, and documents can be ingested into the wiki.",
+    description: "Decide which Todero issues, comments, and documents can be ingested into the wiki.",
     status: "todo",
     workMode: "standard",
     priority: "medium",
@@ -656,7 +656,7 @@ function mockPersistedWikiSpace(harness: ReturnType<typeof createTestHarness>, s
 
 describe("LLM Wiki plugin scaffold", () => {
   it("declares standalone plugin surfaces without core wiki coupling", () => {
-    expect(manifest.id).toBe("paperclipai.plugin-llm-wiki");
+    expect(manifest.id).toBe("todero.plugin-llm-wiki");
     expect(manifest.entrypoints.worker).toBe("./dist/worker.js");
     expect(manifest.entrypoints.ui).toBe("./dist/ui");
     expect(manifest.database?.namespaceSlug).toBe("llm_wiki");
@@ -768,7 +768,7 @@ describe("LLM Wiki plugin scaffold", () => {
     expect(DEFAULT_AGENT_INSTRUCTIONS).not.toContain("skills/<name>/SKILL.md");
     expect(DEFAULT_AGENT_INSTRUCTION_FILES["skills/wiki-ingest/SKILL.md"]).toBeUndefined();
     expect(manifest.skills?.map((skill) => skill.skillKey)).toEqual([...WIKI_MANAGED_SKILL_KEYS]);
-    expect(manifest.agents?.[0]?.adapterConfig?.paperclipSkillSync).toEqual({
+    expect(manifest.agents?.[0]?.adapterConfig?.toderoSkillSync).toEqual({
       desiredSkills: WIKI_MANAGED_SKILL_CANONICAL_KEYS,
     });
     expect(QUERY_PROMPT).toContain("wiki-query skill");
@@ -816,7 +816,7 @@ describe("LLM Wiki plugin scaffold", () => {
       context: { companyId: COMPANY_ID, companyPrefix: "PAP" },
     } as never));
 
-    expect(markup).toContain("Issues table · project-1 · plugin:paperclipai.plugin-llm-wiki:operation");
+    expect(markup).toContain("Issues table · project-1 · plugin:todero.plugin-llm-wiki:operation");
     expect(markup).not.toContain("Recent runs");
     expect(markup).not.toContain(">Operations</h2>");
   });
@@ -865,7 +865,7 @@ describe("LLM Wiki plugin scaffold", () => {
     mockPageContentsByPath["wiki/concepts/sidebar-navigation.md"] = `---
 title: Sidebar navigation
 type: concept
-tags: [paperclip, wiki]
+tags: [todero, wiki]
 sources:
   - raw/sidebar-notes.md
 created: 2026-05-04
@@ -885,7 +885,7 @@ Route sidebar state stays attached to the selected wiki page.
     expect(markup).toContain(">type</dt>");
     expect(markup).toContain("concept");
     expect(markup).toContain(">tags</dt>");
-    expect(markup).toContain("paperclip");
+    expect(markup).toContain("todero");
     expect(markup).toContain("wiki");
     expect(markup).toContain(">sources</dt>");
     expect(markup).toContain("raw/sidebar-notes.md");
@@ -1615,7 +1615,7 @@ Duplicate headings receive stable suffixes.
       entries: options?.relativePath === "wiki"
         ? [
             { path: "wiki/concepts/agent-memory-layer.md", name: "agent-memory-layer.md", kind: "file", size: 12, modifiedAt },
-            { path: "wiki/entities/paperclip.md", name: "paperclip.md", kind: "file", size: 10, modifiedAt },
+            { path: "wiki/entities/todero.md", name: "todero.md", kind: "file", size: 10, modifiedAt },
             { path: "wiki/projects/llm-wiki/standup.md", name: "standup.md", kind: "file", size: 16, modifiedAt },
           ]
         : [
@@ -1639,7 +1639,7 @@ Duplicate headings receive stable suffixes.
 
     expect(result.pages).toEqual([
       expect.objectContaining({ path: "wiki/concepts/agent-memory-layer.md", title: null }),
-      expect.objectContaining({ path: "wiki/entities/paperclip.md", title: null }),
+      expect.objectContaining({ path: "wiki/entities/todero.md", title: null }),
       expect.objectContaining({ path: "wiki/projects/llm-wiki/standup.md", title: null }),
     ]);
     expect(result.sources).toEqual([
@@ -1647,9 +1647,9 @@ Duplicate headings receive stable suffixes.
     ]);
   });
 
-  it("does not ingest Paperclip events until operator controls enable them", async () => {
+  it("does not ingest Todero events until operator controls enable them", async () => {
     const harness = createTestHarness({ manifest });
-    const issue = paperclipIssue();
+    const issue = toderoIssue();
     harness.seed({ issues: [issue] });
     const writes: Array<{ path: string; contents: string }> = [];
     harness.ctx.localFolders.writeTextAtomic = async (_companyId, _folderKey, relativePath, contents) => {
@@ -1670,9 +1670,9 @@ Duplicate headings receive stable suffixes.
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_operations"))).toBe(false);
   });
 
-  it("records enabled Paperclip issue events as cursor observations without creating ingest operations", async () => {
+  it("records enabled Todero issue events as cursor observations without creating ingest operations", async () => {
     const harness = createTestHarness({ manifest });
-    const issue = paperclipIssue();
+    const issue = toderoIssue();
     harness.seed({ issues: [issue] });
     const writes: Array<{ path: string; contents: string }> = [];
     harness.ctx.localFolders.writeTextAtomic = async (_companyId, _folderKey, relativePath, contents) => {
@@ -1716,7 +1716,7 @@ Duplicate headings receive stable suffixes.
     ]));
   });
 
-  it("preserves Paperclip event ingestion sources when only enabled changes", async () => {
+  it("preserves Todero event ingestion sources when only enabled changes", async () => {
     const harness = createTestHarness({ manifest });
 
     await plugin.definition.setup(harness.ctx);
@@ -1751,16 +1751,16 @@ Duplicate headings receive stable suffixes.
     });
   });
 
-  it("keeps Paperclip event cursor observations company scoped and ignores plugin-operation issues", async () => {
+  it("keeps Todero event cursor observations company scoped and ignores plugin-operation issues", async () => {
     const harness = createTestHarness({ manifest });
-    const visibleIssue = paperclipIssue({ projectId: "77777777-7777-4777-8777-777777777777" });
-    const otherCompanyIssue = paperclipIssue({
+    const visibleIssue = toderoIssue({ projectId: "77777777-7777-4777-8777-777777777777" });
+    const otherCompanyIssue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777778",
       companyId: OTHER_COMPANY_ID,
       projectId: "77777777-7777-4777-8777-777777777779",
       identifier: "PAP-9999",
     });
-    const operationIssue = paperclipIssue({
+    const operationIssue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777780",
       originKind: `${OPERATION_ORIGIN_KIND}:ingest`,
     });
@@ -1802,9 +1802,9 @@ Duplicate headings receive stable suffixes.
     ]));
   });
 
-  it("routes Paperclip issue, comment, and document event cursors only to the default space", async () => {
+  it("routes Todero issue, comment, and document event cursors only to the default space", async () => {
     const harness = createTestHarness({ manifest });
-    const issue = paperclipIssue({ projectId: "77777777-7777-4777-8777-777777777777" });
+    const issue = toderoIssue({ projectId: "77777777-7777-4777-8777-777777777777" });
     harness.seed({ issues: [issue] });
 
     await plugin.definition.setup(harness.ctx);
@@ -1848,10 +1848,10 @@ Duplicate headings receive stable suffixes.
     expect(String(cursorWrites[2].params?.[9])).toContain('"lastSourceKind":"documents"');
   });
 
-  it("routes Paperclip events into an explicitly enabled shared non-default space", async () => {
+  it("routes Todero events into an explicitly enabled shared non-default space", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({ projectId: project.id });
+    const issue = toderoIssue({ projectId: project.id });
     harness.seed({ projects: [project], issues: [issue] });
 
     await plugin.definition.setup(harness.ctx);
@@ -1871,12 +1871,12 @@ Duplicate headings receive stable suffixes.
       cursor: { maxWindowCharacters: 60000, maxCharactersPerSource: 12000, minSourceAgeMinutes: 15, maxWindowsPerRun: 6, staleAfterHours: 72 },
       backfill: { requireManualQueue: true },
     };
-    await harness.performAction("update-paperclip-ingestion-profile", {
+    await harness.performAction("update-todero-ingestion-profile", {
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       profile: enabledProfile,
     });
-    mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { paperclipIngestion: enabledProfile } });
+    mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { toderoIngestion: enabledProfile } });
 
     await harness.emit("issue.created", {}, {
       companyId: COMPANY_ID,
@@ -1892,7 +1892,7 @@ Duplicate headings receive stable suffixes.
   it("stops new non-default observations after the per-space profile is disabled", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({ projectId: project.id });
+    const issue = toderoIssue({ projectId: project.id });
     harness.seed({ projects: [project], issues: [issue] });
 
     await plugin.definition.setup(harness.ctx);
@@ -1912,24 +1912,24 @@ Duplicate headings receive stable suffixes.
       cursor: { maxWindowCharacters: 60000, maxCharactersPerSource: 12000, minSourceAgeMinutes: 15, maxWindowsPerRun: 6, staleAfterHours: 72 },
       backfill: { requireManualQueue: true },
     };
-    await harness.performAction("update-paperclip-ingestion-profile", {
+    await harness.performAction("update-todero-ingestion-profile", {
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       profile: enabledProfile,
     });
-    mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { paperclipIngestion: enabledProfile } });
+    mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { toderoIngestion: enabledProfile } });
     await harness.emit("issue.created", {}, {
       companyId: COMPANY_ID,
       entityId: issue.id,
       entityType: "issue",
       eventId: "event-before-disable",
     });
-    await harness.performAction("update-paperclip-ingestion-profile", {
+    await harness.performAction("update-todero-ingestion-profile", {
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       profile: { ...enabledProfile, enabled: false },
     });
-    mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { paperclipIngestion: { ...enabledProfile, enabled: false } } });
+    mockPersistedWikiSpace(harness, { ...(created.space as unknown as Record<string, unknown>), settings: { toderoIngestion: { ...enabledProfile, enabled: false } } });
     await harness.emit("issue.updated", {}, {
       companyId: COMPANY_ID,
       entityId: issue.id,
@@ -1942,16 +1942,16 @@ Duplicate headings receive stable suffixes.
     expect(nonDefaultCursorWrites).toHaveLength(1);
   });
 
-  it("assembles deterministic Paperclip source bundles with issue, document, and comment provenance", async () => {
+  it("assembles deterministic Todero source bundles with issue, document, and comment provenance", async () => {
     const harness = createTestHarness({ manifest });
-    const root = paperclipIssue({
+    const root = toderoIssue({
       id: "77777777-7777-4777-8777-777777777781",
       identifier: "PAP-4000",
       title: "Root distillation issue",
       projectId: "77777777-7777-4777-8777-777777777777",
       updatedAt: new Date("2026-05-01T10:00:00Z"),
     });
-    const child = paperclipIssue({
+    const child = toderoIssue({
       id: "77777777-7777-4777-8777-777777777782",
       identifier: "PAP-4001",
       title: "Child source issue",
@@ -1992,12 +1992,12 @@ Duplicate headings receive stable suffixes.
       sourceRefs: Array<{ kind: string; issueIdentifier: string | null; documentKey?: string; commentId?: string }>;
       sourceHash: string;
       sourceWindowEnd: string | null;
-    }>("assemble-paperclip-source-bundle", {
+    }>("assemble-todero-source-bundle", {
       companyId: COMPANY_ID,
       rootIssueId: root.id,
       maxCharacters: 20000,
     });
-    const second = await harness.performAction<typeof first>("assemble-paperclip-source-bundle", {
+    const second = await harness.performAction<typeof first>("assemble-todero-source-bundle", {
       companyId: COMPANY_ID,
       rootIssueId: root.id,
       maxCharacters: 20000,
@@ -2018,7 +2018,7 @@ Duplicate headings receive stable suffixes.
 
   it("suppresses secret-like comment and document bodies before storing distillation snapshots", async () => {
     const harness = createTestHarness({ manifest });
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777784",
       identifier: "PAP-4002",
       title: "Sensitive source issue",
@@ -2059,7 +2059,7 @@ Duplicate headings receive stable suffixes.
         warnings: string[];
         sourceRefs: Array<Record<string, unknown>>;
       };
-    }>("create-paperclip-distillation-run", {
+    }>("create-todero-distillation-run", {
       companyId: COMPANY_ID,
       projectId: issue.projectId,
       maxCharacters: 20000,
@@ -2088,7 +2088,7 @@ Duplicate headings receive stable suffixes.
 
   it("creates source snapshots and only advances cursors after successful distillation outcomes", async () => {
     const harness = createTestHarness({ manifest });
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       projectId: "77777777-7777-4777-8777-777777777777",
       updatedAt: new Date("2026-05-02T10:00:00Z"),
     });
@@ -2100,14 +2100,14 @@ Duplicate headings receive stable suffixes.
       cursorId: string;
       snapshotId: string;
       bundle: { sourceHash: string; sourceWindowEnd: string };
-    }>("create-paperclip-distillation-run", {
+    }>("create-todero-distillation-run", {
       companyId: COMPANY_ID,
       projectId: issue.projectId,
     });
     expect(run.snapshotId).toEqual(expect.any(String));
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("paperclip_source_snapshots"))).toBe(true);
 
-    const failed = await harness.performAction<{ cursorAdvanced: boolean }>("record-paperclip-distillation-outcome", {
+    const failed = await harness.performAction<{ cursorAdvanced: boolean }>("record-todero-distillation-outcome", {
       companyId: COMPANY_ID,
       runId: run.runId,
       cursorId: run.cursorId,
@@ -2121,7 +2121,7 @@ Duplicate headings receive stable suffixes.
       execute.sql.trim().startsWith("UPDATE") && execute.sql.includes("paperclip_distillation_cursors"));
     expect(cursorUpdatesAfterFailure).toHaveLength(0);
 
-    const succeeded = await harness.performAction<{ cursorAdvanced: boolean }>("record-paperclip-distillation-outcome", {
+    const succeeded = await harness.performAction<{ cursorAdvanced: boolean }>("record-todero-distillation-outcome", {
       companyId: COMPANY_ID,
       runId: run.runId,
       cursorId: run.cursorId,
@@ -2145,7 +2145,7 @@ Duplicate headings receive stable suffixes.
   it("uses the existing distillation cursor id after an upsert conflict", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777800",
       identifier: "PAP-4099",
       title: "Existing cursor target",
@@ -2163,7 +2163,7 @@ Duplicate headings receive stable suffixes.
     harness.seed({ projects: [project], issues: [issue] });
 
     await plugin.definition.setup(harness.ctx);
-    const result = await harness.performAction<{ cursorId: string }>("create-paperclip-distillation-run", {
+    const result = await harness.performAction<{ cursorId: string }>("create-todero-distillation-run", {
       companyId: COMPANY_ID,
       projectId: project.id,
     });
@@ -2178,20 +2178,20 @@ Duplicate headings receive stable suffixes.
     const harness = createTestHarness({ manifest });
     await plugin.definition.setup(harness.ctx);
 
-    await harness.performAction("create-paperclip-distillation-work-item", {
+    await harness.performAction("create-todero-distillation-work-item", {
       companyId: COMPANY_ID,
       kind: "manual",
       projectId: "77777777-7777-4777-8777-777777777777",
       idempotencyKey: "manual:project:77777777-7777-4777-8777-777777777777",
     });
-    await harness.performAction("create-paperclip-distillation-work-item", {
+    await harness.performAction("create-todero-distillation-work-item", {
       companyId: COMPANY_ID,
       kind: "retry",
       rootIssueId: "77777777-7777-4777-8777-777777777781",
       priority: "high",
       idempotencyKey: "retry:run:1",
     });
-    await harness.performAction("create-paperclip-distillation-work-item", {
+    await harness.performAction("create-todero-distillation-work-item", {
       companyId: COMPANY_ID,
       kind: "backfill",
       projectId: "77777777-7777-4777-8777-777777777777",
@@ -2207,25 +2207,25 @@ Duplicate headings receive stable suffixes.
     expect(String(workItemWrites[1].params?.[9])).toContain('"sourceScope":"root_issue"');
     expect(String(workItemWrites[2].params?.[9])).toContain('"sourceScope":"project"');
 
-    await expect(harness.performAction("create-paperclip-distillation-work-item", {
+    await expect(harness.performAction("create-todero-distillation-work-item", {
       companyId: COMPANY_ID,
       kind: "backfill",
       idempotencyKey: "backfill:company",
     })).rejects.toThrow("whole-company backfill is not allowed");
   });
 
-  it("records estimated Paperclip distillation cost without refusing on legacy cost config", async () => {
+  it("records estimated Todero distillation cost without refusing on legacy cost config", async () => {
     const harness = createTestHarness({
       manifest,
       config: {
-        maxPaperclipRoutineRunCostCents: 1,
-        maxPaperclipDistillationTaskCostCents: 1,
-        maxPaperclipDistillationProjectCostCents: 1,
-        paperclipCostCentsPerThousandSourceCharacters: 100,
+        maxToderoRoutineRunCostCents: 1,
+        maxToderoDistillationTaskCostCents: 1,
+        maxToderoDistillationProjectCostCents: 1,
+        toderoCostCentsPerThousandSourceCharacters: 100,
       },
     });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777795",
       identifier: "PAP-4104",
       title: "Large source bundle",
@@ -2240,7 +2240,7 @@ Duplicate headings receive stable suffixes.
       status: string;
       estimatedCostCents: number;
       snapshotId: string | null;
-    }>("create-paperclip-distillation-run", {
+    }>("create-todero-distillation-run", {
       companyId: COMPANY_ID,
       projectId: project.id,
       routineRun: true,
@@ -2266,7 +2266,7 @@ Duplicate headings receive stable suffixes.
   it("queues visible manual distill operation issues for a company-wide stale cursor scan", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777796",
       identifier: "PAP-4105",
       title: "Manual distillation target",
@@ -2281,7 +2281,7 @@ Duplicate headings receive stable suffixes.
       status: string;
       operation: { issue: { originKind: string; billingCode: string | null; assigneeAgentId: string | null; assigneeAdapterOverrides: { modelProfile?: string } | null; description: string | null } };
       workItem: { kind: string; workItemId: string };
-    }>("distill-paperclip-now", {
+    }>("distill-todero-now", {
       companyId: COMPANY_ID,
       autoApply: false,
       useCheapModelProfile: true,
@@ -2294,7 +2294,7 @@ Duplicate headings receive stable suffixes.
     expect(result.operation.issue.billingCode).toBe("plugin-llm-wiki:default");
     expect(result.operation.issue.assigneeAgentId).toBe(wikiMaintainerAgent().id);
     expect(result.operation.issue.assigneeAdapterOverrides).toEqual({ modelProfile: "cheap" });
-    expect(result.operation.issue.description).toContain("Prompt source: LLM Wiki plugin action `distill-paperclip-now`");
+    expect(result.operation.issue.description).toContain("Prompt source: LLM Wiki plugin action `distill-todero-now`");
     expect(result.operation.issue.description).toContain(`Required skill: use the installed \`${PAPERCLIP_DISTILL_SKILL_KEY}\` skill`);
     expect(result.operation.issue.description).toContain("Do not hardcode a single project");
     expect(result.operation.issue.description).not.toContain(`Source project ID: ${project.id}`);
@@ -2367,7 +2367,7 @@ Duplicate headings receive stable suffixes.
     const result = await harness.performAction<{
       selectedProjects: Array<{ id: string; observedAt: string | null }>;
       eventIngestion: { enabled: boolean; sources: { issues: boolean; comments: boolean; documents: boolean } };
-    }>("enable-paperclip-distillation-active-projects", {
+    }>("enable-todero-distillation-active-projects", {
       companyId: COMPANY_ID,
       limit: 2,
     });
@@ -2384,10 +2384,10 @@ Duplicate headings receive stable suffixes.
     expect(String(cursorWrites[0]?.params?.[9])).toContain('"configuredBy":"enable-active-projects"');
   });
 
-  it("backfills only the selected Paperclip project and date window", async () => {
+  it("backfills only the selected Todero project and date window", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const inWindow = paperclipIssue({
+    const inWindow = toderoIssue({
       id: "77777777-7777-4777-8777-777777777797",
       identifier: "PAP-4106",
       title: "Backfill in-window decision",
@@ -2396,7 +2396,7 @@ Duplicate headings receive stable suffixes.
       projectId: project.id,
       updatedAt: new Date("2026-04-15T12:00:00Z"),
     });
-    const outOfWindow = paperclipIssue({
+    const outOfWindow = toderoIssue({
       id: "77777777-7777-4777-8777-777777777798",
       identifier: "PAP-4107",
       title: "Backfill out-of-window decision",
@@ -2405,7 +2405,7 @@ Duplicate headings receive stable suffixes.
       projectId: project.id,
       updatedAt: new Date("2026-03-01T12:00:00Z"),
     });
-    const otherProject = paperclipIssue({
+    const otherProject = toderoIssue({
       id: "77777777-7777-4777-8777-777777777799",
       identifier: "PAP-4108",
       title: "Other project decision",
@@ -2422,7 +2422,7 @@ Duplicate headings receive stable suffixes.
       patches: Array<{ operationType: string; proposedContents: string }>;
       workItem: { kind: string };
       operation: { issue: { originKind: string } };
-    }>("backfill-paperclip-distillation", {
+    }>("backfill-todero-distillation", {
       companyId: COMPANY_ID,
       projectId: project.id,
       backfillStartAt: "2026-04-01T00:00:00Z",
@@ -2443,10 +2443,10 @@ Duplicate headings receive stable suffixes.
     expect(String(workItemInsert?.params?.[9])).toContain('"backfillStartAt":"2026-04-01T00:00:00Z"');
   });
 
-  it("generates review-required Paperclip project page patches with provenance, index, and log updates", async () => {
+  it("generates review-required Todero project page patches with provenance, index, and log updates", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777791",
       identifier: "PAP-4100",
       title: "Approved project page distillation plan",
@@ -2477,7 +2477,7 @@ Duplicate headings receive stable suffixes.
       status: string;
       patches: Array<{ pagePath: string; operationType: string; currentHash: string | null; proposedContents: string; sourceRefs: Array<{ issueIdentifier: string | null }> }>;
       warnings: string[];
-    }>("distill-paperclip-project-page", {
+    }>("distill-todero-project-page", {
       companyId: COMPANY_ID,
       projectId: project.id,
       autoApply: false,
@@ -2505,14 +2505,14 @@ Duplicate headings receive stable suffixes.
     expect(projectPatch.sourceRefs).toEqual([expect.objectContaining({ issueIdentifier: "PAP-4100" })]);
     expect(result.patches[2].proposedContents).toContain("[[wiki/projects/existing-wiki-project/index.md]]");
     expect(result.patches[2].proposedContents).toContain("[[wiki/projects/existing-wiki-project/standup.md]]");
-    expect(result.patches[3].proposedContents).toContain("paperclip-distill | proposed");
+    expect(result.patches[3].proposedContents).toContain("todero-distill | proposed");
     expect(result.warnings).toContain("Auto-apply policy disabled; proposed patches require review.");
   });
 
   it("keeps suppressed secret-like source content out of generated wiki patches", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777796",
       identifier: "PAP-4104",
       title: "Distill sanitized provenance",
@@ -2565,7 +2565,7 @@ Duplicate headings receive stable suffixes.
     const result = await harness.performAction<{
       status: string;
       patches: Array<{ operationType: string; proposedContents: string }>;
-    }>("distill-paperclip-project-page", {
+    }>("distill-todero-project-page", {
       companyId: COMPANY_ID,
       projectId: project.id,
       maxCharacters: 20000,
@@ -2580,10 +2580,10 @@ Duplicate headings receive stable suffixes.
     expect(combinedPatchContents).not.toContain("sk-patchsecretdocumentvalue1234567890");
   });
 
-  it("auto-applies Paperclip project page patches by default when policy allows and records page bindings", async () => {
+  it("auto-applies Todero project page patches by default when policy allows and records page bindings", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777792",
       identifier: "PAP-4101",
       title: "Implement project page writer",
@@ -2612,7 +2612,7 @@ Duplicate headings receive stable suffixes.
       status: string;
       appliedPages: string[];
       patches: Array<{ pagePath: string; sourceHash: string }>;
-    }>("distill-paperclip-project-page", {
+    }>("distill-todero-project-page", {
       companyId: COMPANY_ID,
       projectId: project.id,
       autoApply: true,
@@ -2631,7 +2631,7 @@ Duplicate headings receive stable suffixes.
     expect(files.get("wiki/projects/existing-wiki-project/index.md")).toContain("## Current Direction");
     expect(files.get("wiki/projects/existing-wiki-project/index.md")).toContain("## References");
     expect(files.get("wiki/index.md")).toContain("wiki/projects/existing-wiki-project/index.md");
-    expect(files.get("wiki/log.md")).toContain("paperclip-distill | proposed");
+    expect(files.get("wiki/log.md")).toContain("todero-distill | proposed");
     const bindingWrites = harness.dbExecutes.filter((execute) => execute.sql.includes("paperclip_page_bindings"));
     expect(bindingWrites).toHaveLength(4);
     expect(bindingWrites[0].params).toEqual(expect.arrayContaining([
@@ -2644,12 +2644,12 @@ Duplicate headings receive stable suffixes.
     ]));
   });
 
-  it("refuses auto-apply Paperclip project page patches in authenticated/public deployments", async () => {
+  it("refuses auto-apply Todero project page patches in authenticated/public deployments", async () => {
     process.env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
     process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "public";
     const harness = createTestHarness({ manifest, config: { autoApplyIngestPatches: true } });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-77777777779a",
       identifier: "PAP-4101",
       title: "Implement project page writer",
@@ -2680,7 +2680,7 @@ Duplicate headings receive stable suffixes.
       status: string;
       appliedPages: string[];
       warnings: string[];
-    }>("distill-paperclip-project-page", {
+    }>("distill-todero-project-page", {
       companyId: COMPANY_ID,
       projectId: project.id,
       autoApply: true,
@@ -2696,10 +2696,10 @@ Duplicate headings receive stable suffixes.
     );
   });
 
-  it("refuses stale project page hashes before writing generated Paperclip pages", async () => {
+  it("refuses stale project page hashes before writing generated Todero pages", async () => {
     const harness = createTestHarness({ manifest, config: { autoApplyIngestPatches: true } });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777793",
       identifier: "PAP-4102",
       title: "Publish project page",
@@ -2726,7 +2726,7 @@ Duplicate headings receive stable suffixes.
     };
 
     await plugin.definition.setup(harness.ctx);
-    await expect(harness.performAction("distill-paperclip-project-page", {
+    await expect(harness.performAction("distill-todero-project-page", {
       companyId: COMPANY_ID,
       projectId: project.id,
       autoApply: true,
@@ -2736,10 +2736,10 @@ Duplicate headings receive stable suffixes.
     expect(writes).toHaveLength(0);
   });
 
-  it("skips low-signal Paperclip source windows without proposing wiki writes", async () => {
+  it("skips low-signal Todero source windows without proposing wiki writes", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-777777777794",
       identifier: "PAP-4103",
       title: "Routine heartbeat",
@@ -2755,7 +2755,7 @@ Duplicate headings receive stable suffixes.
     };
 
     await plugin.definition.setup(harness.ctx);
-    const result = await harness.performAction<{ status: string; reason: string; patches: unknown[] }>("distill-paperclip-project-page", {
+    const result = await harness.performAction<{ status: string; reason: string; patches: unknown[] }>("distill-todero-project-page", {
       companyId: COMPANY_ID,
       projectId: project.id,
       maxCharacters: 20000,
@@ -3030,7 +3030,7 @@ Duplicate headings receive stable suffixes.
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("wiki_sources"))).toBe(true);
   });
 
-  it("preserves manual source ingest for non-default spaces while refusing Paperclip distillation there", async () => {
+  it("preserves manual source ingest for non-default spaces while refusing Todero distillation there", async () => {
     const harness = createTestHarness({ manifest });
     const writes: Array<{ path: string; contents: string }> = [];
     harness.ctx.localFolders.writeTextAtomic = async (_companyId, _folderKey, relativePath, contents) => {
@@ -3088,14 +3088,14 @@ Duplicate headings receive stable suffixes.
 
     expect(source.spaceSlug).toBe(created.space.slug);
     expect(writes.map((write) => write.path)).toContain(`spaces/${created.space.slug}/${source.rawPath}`);
-    await expect(harness.performAction("distill-paperclip-now", {
+    await expect(harness.performAction("distill-todero-now", {
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       projectId: existingProject().id,
-    })).rejects.toThrow("Paperclip ingestion policy denied queue");
+    })).rejects.toThrow("Todero ingestion policy denied queue");
   });
 
-  it("fails closed for direct Paperclip ingestion actions against restricted spaces", async () => {
+  it("fails closed for direct Todero ingestion actions against restricted spaces", async () => {
     const harness = createTestHarness({ manifest });
     harness.seed({
       agents: [wikiMaintainerAgent()],
@@ -3138,11 +3138,11 @@ Duplicate headings receive stable suffixes.
       }
       return originalQuery<T>(sql, params);
     };
-    await expect(harness.performAction("distill-paperclip-now", {
+    await expect(harness.performAction("distill-todero-now", {
       companyId: COMPANY_ID,
       spaceSlug: created.space.slug,
       projectId: existingProject().id,
-    })).rejects.toThrow("Paperclip ingestion policy denied queue");
+    })).rejects.toThrow("Todero ingestion policy denied queue");
 
     const operations = await harness.ctx.issues.list({
       companyId: COMPANY_ID,
@@ -3152,10 +3152,10 @@ Duplicate headings receive stable suffixes.
     expect(harness.dbExecutes.some((execute) => execute.sql.includes("paperclip_distillation_work_items"))).toBe(false);
   });
 
-  it("re-checks Paperclip ingestion policy at execution time for queued work", async () => {
+  it("re-checks Todero ingestion policy at execution time for queued work", async () => {
     const harness = createTestHarness({ manifest });
     const project = existingProject();
-    const issue = paperclipIssue({
+    const issue = toderoIssue({
       id: "77777777-7777-4777-8777-7777777777b0",
       identifier: "PAP-4111",
       title: "Queued distillation source",
@@ -3166,7 +3166,7 @@ Duplicate headings receive stable suffixes.
     harness.seed({ agents: [wikiMaintainerAgent()], projects: [project], issues: [issue] });
 
     await plugin.definition.setup(harness.ctx);
-    const queued = await harness.performAction<{ status: string }>("distill-paperclip-now", {
+    const queued = await harness.performAction<{ status: string }>("distill-todero-now", {
       companyId: COMPANY_ID,
       projectId: project.id,
     });
@@ -3199,15 +3199,15 @@ Duplicate headings receive stable suffixes.
       return originalQuery<T>(sql, params);
     };
 
-    await expect(harness.performAction("create-paperclip-distillation-run", {
+    await expect(harness.performAction("create-todero-distillation-run", {
       companyId: COMPANY_ID,
       projectId: project.id,
-    })).rejects.toThrow("personal spaces cannot ingest Paperclip sources");
+    })).rejects.toThrow("personal spaces cannot ingest Todero sources");
     expect(harness.dbExecutes.some((execute) =>
       execute.sql.includes("paperclip_distillation_runs") && execute.sql.includes("'source_ready'"))).toBe(false);
   });
 
-  it("queues Paperclip ingestion backfills for every selected project scope", async () => {
+  it("queues Todero ingestion backfills for every selected project scope", async () => {
     const harness = createTestHarness({ manifest });
     await plugin.definition.setup(harness.ctx);
 
@@ -3216,7 +3216,7 @@ Duplicate headings receive stable suffixes.
       workItemId: string;
       issueId: string;
       workItems: Array<{ workItemId: string; issueId: string; projectId: string | null; rootIssueId: string | null }>;
-    }>("queue-paperclip-ingestion-backfill", {
+    }>("queue-todero-ingestion-backfill", {
       companyId: COMPANY_ID,
       sourceScope: {
         kind: "selected_projects",
@@ -3240,7 +3240,7 @@ Duplicate headings receive stable suffixes.
     expect(harness.dbExecutes.filter((execute) => execute.sql.includes("paperclip_distillation_work_items"))).toHaveLength(2);
   });
 
-  it("rejects oversized Paperclip ingestion profile and source-scope payloads", async () => {
+  it("rejects oversized Todero ingestion profile and source-scope payloads", async () => {
     const harness = createTestHarness({ manifest });
 
     await plugin.definition.setup(harness.ctx);
@@ -3249,24 +3249,24 @@ Duplicate headings receive stable suffixes.
       enabled: true,
       maxCharacters: 20001,
       sources: { issues: true },
-    })).rejects.toThrow("maxCharacters exceeds the hard Paperclip ingestion cap");
+    })).rejects.toThrow("maxCharacters exceeds the hard Todero ingestion cap");
 
-    await expect(harness.performAction("enable-paperclip-distillation-active-projects", {
+    await expect(harness.performAction("enable-todero-distillation-active-projects", {
       companyId: COMPANY_ID,
       limit: 26,
     })).rejects.toThrow("fan-out exceeds the hard cap");
 
-    await expect(harness.performAction("assemble-paperclip-source-bundle", {
+    await expect(harness.performAction("assemble-todero-source-bundle", {
       companyId: COMPANY_ID,
       projectId: "77777777-7777-4777-8777-777777777777",
       rootIssueId: "77777777-7777-4777-8777-777777777778",
     })).rejects.toThrow("either projectId or rootIssueId");
 
-    await expect(harness.performAction("assemble-paperclip-source-bundle", {
+    await expect(harness.performAction("assemble-todero-source-bundle", {
       companyId: COMPANY_ID,
       projectId: "77777777-7777-4777-8777-777777777777",
       maxCharacters: 60001,
-    })).rejects.toThrow("maxCharacters exceeds the hard Paperclip ingestion cap");
+    })).rejects.toThrow("maxCharacters exceeds the hard Todero ingestion cap");
   });
 
   it("keeps default-space files at the root and isolates managed spaces under slug prefixes", async () => {

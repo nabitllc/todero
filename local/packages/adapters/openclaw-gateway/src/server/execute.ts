@@ -2,17 +2,17 @@ import type {
   AdapterExecutionContext,
   AdapterExecutionResult,
   AdapterRuntimeServiceReport,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   asNumber,
   asString,
-  buildPaperclipEnv,
+  buildToderoEnv,
   buildRuntimeToolsEnv,
   parseObject,
-  readPaperclipIssueWorkModeFromContext,
-  renderPaperclipWakePrompt,
-  stringifyPaperclipWakePayload,
-} from "@paperclipai/adapter-utils/server-utils";
+  readToderoIssueWorkModeFromContext,
+  renderToderoWakePrompt,
+  stringifyToderoWakePayload,
+} from "@todero/adapter-utils/server-utils";
 import crypto, { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 
@@ -91,7 +91,7 @@ const PROTOCOL_VERSION = 4;
 const DEFAULT_SCOPES = ["operator.admin"];
 const DEFAULT_CLIENT_ID = "gateway-client";
 const DEFAULT_CLIENT_MODE = "backend";
-const DEFAULT_CLIENT_VERSION = "paperclip";
+const DEFAULT_CLIENT_VERSION = "todero";
 const DEFAULT_ROLE = "operator";
 
 const SENSITIVE_LOG_KEY_PATTERN =
@@ -147,12 +147,12 @@ export function resolveSessionKey(input: {
   runId: string;
   issueId: string | null;
 }): string {
-  const fallback = input.configuredSessionKey ?? "paperclip";
+  const fallback = input.configuredSessionKey ?? "todero";
   if (input.strategy === "run") {
-    return prefixSessionKeyForAgent(`paperclip:run:${input.runId}`, input.agentId);
+    return prefixSessionKeyForAgent(`todero:run:${input.runId}`, input.agentId);
   }
   if (input.strategy === "issue" && input.issueId) {
-    return prefixSessionKeyForAgent(`paperclip:issue:${input.issueId}`, input.agentId);
+    return prefixSessionKeyForAgent(`todero:issue:${input.issueId}`, input.agentId);
   }
   return prefixSessionKeyForAgent(fallback, input.agentId);
 }
@@ -324,7 +324,7 @@ function buildWakePayload(ctx: AdapterExecutionContext): WakePayload {
   };
 }
 
-function resolvePaperclipApiUrlOverride(value: unknown): string | null {
+function resolveToderoApiUrlOverride(value: unknown): string | null {
   const raw = nonEmpty(value);
   if (!raw) return null;
   try {
@@ -336,40 +336,40 @@ function resolvePaperclipApiUrlOverride(value: unknown): string | null {
   }
 }
 
-const DEFAULT_CLAIMED_API_KEY_PATH = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
+const DEFAULT_CLAIMED_API_KEY_PATH = "~/.openclaw/workspace/todero-claimed-api-key.json";
 
 export function resolveClaimedApiKeyPath(value: unknown): string {
   return nonEmpty(value) ?? DEFAULT_CLAIMED_API_KEY_PATH;
 }
 
-function buildPaperclipEnvForWake(ctx: AdapterExecutionContext, wakePayload: WakePayload): Record<string, string> {
-  const paperclipApiUrlOverride = resolvePaperclipApiUrlOverride(ctx.config.paperclipApiUrl);
-  const paperclipEnv: Record<string, string> = {
-    ...buildPaperclipEnv(ctx.agent),
+function buildToderoEnvForWake(ctx: AdapterExecutionContext, wakePayload: WakePayload): Record<string, string> {
+  const toderoApiUrlOverride = resolveToderoApiUrlOverride(ctx.config.toderoApiUrl);
+  const toderoEnv: Record<string, string> = {
+    ...buildToderoEnv(ctx.agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
     PAPERCLIP_RUN_ID: ctx.runId,
   };
 
-  if (paperclipApiUrlOverride) {
-    paperclipEnv.PAPERCLIP_API_URL = paperclipApiUrlOverride;
+  if (toderoApiUrlOverride) {
+    toderoEnv.PAPERCLIP_API_URL = toderoApiUrlOverride;
   }
-  if (wakePayload.taskId) paperclipEnv.PAPERCLIP_TASK_ID = wakePayload.taskId;
-  const issueWorkMode = readPaperclipIssueWorkModeFromContext(ctx.context);
-  if (issueWorkMode) paperclipEnv.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
-  if (wakePayload.wakeReason) paperclipEnv.PAPERCLIP_WAKE_REASON = wakePayload.wakeReason;
-  if (wakePayload.wakeCommentId) paperclipEnv.PAPERCLIP_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
-  if (wakePayload.approvalId) paperclipEnv.PAPERCLIP_APPROVAL_ID = wakePayload.approvalId;
-  if (wakePayload.approvalStatus) paperclipEnv.PAPERCLIP_APPROVAL_STATUS = wakePayload.approvalStatus;
+  if (wakePayload.taskId) toderoEnv.PAPERCLIP_TASK_ID = wakePayload.taskId;
+  const issueWorkMode = readToderoIssueWorkModeFromContext(ctx.context);
+  if (issueWorkMode) toderoEnv.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
+  if (wakePayload.wakeReason) toderoEnv.PAPERCLIP_WAKE_REASON = wakePayload.wakeReason;
+  if (wakePayload.wakeCommentId) toderoEnv.PAPERCLIP_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
+  if (wakePayload.approvalId) toderoEnv.PAPERCLIP_APPROVAL_ID = wakePayload.approvalId;
+  if (wakePayload.approvalStatus) toderoEnv.PAPERCLIP_APPROVAL_STATUS = wakePayload.approvalStatus;
   if (wakePayload.issueIds.length > 0) {
-    paperclipEnv.PAPERCLIP_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
+    toderoEnv.PAPERCLIP_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
   }
 
-  return paperclipEnv;
+  return toderoEnv;
 }
 
 function buildWakeText(
   payload: WakePayload,
-  paperclipEnv: Record<string, string>,
+  toderoEnv: Record<string, string>,
   structuredWakePrompt: string,
   claimedApiKeyPath: string,
 ): string {
@@ -388,16 +388,16 @@ function buildWakeText(
 
   const envLines: string[] = [];
   for (const key of orderedKeys) {
-    const value = paperclipEnv[key];
+    const value = toderoEnv[key];
     if (!value) continue;
     envLines.push(`${key}=${value}`);
   }
 
   const issueIdHint = payload.taskId ?? payload.issueId ?? "";
-  const apiBaseHint = paperclipEnv.PAPERCLIP_API_URL ?? "<set PAPERCLIP_API_URL>";
+  const apiBaseHint = toderoEnv.PAPERCLIP_API_URL ?? "<set PAPERCLIP_API_URL>";
 
   const lines = [
-    "Paperclip wake event for a cloud adapter.",
+    "Todero wake event for a cloud adapter.",
     "",
     "Run this procedure now. Do not guess undocumented endpoints and do not ask for additional heartbeat docs.",
     "",
@@ -418,7 +418,7 @@ function buildWakeText(
     "",
     "HTTP rules:",
     "- Use Authorization: Bearer $PAPERCLIP_API_KEY on every API call.",
-    "- Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutating API call.",
+    "- Use X-Todero-Run-Id: $PAPERCLIP_RUN_ID on every mutating API call.",
     "- Use only /api endpoints listed below.",
     "- Do NOT call guessed endpoints like /api/cloud-adapter/*, /api/cloud-adapters/*, /api/adapters/cloud/*, or /api/heartbeat.",
     "",
@@ -488,7 +488,7 @@ export function buildAgentParams(input: {
     idempotencyKey: input.runId,
   };
   delete agentParams.text;
-  delete agentParams.paperclip;
+  delete agentParams.todero;
 
   if (input.configuredAgentId && !nonEmpty(agentParams.agentId)) {
     agentParams.agentId = input.configuredAgentId;
@@ -747,7 +747,7 @@ class GatewayWsClient {
 
   close() {
     if (!this.ws) return;
-    this.ws.close(1000, "paperclip-complete");
+    this.ws.close(1000, "todero-complete");
     this.ws = null;
   }
 
@@ -1086,16 +1086,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const disableDeviceAuth = parseBoolean(ctx.config.disableDeviceAuth, false);
 
   const wakePayload = buildWakePayload(ctx);
-  const paperclipEnv = buildPaperclipEnvForWake(ctx, wakePayload);
+  const toderoEnv = buildToderoEnvForWake(ctx, wakePayload);
   // No heartbeat prompt template is sent over the gateway, so the wake prompt
   // must carry the execution contract itself.
-  const structuredWakePrompt = renderPaperclipWakePrompt(ctx.context.paperclipWake, {
+  const structuredWakePrompt = renderToderoWakePrompt(ctx.context.toderoWake, {
     includeExecutionContract: true,
   });
-  const structuredWakeJson = stringifyPaperclipWakePayload(ctx.context.paperclipWake);
+  const structuredWakeJson = stringifyToderoWakePayload(ctx.context.toderoWake);
   const wakeText = buildWakeText(
     wakePayload,
-    paperclipEnv,
+    toderoEnv,
     structuredWakeJson
       ? joinWakePayloadSections(structuredWakePrompt, structuredWakeJson)
       : structuredWakePrompt,

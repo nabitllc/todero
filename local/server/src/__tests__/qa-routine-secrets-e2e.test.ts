@@ -32,7 +32,7 @@ import {
   routineRuns,
   routines,
   secretAccessEvents,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -50,13 +50,13 @@ if (!support.supported) {
 describeEmbedded("PAP-9522 QA: routine secrets end-to-end", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-qa-routine-secrets-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-qa-routine-secrets-${randomUUID()}`);
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });
     process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = path.join(secretsTmpDir, "master.key");
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-qa-routine-secrets-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-qa-routine-secrets-");
     db = createDb(tempDb.connectionString);
   }, 30_000);
 

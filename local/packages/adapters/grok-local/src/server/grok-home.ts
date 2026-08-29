@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolvePaperclipInstanceRootForAdapter } from "@paperclipai/adapter-utils/server-utils";
+import { resolveToderoInstanceRootForAdapter } from "@todero/adapter-utils/server-utils";
 
 // The Grok credential home. `GROK_HOME` replaces `~/.grok` and holds one file,
 // `auth.json`. Unlike Codex, a Grok `auth.json` has no fixed top-level key: it
@@ -76,7 +76,7 @@ export async function grokHomeHasUsableAuth(home: string): Promise<boolean> {
 
 /**
  * Resolves the managed Grok home directory. With a `companyId`, it resolves the
- * company-scoped home under the Paperclip instance tree, the same isolation
+ * company-scoped home under the Todero instance tree, the same isolation
  * boundary `resolveManagedCodexHomeDir` uses. Without one, it resolves the
  * instance-global home, which a promotion must never write.
  */
@@ -84,7 +84,7 @@ export function resolveManagedGrokHomeDir(
   env: NodeJS.ProcessEnv,
   companyId?: string,
 ): string {
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,

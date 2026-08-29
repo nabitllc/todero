@@ -25,7 +25,7 @@ import {
   pluginManagedResources,
   plugins,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -64,7 +64,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
   const tempRoots: string[] = [];
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-orchestration-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-plugin-orchestration-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -132,7 +132,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const agentId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: issuePrefix(companyId),
       requireBoardApprovalForNewAgents: false,
     });
@@ -151,7 +151,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
   }
 
   async function makeLocalRoot() {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-plugin-host-folder-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-plugin-host-folder-"));
     tempRoots.push(root);
     return root;
   }
@@ -181,28 +181,28 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       strategyType: "git_worktree",
       name: "Feature workspace",
       status: "active",
-      cwd: "/tmp/paperclip-feature",
-      repoUrl: "https://example.com/paperclip.git",
+      cwd: "/tmp/todero-feature",
+      repoUrl: "https://example.com/todero.git",
       baseRef: "main",
       branchName: "feature/workspace",
       providerType: "git_worktree",
-      providerRef: "/tmp/paperclip-feature",
+      providerRef: "/tmp/todero-feature",
       metadata: {
         providerMetadata: { sandboxId: "sandbox-1" },
         workspaceRealizationRequest: { hiddenInternal: true },
       },
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.workspace", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.workspace", createEventBusStub());
 
     await expect(services.executionWorkspaces.get({ workspaceId, companyId })).resolves.toMatchObject({
       id: workspaceId,
       companyId,
       projectId,
       projectWorkspaceId: null,
-      path: "/tmp/paperclip-feature",
-      cwd: "/tmp/paperclip-feature",
-      repoUrl: "https://example.com/paperclip.git",
+      path: "/tmp/todero-feature",
+      cwd: "/tmp/todero-feature",
+      repoUrl: "https://example.com/todero.git",
       baseRef: "main",
       branchName: "feature/workspace",
       providerType: "git_worktree",
@@ -232,7 +232,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       identifier: `${issuePrefix(companyId)}-blocker`,
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.missions", createEventBusStub());
     const issue = await services.issues.create({
       companyId,
       title: "Plugin child issue",
@@ -246,7 +246,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     });
 
     const [stored] = await db.select().from(issues).where(eq(issues.id, issue.id));
-    expect(stored?.originKind).toBe("plugin:paperclip.missions");
+    expect(stored?.originKind).toBe("plugin:todero.missions");
     expect(stored?.originId).toBe("mission-alpha");
     expect(stored?.billingCode).toBe("mission:alpha");
     expect(stored?.assigneeAgentId).toBe(agentId);
@@ -272,7 +272,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
           agentId,
           details: expect.objectContaining({
             sourcePluginId: "plugin-record-id",
-            sourcePluginKey: "paperclip.missions",
+            sourcePluginKey: "todero.missions",
             initiatingActorType: "agent",
             initiatingActorId: agentId,
             initiatingRunId: originRunId,
@@ -284,15 +284,15 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
 
   it("enforces plugin origin namespaces", async () => {
     const { companyId } = await seedCompanyAndAgent();
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.missions", createEventBusStub());
 
     const featureIssue = await services.issues.create({
       companyId,
       title: "Feature issue",
-      originKind: "plugin:paperclip.missions:feature",
+      originKind: "plugin:todero.missions:feature",
       originId: "mission-alpha:feature-1",
     });
-    expect(featureIssue.originKind).toBe("plugin:paperclip.missions:feature");
+    expect(featureIssue.originKind).toBe("plugin:todero.missions:feature");
 
     await expect(
       services.issues.create({
@@ -300,7 +300,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
         title: "Spoofed issue",
         originKind: "plugin:other.plugin:feature",
       }),
-    ).rejects.toThrow("Plugin may only use originKind values under plugin:paperclip.missions");
+    ).rejects.toThrow("Plugin may only use originKind values under plugin:todero.missions");
 
     await expect(
       services.issues.update({
@@ -308,12 +308,12 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
         companyId,
         patch: { originKind: "plugin:other.plugin:feature" },
       }),
-    ).rejects.toThrow("Plugin may only use originKind values under plugin:paperclip.missions");
+    ).rejects.toThrow("Plugin may only use originKind values under plugin:todero.missions");
   });
 
   it("creates plugin operation issues with the generic operation origin", async () => {
     const { companyId } = await seedCompanyAndAgent();
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.missions", createEventBusStub());
 
     const issue = await services.issues.create({
       companyId,
@@ -322,7 +322,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       originId: "mission-alpha:operation-1",
     });
 
-    expect(issue.originKind).toBe("plugin:paperclip.missions:operation");
+    expect(issue.originKind).toBe("plugin:todero.missions:operation");
     expect(issue.originId).toBe("mission-alpha:operation-1");
   });
 
@@ -331,16 +331,16 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const pluginId = randomUUID();
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclipai.plugin-llm-wiki",
-      packageName: "@paperclipai/plugin-llm-wiki",
+      pluginKey: "todero.plugin-llm-wiki",
+      packageName: "@todero/plugin-llm-wiki",
       version: "0.1.0",
       manifestJson: {
-        id: "paperclipai.plugin-llm-wiki",
+        id: "todero.plugin-llm-wiki",
         apiVersion: 1,
         version: "0.1.0",
         displayName: "LLM Wiki",
         description: "Local-file LLM Wiki plugin",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["local.folders"],
         entrypoints: { worker: "./dist/worker.js" },
@@ -349,7 +349,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
             folderKey: "wiki-root",
             displayName: "Wiki root",
             access: "readWrite",
-            requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
+            requiredDirectories: ["raw", "wiki", "wiki/concepts", ".todero"],
             requiredFiles: ["WIKI.md", "AGENTS.md"],
           },
         ],
@@ -360,17 +360,17 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const services = buildHostServices(
       db,
       pluginId,
-      "paperclipai.plugin-llm-wiki",
+      "todero.plugin-llm-wiki",
       createEventBusStub(),
       undefined,
       {
         manifest: {
-          id: "paperclipai.plugin-llm-wiki",
+          id: "todero.plugin-llm-wiki",
           apiVersion: 1,
           version: "0.1.0",
           displayName: "LLM Wiki",
           description: "Local-file LLM Wiki plugin",
-          author: "Paperclip",
+          author: "Todero",
           categories: ["automation"],
           capabilities: ["local.folders"],
           entrypoints: { worker: "./dist/worker.js" },
@@ -379,7 +379,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
               folderKey: "wiki-root",
               displayName: "Wiki root",
               access: "readWrite",
-              requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
+              requiredDirectories: ["raw", "wiki", "wiki/concepts", ".todero"],
               requiredFiles: ["WIKI.md", "AGENTS.md"],
             },
           ],
@@ -392,7 +392,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       folderKey: "wiki-root",
       path: root,
       access: "readWrite",
-      requiredDirectories: ["raw", "wiki", "wiki/concepts", ".paperclip"],
+      requiredDirectories: ["raw", "wiki", "wiki/concepts", ".todero"],
       requiredFiles: ["WIKI.md", "AGENTS.md"],
     });
     expect(configured.healthy).toBe(false);
@@ -428,16 +428,16 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const pluginId = randomUUID();
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.local-folders",
-      packageName: "@paperclip/plugin-local-folders",
+      pluginKey: "todero.local-folders",
+      packageName: "@todero/plugin-local-folders",
       version: "0.1.0",
       manifestJson: {
-        id: "paperclip.local-folders",
+        id: "todero.local-folders",
         apiVersion: 1,
         version: "0.1.0",
         displayName: "Local Folders",
         description: "Local folder fixture",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["local.folders"],
         entrypoints: { worker: "./dist/worker.js" },
@@ -454,17 +454,17 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const services = buildHostServices(
       db,
       pluginId,
-      "paperclip.local-folders",
+      "todero.local-folders",
       createEventBusStub(),
       undefined,
       {
         manifest: {
-          id: "paperclip.local-folders",
+          id: "todero.local-folders",
           apiVersion: 1,
           version: "0.1.0",
           displayName: "Local Folders",
           description: "Local folder fixture",
-          author: "Paperclip",
+          author: "Todero",
           categories: ["automation"],
           capabilities: ["local.folders"],
           entrypoints: { worker: "./dist/worker.js" },
@@ -501,19 +501,19 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const pluginId = randomUUID();
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.missions",
-      packageName: "@paperclip/plugin-missions",
+      pluginKey: "todero.missions",
+      packageName: "@todero/plugin-missions",
       version: "0.1.0",
       apiVersion: 1,
       categories: ["automation"],
       status: "ready",
       manifestJson: {
-        id: "paperclip.missions",
+        id: "todero.missions",
         apiVersion: 1,
         version: "0.1.0",
         displayName: "Missions",
         description: "Mission orchestration",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["projects.managed"],
         entrypoints: { worker: "./dist/worker.js" },
@@ -528,7 +528,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       },
     });
 
-    const services = buildHostServices(db, pluginId, "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, pluginId, "todero.missions", createEventBusStub());
     const missing = await services.projects.getManaged({ companyId, projectKey: "operations" });
     expect(missing.status).toBe("missing");
     expect(missing.projectId).toBeNull();
@@ -550,7 +550,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     expect(created.projectId).toEqual(expect.any(String));
     expect(created.project?.managedByPlugin).toMatchObject({
       pluginId,
-      pluginKey: "paperclip.missions",
+      pluginKey: "todero.missions",
       pluginDisplayName: "Missions",
       resourceKind: "project",
       resourceKey: "operations",
@@ -564,12 +564,12 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       .update(plugins)
       .set({
         manifestJson: {
-          id: "paperclip.missions",
+          id: "todero.missions",
           apiVersion: 1,
           version: "0.2.0",
           displayName: "Missions",
           description: "Mission orchestration",
-          author: "Paperclip",
+          author: "Todero",
           categories: ["automation"],
           capabilities: ["projects.managed"],
           entrypoints: { worker: "./dist/worker.js" },
@@ -621,7 +621,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       executionRunId: runId,
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.missions", createEventBusStub());
     await expect(
       services.issues.assertCheckoutOwner({
         issueId,
@@ -665,7 +665,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       type: "blocks",
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.missions", createEventBusStub());
     await expect(
       services.issues.requestWakeup({
         issueId: blockedIssueId,
@@ -762,7 +762,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       },
     ]);
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.missions", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.missions", createEventBusStub());
     const summary = await services.issues.getOrchestrationSummary({
       companyId,
       issueId: rootIssueId,
@@ -791,7 +791,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       assigneeAgentId: agentId,
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.issues.createComment({
         issueId,
@@ -818,7 +818,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: issueId, companyId, title: "Needs human input", status: "in_review", priority: "medium", assigneeAgentId: agentId,
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.issues.createComment({ issueId, companyId, body: "Here's my answer", actorUserId: viewerUserId }),
     ).rejects.toThrow("viewer (read-only) access");
@@ -865,7 +865,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     const services = buildHostServices(
       db,
       "plugin-record-id",
-      "paperclip.gateway",
+      "todero.gateway",
       createEventBusStub(),
       undefined,
       { heartbeatRuntimeEnv: {} },
@@ -923,7 +923,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       assigneeAgentId: agentId,
     });
 
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
 
     // Hold a row lock on the issue so createComment's own `UPDATE issues SET
     // updated_at` (inside addComment) blocks until this transaction commits a
@@ -986,7 +986,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: issueId, companyId, title: "Decision", status: "in_review", priority: "medium", assigneeAgentId: agentId,
     });
     const interactionId = await seedInteraction(companyId, issueId);
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.issues.respondInteraction({ issueId, interactionId, companyId, action: "accept" }),
     ).rejects.toThrow("actorUserId is required");
@@ -999,7 +999,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: issueId, companyId, title: "Decision", status: "in_review", priority: "medium", assigneeAgentId: agentId,
     });
     const interactionId = await seedInteraction(companyId, issueId);
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.issues.respondInteraction({
         issueId, interactionId, companyId, action: "accept", actorUserId: randomUUID(),
@@ -1025,7 +1025,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: issueId, companyId, title: "Decision", status: "in_review", priority: "medium", assigneeAgentId: agentId,
     });
     const interactionId = await seedInteraction(companyId, issueId);
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.issues.respondInteraction({
         issueId, interactionId, companyId, action: "accept", actorUserId: viewerUserId,
@@ -1050,7 +1050,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: issueId, companyId, title: "Decision", status: "in_review", priority: "medium",
     });
     const interactionId = await seedInteraction(companyId, issueId);
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     const result = await services.issues.respondInteraction({
       issueId, interactionId, companyId, action: "accept", actorUserId: operatorUserId,
     });
@@ -1080,7 +1080,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
         priority: "medium",
       });
       const interactionId = await seedInteraction(companyId, issueId);
-      const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+      const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
 
       await expect(services.issues.respondInteraction({
         issueId,
@@ -1109,7 +1109,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: issueId, companyId, title: "Decision", status: "in_review", priority: "medium", assigneeAgentId: agentId,
     });
     const interactionId = await seedInteraction(companyId, issueId, { status: "rejected" });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     const result = await services.issues.respondInteraction({
       issueId, interactionId, companyId, action: "accept", actorUserId: humanUserId,
     });
@@ -1123,7 +1123,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.insert(approvals).values({
       id: approvalId, companyId, type: "request_board_approval", status: "pending", payload: { title: "Ship it" },
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.approvals.decide({ approvalId, companyId, action: "approve" }),
     ).rejects.toThrow("actorUserId is required");
@@ -1137,7 +1137,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.insert(approvals).values({
       id: approvalId, companyId, type: "request_board_approval", status: "pending", payload: { title: "Ship it" },
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.approvals.decide({ approvalId, companyId, action: "approve", actorUserId: randomUUID() }),
     ).rejects.toThrow("is not an active human member of this company");
@@ -1158,7 +1158,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.insert(approvals).values({
       id: approvalId, companyId, type: "request_board_approval", status: "pending", payload: { title: "Ship it" },
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.approvals.decide({ approvalId, companyId, action: "approve", actorUserId: viewerUserId }),
     ).rejects.toThrow("viewer (read-only) access");
@@ -1177,7 +1177,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.insert(approvals).values({
       id: approvalId, companyId, type: "request_board_approval", status: "pending", payload: { title: "Ship it" },
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     const result = await services.approvals.decide({
       approvalId, companyId, action: "approve", actorUserId: adminUserId,
     });
@@ -1201,7 +1201,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       status: "pending",
       payload: { title: "Ship it", botToken: "xoxb-super-secret" },
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     const result = await services.approvals.decide({
       approvalId, companyId, action: "approve", actorUserId: humanUserId, decisionNote: "lgtm",
     });
@@ -1231,7 +1231,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
       id: randomUUID(), companyId: otherCompany, type: "request_board_approval", status: "pending",
       payload: { title: "Theirs" },
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     const rows = await services.approvals.list({ companyId });
     expect(rows).toHaveLength(1);
     expect(rows[0]!.payload.title).toBe("Mine");
@@ -1257,7 +1257,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.insert(issueAttachments).values({
       id: attachmentId, companyId: otherCompany, issueId: otherIssueId, assetId,
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     // Requested under our own company: the cross-company id must be invisible.
     void agentId;
     const content = await services.issues.getAttachmentContent({ attachmentId, companyId });
@@ -1279,7 +1279,7 @@ describeEmbeddedPostgres("plugin orchestration APIs", () => {
     await db.insert(issueAttachments).values({
       id: attachmentId, companyId, issueId, assetId,
     });
-    const services = buildHostServices(db, "plugin-record-id", "paperclip.gateway", createEventBusStub());
+    const services = buildHostServices(db, "plugin-record-id", "todero.gateway", createEventBusStub());
     await expect(
       services.issues.getAttachmentContent({ attachmentId, companyId, maxBytes: 1_000_000 }),
     ).rejects.toThrow("over the");

@@ -10,7 +10,7 @@ import {
   createDb,
   environmentLeases,
   environments,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -117,7 +117,7 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "responsible-user",
@@ -159,7 +159,7 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
     expect(leases[0]?.releasedAt).not.toBeNull();
 
     const context = finished?.contextSnapshot as Record<string, unknown>;
-    expect(context.paperclipEnvironment).toMatchObject({
+    expect(context.toderoEnvironment).toMatchObject({
       id: localRows[0]?.id,
       name: "Local",
       driver: "local",
@@ -167,16 +167,16 @@ describeEmbeddedPostgres("heartbeat local environment lifecycle", () => {
     });
   });
 
-  it("injects run-scoped Paperclip env into process agents", async () => {
+  it("injects run-scoped Todero env into process agents", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
-    const tempDir = await mkdtemp(join(tmpdir(), "paperclip-process-env-"));
+    const tempDir = await mkdtemp(join(tmpdir(), "todero-process-env-"));
     const envPath = join(tempDir, "env.json");
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "responsible-user",

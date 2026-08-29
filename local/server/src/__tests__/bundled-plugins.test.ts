@@ -40,12 +40,12 @@ describe("resolveBundledPluginInstalls", () => {
     expect(resolved).toEqual([
       {
         key: "kubernetes",
-        pluginKey: "paperclip.kubernetes-sandbox-provider",
+        pluginKey: "todero.kubernetes-sandbox-provider",
         localPath: path.join(CATALOG_ROOT, "sandbox-providers/kubernetes"),
       },
       {
         key: "daytona",
-        pluginKey: "paperclip.daytona-sandbox-provider",
+        pluginKey: "todero.daytona-sandbox-provider",
         localPath: path.join(CATALOG_ROOT, "sandbox-providers/daytona"),
       },
     ]);
@@ -129,7 +129,7 @@ describe("resolveBundledPluginInstalls", () => {
     expect(resolved).toEqual([
       {
         key: "kubernetes",
-        pluginKey: "paperclip.kubernetes-sandbox-provider",
+        pluginKey: "todero.kubernetes-sandbox-provider",
         localPath: "/somewhere/else/kubernetes",
       },
     ]);
@@ -164,7 +164,7 @@ describe("resolveBundledPluginInstalls", () => {
     // Exactly the pre-refactor default path.
     expect(entry).toEqual({
       key: "kubernetes",
-      pluginKey: "paperclip.kubernetes-sandbox-provider",
+      pluginKey: "todero.kubernetes-sandbox-provider",
       localPath: "/app/packages/plugins/sandbox-providers/kubernetes",
     });
   });
@@ -207,7 +207,7 @@ type LooseRow = {
 // Build a minimal manifest for a persisted row or a shipped bundle. The reconcile
 // step compares the bundle version with the persisted version.
 function makeManifest(pluginKey: string, version: string) {
-  return { id: pluginKey, apiVersion: 1, version } as unknown as import("@paperclipai/shared").PaperclipPluginManifestV1;
+  return { id: pluginKey, apiVersion: 1, version } as unknown as import("@todero/shared").PaperclipPluginManifestV1;
 }
 
 function makeDeps(overrides?: {
@@ -266,12 +266,12 @@ function makeDeps(overrides?: {
 
 const K8S: ResolvedBundledPlugin = {
   key: "kubernetes",
-  pluginKey: "paperclip.kubernetes-sandbox-provider",
+  pluginKey: "todero.kubernetes-sandbox-provider",
   localPath: path.join(CATALOG_ROOT, "sandbox-providers/kubernetes"),
 };
 const DAYTONA: ResolvedBundledPlugin = {
   key: "daytona",
-  pluginKey: "paperclip.daytona-sandbox-provider",
+  pluginKey: "todero.daytona-sandbox-provider",
   localPath: path.join(CATALOG_ROOT, "sandbox-providers/daytona"),
 };
 
@@ -281,7 +281,7 @@ describe("ensureBundledPlugins", () => {
     await ensureBundledPlugins([K8S], deps, { reinstallUninstalled: true });
     expect(installPlugin).toHaveBeenCalledWith({ localPath: K8S.localPath });
     expect(deps.lifecycle.load).toHaveBeenCalledWith(
-      "id-paperclip.kubernetes-sandbox-provider",
+      "id-todero.kubernetes-sandbox-provider",
     );
   });
 
@@ -395,7 +395,7 @@ describe("ensureBundledPlugins", () => {
     );
     // Daytona still installed after the kubernetes failure.
     expect(installPlugin).toHaveBeenCalledTimes(2);
-    expect(deps.lifecycle.load).toHaveBeenCalledWith("id-paperclip.daytona-sandbox-provider");
+    expect(deps.lifecycle.load).toHaveBeenCalledWith("id-todero.daytona-sandbox-provider");
   });
 
   it("never uninstalls anything: plugins absent from the list are untouched", async () => {

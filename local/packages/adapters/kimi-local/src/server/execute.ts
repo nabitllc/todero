@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclipai/adapter-utils";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@todero/adapter-utils";
 import {
   adapterExecutionTargetIsRemote,
   adapterExecutionTargetRemoteCwd,
@@ -10,7 +10,7 @@ import {
   adapterExecutionTargetSessionIdentity,
   adapterExecutionTargetSessionMatches,
   adapterExecutionTargetUsesManagedHome,
-  adapterExecutionTargetUsesPaperclipBridge,
+  adapterExecutionTargetUsesToderoBridge,
   describeAdapterExecutionTarget,
   ensureAdapterExecutionTargetCommandResolvable,
   ensureAdapterExecutionTargetRuntimeCommandInstalled,
@@ -19,30 +19,30 @@ import {
   resolveAdapterExecutionTargetTimeoutSec,
   resolveAdapterExecutionTargetCommandForLogs,
   runAdapterExecutionTargetProcess,
-  startAdapterExecutionTargetPaperclipBridge,
-} from "@paperclipai/adapter-utils/execution-target";
+  startAdapterExecutionTargetToderoBridge,
+} from "@todero/adapter-utils/execution-target";
 import {
   asNumber,
   asString,
   asStringArray,
-  buildPaperclipEnv,
+  buildToderoEnv,
   buildRuntimeToolsEnv,
   buildInvocationEnvForLogs,
   ensureAbsoluteDirectory,
   joinPromptSections,
   ensurePathInEnv,
-  refreshPaperclipWorkspaceEnvForExecution,
-  isPaperclipSkillSourceMissing,
-  readPaperclipRuntimeSkillEntries,
-  readPaperclipIssueWorkModeFromContext,
-  resolveLegacyPaperclipDesiredSkillNames,
+  refreshToderoWorkspaceEnvForExecution,
+  isToderoSkillSourceMissing,
+  readToderoRuntimeSkillEntries,
+  readToderoIssueWorkModeFromContext,
+  resolveLegacyToderoDesiredSkillNames,
   parseObject,
   renderTemplate,
-  renderPaperclipWakePrompt,
-  isPaperclipRecoveryWakePayload,
-  stringifyPaperclipWakePayload,
+  renderToderoWakePrompt,
+  isToderoRecoveryWakePayload,
+  stringifyToderoWakePayload,
   DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 import {
   SANDBOX_INSTALL_COMMAND,
   modelSupportsEffort,
@@ -143,14 +143,14 @@ function buildKimiRuntimeEnv(env: Record<string, string>): Record<string, string
   );
 }
 
-function renderPaperclipEnvNote(env: Record<string, string>): string {
-  const paperclipKeys = Object.keys(env)
+function renderToderoEnvNote(env: Record<string, string>): string {
+  const toderoKeys = Object.keys(env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort();
-  if (paperclipKeys.length === 0) return "";
+  if (toderoKeys.length === 0) return "";
   return [
-    "Paperclip runtime note:",
-    `The following PAPERCLIP_* environment variables are available in this run: ${paperclipKeys.join(", ")}`,
+    "Todero runtime note:",
+    `The following PAPERCLIP_* environment variables are available in this run: ${toderoKeys.join(", ")}`,
     "Do not assume these variables are missing without checking your shell environment.",
     "",
     "",
@@ -160,9 +160,9 @@ function renderPaperclipEnvNote(env: Record<string, string>): string {
 function renderApiAccessNote(env: Record<string, string>): string {
   if (!hasNonEmptyEnvValue(env, "PAPERCLIP_API_URL") || !hasNonEmptyEnvValue(env, "PAPERCLIP_API_KEY")) return "";
   return [
-    "Paperclip API access note:",
-    "Use shell commands with curl to make Paperclip API requests when needed.",
-    "Include X-Paperclip-Run-Id on mutating requests.",
+    "Todero API access note:",
+    "Use shell commands with curl to make Todero API requests when needed.",
+    "Include X-Todero-Run-Id on mutating requests.",
     "",
     "",
   ].join("\n");
@@ -171,14 +171,14 @@ function renderApiAccessNote(env: Record<string, string>): string {
 async function buildKimiSkillsDir(
   config: Record<string, unknown>,
 ): Promise<string> {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-kimi-skills-"));
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "todero-kimi-skills-"));
   const target = path.join(tmp, "skills");
   await fs.mkdir(target, { recursive: true });
-  const availableEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredNames = new Set(resolveLegacyPaperclipDesiredSkillNames(config, availableEntries));
+  const availableEntries = await readToderoRuntimeSkillEntries(config, __moduleDir);
+  const desiredNames = new Set(resolveLegacyToderoDesiredSkillNames(config, availableEntries));
   for (const entry of availableEntries) {
     if (!desiredNames.has(entry.key)) continue;
-    if (isPaperclipSkillSourceMissing(entry)) continue;
+    if (isToderoSkillSourceMissing(entry)) continue;
     await fs.symlink(entry.source, path.join(target, entry.runtimeName));
   }
   return target;
@@ -214,15 +214,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const command = asString(config.command, "kimi");
   const model = asString(config.model, "").trim();
 
-  const workspaceContext = parseObject(context.paperclipWorkspace);
+  const workspaceContext = parseObject(context.toderoWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
   const agentHome = asString(workspaceContext.agentHome, "");
-  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
-    ? context.paperclipWorkspaces.filter(
+  const workspaceHints = Array.isArray(context.toderoWorkspaces)
+    ? context.toderoWorkspaces.filter(
       (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
     )
     : [];
@@ -232,14 +232,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   let effectiveExecutionCwd = adapterExecutionTargetRemoteCwd(executionTarget, cwd);
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  const kimiSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
-  const desiredKimiSkillNames = resolveLegacyPaperclipDesiredSkillNames(config, kimiSkillEntries);
+  const kimiSkillEntries = await readToderoRuntimeSkillEntries(config, __moduleDir);
+  const desiredKimiSkillNames = resolveLegacyToderoDesiredSkillNames(config, kimiSkillEntries);
   const envConfig = parseObject(config.env);
 
   const hasExplicitApiKey =
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = {
-    ...buildPaperclipEnv(agent),
+    ...buildToderoEnv(agent),
     ...buildRuntimeToolsEnv(ctx.runtimeTools),
   };
   env.PAPERCLIP_RUN_ID = runId;
@@ -266,8 +266,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
-  const wakePayloadJson = stringifyPaperclipWakePayload(context.paperclipWake);
-  const issueWorkMode = readPaperclipIssueWorkModeFromContext(context);
+  const wakePayloadJson = stringifyToderoWakePayload(context.toderoWake);
+  const issueWorkMode = readToderoIssueWorkModeFromContext(context);
   if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
   if (issueWorkMode) env.PAPERCLIP_ISSUE_WORK_MODE = issueWorkMode;
   if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
@@ -276,7 +276,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   if (wakePayloadJson) env.PAPERCLIP_WAKE_PAYLOAD_JSON = wakePayloadJson;
-  refreshPaperclipWorkspaceEnvForExecution({
+  refreshToderoWorkspaceEnvForExecution({
     env,
     envConfig,
     workspaceCwd: effectiveWorkspaceCwd,
@@ -333,14 +333,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   let localSkillsDir: string | null = null;
   let remoteSkillsDir: string | null = null;
   let remoteRuntimeRootDir: string | null = null;
-  let paperclipBridge: Awaited<ReturnType<typeof startAdapterExecutionTargetPaperclipBridge>> = null;
+  let toderoBridge: Awaited<ReturnType<typeof startAdapterExecutionTargetToderoBridge>> = null;
 
   if (executionTargetIsRemote) {
     try {
       localSkillsDir = await buildKimiSkillsDir(config);
       await onLog(
         "stdout",
-        `[paperclip] Syncing workspace and Kimi runtime assets to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
+        `[todero] Syncing workspace and Kimi runtime assets to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
       );
       const preparedExecutionTargetRuntime = await prepareAdapterExecutionTargetRuntime({
         runId,
@@ -361,7 +361,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       restoreRemoteWorkspace = () =>
         preparedExecutionTargetRuntime.restoreWorkspace((line) => onLog("stdout", line));
       effectiveExecutionCwd = preparedExecutionTargetRuntime.workspaceRemoteDir ?? effectiveExecutionCwd;
-      refreshPaperclipWorkspaceEnvForExecution({
+      refreshToderoWorkspaceEnvForExecution({
         env,
         envConfig,
         workspaceCwd: effectiveWorkspaceCwd,
@@ -387,7 +387,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       // from its isolated per-run location instead of copying it over the
       // shared $KIMI_CODE_HOME/skills home. Overwriting the shared home would
       // delete Kimi skills installed by the operator or other agents that
-      // Paperclip does not own.
+      // Todero does not own.
       if (desiredKimiSkillNames.length > 0 && preparedExecutionTargetRuntime.assetDirs.skills) {
         remoteSkillsDir = preparedExecutionTargetRuntime.assetDirs.skills;
       }
@@ -400,8 +400,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     }
   }
   const runtimeExecutionTarget = overrideAdapterExecutionTargetRemoteCwd(executionTarget, effectiveExecutionCwd);
-  if (executionTargetIsRemote && adapterExecutionTargetUsesPaperclipBridge(executionTarget)) {
-    paperclipBridge = await startAdapterExecutionTargetPaperclipBridge({
+  if (executionTargetIsRemote && adapterExecutionTargetUsesToderoBridge(executionTarget)) {
+    toderoBridge = await startAdapterExecutionTargetToderoBridge({
       runId,
       target: runtimeExecutionTarget,
       runtimeRootDir: remoteRuntimeRootDir,
@@ -410,8 +410,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       hostApiToken: env.PAPERCLIP_API_KEY,
       onLog,
     });
-    if (paperclipBridge) {
-      Object.assign(env, paperclipBridge.env);
+    if (toderoBridge) {
+      Object.assign(env, toderoBridge.env);
     }
   }
 
@@ -424,7 +424,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     localSkillsDir = await buildKimiSkillsDir(config);
     await onLog(
       "stderr",
-      `[paperclip] Prepared ${desiredKimiSkillNames.length} Kimi skill(s) for --skills-dir delivery.\n`,
+      `[todero] Prepared ${desiredKimiSkillNames.length} Kimi skill(s) for --skills-dir delivery.\n`,
     );
   }
 
@@ -440,12 +440,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (executionTargetIsRemote && runtimeSessionId && !canResumeSession) {
     await onLog(
       "stdout",
-      `[paperclip] Kimi session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
+      `[todero] Kimi session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
     );
   } else if (runtimeSessionId && !canResumeSession) {
     await onLog(
       "stdout",
-      `[paperclip] Kimi session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
+      `[todero] Kimi session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
     );
   }
 
@@ -465,7 +465,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stdout",
-        `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+        `[todero] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
       );
     }
   }
@@ -511,20 +511,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     !sessionId && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
-  const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+  const wakePrompt = renderToderoWakePrompt(context.toderoWake, { resumedSession: Boolean(sessionId) });
   const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
-  const renderedPrompt = shouldUseResumeDeltaPrompt || isPaperclipRecoveryWakePayload(context.paperclipWake)
+  const renderedPrompt = shouldUseResumeDeltaPrompt || isToderoRecoveryWakePayload(context.toderoWake)
     ? ""
     : renderTemplate(promptTemplate, templateData);
-  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
-  const paperclipEnvNote = renderPaperclipEnvNote(env);
+  const sessionHandoffNote = asString(context.toderoSessionHandoffMarkdown, "").trim();
+  const toderoEnvNote = renderToderoEnvNote(env);
   const apiAccessNote = renderApiAccessNote(env);
   const prompt = joinPromptSections([
     instructionsPrefix,
     renderedBootstrapPrompt,
     wakePrompt,
     sessionHandoffNote,
-    paperclipEnvNote,
+    toderoEnvNote,
     apiAccessNote,
     renderedPrompt,
   ]);
@@ -534,7 +534,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     bootstrapPromptChars: renderedBootstrapPrompt.length,
     wakePromptChars: wakePrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
-    runtimeNoteChars: paperclipEnvNote.length + apiAccessNote.length,
+    runtimeNoteChars: toderoEnvNote.length + apiAccessNote.length,
     heartbeatPromptChars: renderedPrompt.length,
   };
 
@@ -549,7 +549,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (!executionTargetIsRemote && instructionsFilePath) {
       args.push("--add-dir", path.dirname(instructionsFilePath));
     }
-    // Load desired Paperclip skills from the dedicated per-run directory
+    // Load desired Todero skills from the dedicated per-run directory
     // (local snapshot, or the synced remote snapshot) instead of the shared
     // skills home. Only passed when skills are desired so unconfigured agents
     // keep Kimi's default skill discovery.
@@ -596,8 +596,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       onSpawn,
       onRuntimeProgress: ctx.onRuntimeProgress,
       onLog: eventForwarder.log,
-      runLogTail: paperclipBridge?.runLogTail,
-      settleRunDisposition: paperclipBridge?.settleRunDisposition,
+      runLogTail: toderoBridge?.runLogTail,
+      settleRunDisposition: toderoBridge?.settleRunDisposition,
     });
     await eventForwarder.flush();
     return {
@@ -722,7 +722,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ) {
       await onLog(
         "stdout",
-        `[paperclip] Kimi resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+        `[todero] Kimi resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toResult(retry, true, true);
@@ -731,7 +731,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     return toResult(initial);
   } finally {
     await Promise.all([
-      paperclipBridge?.stop(),
+      toderoBridge?.stop(),
       restoreRemoteWorkspace?.(),
       localSkillsDir ? fs.rm(path.dirname(localSkillsDir), { recursive: true, force: true }).catch(() => undefined) : Promise.resolve(),
     ]);

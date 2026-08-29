@@ -7,7 +7,7 @@ const PRIORITIES = new Set(["critical", "high", "medium", "low"]);
 const WORK_MODES = new Set(["standard", "ask", "planning"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const HELP = `Paperclip task bridge for Hermes
+const HELP = `Todero task bridge for Hermes
 
 Usage:
   paperclip-task.mjs list-assigned [--status todo,in_progress,in_review,blocked] [--limit 20]
@@ -16,13 +16,13 @@ Usage:
   paperclip-task.mjs update-status --issue <id|identifier> --status <status> [--comment <text>|--comment-file <path|->]
 
 Environment:
-  PAPERCLIP_API_URL    Paperclip base URL, with or without /api.
+  PAPERCLIP_API_URL    Todero base URL, with or without /api.
   PAPERCLIP_BRIDGE_API_KEY
-                       Task-bridge Paperclip API key with kind=task_bridge scope.
+                       Task-bridge Todero API key with kind=task_bridge scope.
   PAPERCLIP_API_KEY    Fallback bridge key env var. Do not use a full agent key.
   PAPERCLIP_COMPANY_ID Optional company id override.
   PAPERCLIP_AGENT_ID   Optional agent id override.
-  PAPERCLIP_RUN_ID     Optional run id for X-Paperclip-Run-Id on mutations.
+  PAPERCLIP_RUN_ID     Optional run id for X-Todero-Run-Id on mutations.
 
 create-task options:
   --assignee-agent-id <uuid|self>  Assign to an agent. Defaults to self.
@@ -45,7 +45,7 @@ class UsageError extends Error {
 
 class ApiError extends Error {
   constructor(status, body) {
-    const message = typeof body?.error === "string" ? body.error : `Paperclip API request failed with status ${status}`;
+    const message = typeof body?.error === "string" ? body.error : `Todero API request failed with status ${status}`;
     super(message);
     this.name = "ApiError";
     this.status = status;
@@ -139,7 +139,7 @@ async function apiFetch(config, path, options = {}) {
     Authorization: `Bearer ${config.apiKey}`,
     Accept: "application/json",
     ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
-    ...(options.mutating && config.runId ? { "X-Paperclip-Run-Id": config.runId } : {}),
+    ...(options.mutating && config.runId ? { "X-Todero-Run-Id": config.runId } : {}),
   };
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     method: options.method ?? "GET",
@@ -166,7 +166,7 @@ async function resolveIdentity(config) {
   const agent = await apiFetch(config, "/agents/me");
   const companyId = config.companyId || agent.companyId;
   const agentId = config.agentId || agent.id;
-  if (!companyId || !agentId) throw new ApiError(500, { error: "Paperclip identity response did not include companyId and agent id" });
+  if (!companyId || !agentId) throw new ApiError(500, { error: "Todero identity response did not include companyId and agent id" });
   return { companyId, agentId, agent };
 }
 

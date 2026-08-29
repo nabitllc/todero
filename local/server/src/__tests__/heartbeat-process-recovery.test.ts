@@ -42,7 +42,7 @@ import {
   projects,
   projectWorkspaces,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -78,9 +78,9 @@ vi.mock("../services/local-service-supervisor.js", async () => {
   };
 });
 
-vi.mock("@paperclipai/shared/telemetry", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/shared/telemetry")>(
-    "@paperclipai/shared/telemetry",
+vi.mock("@todero/shared/telemetry", async () => {
+  const actual = await vi.importActual<typeof import("@todero/shared/telemetry")>(
+    "@todero/shared/telemetry",
   );
   return {
     ...actual,
@@ -123,7 +123,7 @@ import { collectDispositionRepairSourceState } from "../services/recovery/dispos
 import {
   UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON,
   UNMANAGED_BACKGROUND_TASK_STOP_REASON,
-} from "@paperclipai/adapter-utils/server-utils";
+} from "@todero/adapter-utils/server-utils";
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
@@ -311,7 +311,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
   const cleanupPids = new Set<number>();
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-recovery-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-heartbeat-recovery-");
     db = createDb(tempDb.connectionString);
     const now = new Date();
     await db.insert(authUsers).values({
@@ -504,7 +504,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -706,7 +706,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -833,7 +833,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -926,7 +926,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -967,7 +967,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });
@@ -1097,7 +1097,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -1435,8 +1435,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(retries).toHaveLength(0);
   });
 
-  async function withTempPaperclipHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
-    const home = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-hot-restart-"));
+  async function withTempToderoHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), "todero-hot-restart-"));
     const previousHome = process.env.PAPERCLIP_HOME;
     process.env.PAPERCLIP_HOME = home;
     try {
@@ -1462,7 +1462,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       },
     });
 
-    await withTempPaperclipHome(async () => {
+    await withTempToderoHome(async () => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "old-version",
@@ -1526,7 +1526,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       },
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "old-acp-version",
@@ -1614,7 +1614,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       },
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "old-acp-persistence-failure-version",
@@ -1682,7 +1682,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       },
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "old-mixed-version",
@@ -1762,7 +1762,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       processGroupId: null,
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "old-home-root-version",
@@ -1820,7 +1820,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       processGroupId: null,
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "missing-snapshot-version",
@@ -1857,7 +1857,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       processGroupId: null,
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "preflight-race-version",
@@ -1970,7 +1970,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       processStartedAt: new Date("2026-07-30T07:00:00.000Z"),
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       await writeHotRestartIntent({
         previousServerPid: process.pid,
         previousServerVersion: "old-version",
@@ -2029,7 +2029,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       },
     });
 
-    await withTempPaperclipHome(async (home) => {
+    await withTempToderoHome(async (home) => {
       const heartbeat = heartbeatService(db);
       await writeHotRestartIntent({
         previousServerPid: process.pid,
@@ -2101,7 +2101,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       },
     });
 
-    await withTempPaperclipHome(async () => {
+    await withTempToderoHome(async () => {
       const heartbeat = heartbeatService(db);
       await writeHotRestartIntent({
         previousServerPid: process.pid,
@@ -2884,18 +2884,18 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.kubernetes-sandbox-provider",
-      packageName: "@paperclipai/kubernetes-sandbox-provider",
+      pluginKey: "todero.kubernetes-sandbox-provider",
+      packageName: "@todero/kubernetes-sandbox-provider",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.kubernetes-sandbox-provider",
+        id: "todero.kubernetes-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Kubernetes Sandbox Provider",
         description: "Test Kubernetes sandbox provider whose worker is mid-restart",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -3438,7 +3438,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await db.insert(projects).values({
       id: projectId,
       companyId,
-      name: "Paperclip App",
+      name: "Todero App",
       status: "in_progress",
     });
     await db.insert(projectWorkspaces).values({
@@ -3447,7 +3447,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       projectId,
       name: "Primary workspace",
       sourceType: "local_path",
-      cwd: `/tmp/paperclip-missing-workspace-${randomUUID()}`,
+      cwd: `/tmp/todero-missing-workspace-${randomUUID()}`,
       isPrimary: true,
     });
     await db
@@ -5859,7 +5859,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -5942,7 +5942,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -6070,7 +6070,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -6157,7 +6157,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -6253,7 +6253,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -6596,7 +6596,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,
@@ -6726,7 +6726,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       defaultResponsibleUserId: "responsible-user",
       requireBoardApprovalForNewAgents: false,

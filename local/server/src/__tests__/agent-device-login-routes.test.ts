@@ -178,8 +178,8 @@ vi.mock("../middleware/logger.js", () => ({
 // Retain the production readiness helper while making the promotion decision
 // observable. This lets the route test prove that a resolved but rejected
 // Decision H outcome becomes a failed terminal rather than authenticated.
-vi.mock("@paperclipai/adapter-codex-local/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@paperclipai/adapter-codex-local/server")>();
+vi.mock("@todero/adapter-codex-local/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@todero/adapter-codex-local/server")>();
   return {
     ...actual,
     promoteDeviceLoginCredential: mockDeviceLoginPromotion,
@@ -287,7 +287,7 @@ function createFakeRuntime(promptOutput: string = PROMPT_OUTPUT): LoginSessionRu
       harness.acquisitions.push(input);
       const lease: LoginSessionLease = {
         providerLeaseId: `provider-lease-${input.sessionId}`,
-        authPath: `/tmp/paperclip-adapter-login/${input.sessionId}/auth.json`,
+        authPath: `/tmp/todero-adapter-login/${input.sessionId}/auth.json`,
         driver: {
           async start(_command, onData) {
             onData(promptOutput);

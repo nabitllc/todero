@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   heartbeatRunEvents,
   heartbeatRuns,
   nativeRunFinalizations,
   nativeRunResults,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   type PrpEvent,
   type PrpStructuredRunResult,
@@ -60,7 +60,7 @@ function assertTerminal(value: unknown): asserts value is PrpTerminalState {
     typeof value !== "object" ||
     terminal === null ||
     Array.isArray(value) ||
-    terminal.schema !== "paperclip.prp.terminal.v1" ||
+    terminal.schema !== "todero.prp.terminal.v1" ||
     typeof terminal.turnTerminalState !== "string" ||
     !["completed", "failed", "interrupted", "cancelled"].includes(
       terminal.turnTerminalState,

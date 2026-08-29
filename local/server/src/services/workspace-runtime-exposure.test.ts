@@ -9,7 +9,7 @@ import {
   deriveViteHmrPort,
   RUNTIME_EXPOSURE_APP_PORT_MAX,
   RUNTIME_EXPOSURE_APP_PORT_MIN,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 
 import type { BrokerClient, BrokerListenerRequest } from "./runtime-exposure/broker-client.js";
 import {
@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 
 function serviceCommand() {
-  // Answers `/api/health` the way a real Paperclip dev runtime does: managed
+  // Answers `/api/health` the way a real Todero dev runtime does: managed
   // publication requires semantic health, not just a 200 (PAP-17572).
   return `node -e 'const http=require("http");const p=Number(process.env.PORT);for(const q of [p,p+10000])http.createServer((rq,r)=>{if(rq.url==="/api/health"){r.setHeader("content-type","application/json");r.end(JSON.stringify({status:"ok"}));return}r.statusCode=200;r.end("ok")}).listen(q,"127.0.0.1");setInterval(()=>{},1000)'`;
 }
@@ -308,18 +308,18 @@ const DECLARED_EXPOSE = {
   type: "tailscale_https",
   hostname: "auto",
   publicPort: "same",
-  includePaperclipViteHmr: true,
+  includeToderoViteHmr: true,
   failurePolicy: "fail_closed",
 } as const;
 
 /**
- * The pre-feature Paperclip App project template, verbatim: a hard-coded HTTP
+ * The pre-feature Todero App project template, verbatim: a hard-coded HTTP
  * `urlTemplate`, a pinned port outside the broker's dedicated range, and no
  * exposure declaration at all.
  */
 const LEGACY_HTTP_EXPOSE = {
   type: "url",
-  urlTemplate: "http://paperclip-dev:{{port}}",
+  urlTemplate: "http://todero-dev:{{port}}",
 } as const;
 
 function startInput(options?: {
@@ -331,7 +331,7 @@ function startInput(options?: {
   const expose = options?.expose === undefined ? DECLARED_EXPOSE : options.expose;
   return {
     invocationId: "runtime-exposure-test",
-    actor: { id: null, name: "Paperclip", companyId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
+    actor: { id: null, name: "Todero", companyId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
     issue: null,
     workspace: {
       baseCwd: process.cwd(),
@@ -393,13 +393,13 @@ describe("workspace runtime tailscale_https lifecycle", () => {
 });
 
 describe("automatic tailscale_https default for managed worktree runtimes", () => {
-  it("defaults a legacy paperclip-dev service with no exposure block, relocating its pinned port", async () => {
+  it("defaults a legacy todero-dev service with no exposure block, relocating its pinned port", async () => {
     const { broker, calls } = createBroker();
     installDeps({ broker });
 
     // Exactly the persisted pre-feature shape: pinned 45439 + HTTP urlTemplate.
     const [runtime] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       expose: LEGACY_HTTP_EXPOSE,
       port: 45_439,
     }));
@@ -428,7 +428,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
     const pinnedPort = await findFreeExposureAppPort(lowestFreeAppPort + 1);
 
     const [runtime] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       expose: LEGACY_HTTP_EXPOSE,
       port: pinnedPort,
     }));
@@ -442,14 +442,14 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
     installDeps({ broker });
 
     const [runtime] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       expose: { ...LEGACY_HTTP_EXPOSE, tailscaleHttps: false },
       port: { type: "auto", envKey: "PORT" },
     }));
 
     expect(calls).toEqual([]);
     expect(runtime.exposure ?? null).toBeNull();
-    expect(runtime.url).toBe(`http://paperclip-dev:${runtime.port}`);
+    expect(runtime.url).toBe(`http://todero-dev:${runtime.port}`);
   }, 15_000);
 
   it("leaves an unmanaged/custom service untouched", async () => {
@@ -464,7 +464,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
 
     expect(calls).toEqual([]);
     expect(runtime.exposure ?? null).toBeNull();
-    expect(runtime.url).toBe(`http://paperclip-dev:${runtime.port}`);
+    expect(runtime.url).toBe(`http://todero-dev:${runtime.port}`);
   }, 15_000);
 
   it("does not default when the host broker is unavailable", async () => {
@@ -472,7 +472,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
     installDeps({ broker, isBrokerAvailable: async () => false });
 
     const [runtime] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
     }));
@@ -494,7 +494,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
     installDeps({ broker: failing, isBrokerAvailable: async () => false });
 
     await expect(
-      startRuntimeServicesForWorkspaceControl(startInput({ serviceName: "paperclip-dev" })),
+      startRuntimeServicesForWorkspaceControl(startInput({ serviceName: "todero-dev" })),
     ).rejects.toThrow();
     expect(calls).toEqual(["reserve"]);
   }, 15_000);
@@ -504,7 +504,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
     installDeps({ broker });
 
     const [first] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       expose: LEGACY_HTTP_EXPOSE,
       port: 45_439,
     }));
@@ -516,7 +516,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
     calls.length = 0;
 
     const [second] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       expose: LEGACY_HTTP_EXPOSE,
       port: 45_439,
     }));
@@ -558,7 +558,7 @@ describe("automatic tailscale_https default for managed worktree runtimes", () =
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       await expect(
-        startRuntimeServicesForWorkspaceControl(startInput({ serviceName: "paperclip-dev" })),
+        startRuntimeServicesForWorkspaceControl(startInput({ serviceName: "todero-dev" })),
       ).rejects.toThrow(/MagicDNS hostname unavailable/);
     }
 
@@ -581,7 +581,7 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
     installDeps({ broker });
 
     const [runtime] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       // Verbatim the command every failing lane recorded, modulo the fake guest.
       command: `${guestCommand("dev-runner.mjs")} --bind lan`,
       expose: LEGACY_HTTP_EXPOSE,
@@ -619,7 +619,7 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
     // A guest with no bind flags at all: the argv rewrite cannot reach it, so
     // this is the residual case that must fail loudly rather than expose.
     await expect(startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       command: guestCommand("dev-runner-legacy.mjs"),
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
@@ -635,7 +635,7 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
     installDeps({ broker });
 
     const error = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       command: guestCommand("dev-runner-legacy.mjs"),
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
@@ -648,7 +648,7 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
     expect(error!.message).toContain("--bind loopback");
   }, 20_000);
 
-  it("leaves a non-Paperclip service's --bind argument alone", async () => {
+  it("leaves a non-Todero service's --bind argument alone", async () => {
     // `--bind` means something entirely different to the HTTPS probe canaries
     // (`python3 -m http.server --bind 127.0.0.1`); rewriting it would break them.
     const { broker, calls } = createBroker();
@@ -667,13 +667,13 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
     expect(runtime.exposure?.state).toBe("ready");
   }, 20_000);
 
-  it("does not rewrite a Paperclip dev command when the service is not exposed", async () => {
+  it("does not rewrite a Todero dev command when the service is not exposed", async () => {
     const { broker, calls } = createBroker();
     installDeps({ broker });
 
     const declared = `${guestCommand("dev-runner.mjs")} --bind lan`;
     const [runtime] = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       command: declared,
       expose: { ...LEGACY_HTTP_EXPOSE, tailscaleHttps: false },
       port: { type: "auto", envKey: "PORT" },
@@ -688,7 +688,7 @@ describe("loopback bind is forced on the guest, not merely requested (PAP-17256)
     installDeps({ broker });
 
     await expect(startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       command: guestCommand("dev-runner-bind-conflict.mjs"),
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
@@ -708,7 +708,7 @@ describe("readiness probes loopback for an exposed runtime (PAP-17256)", () => {
     installDeps({ broker });
 
     const input = startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       command: `${guestCommand("dev-runner.mjs")} --bind lan`,
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
@@ -734,7 +734,7 @@ describe("the deployed failure shape: loopback app port, wildcard HMR (PAP-17256
     installDeps({ broker });
 
     const error = await startRuntimeServicesForWorkspaceControl(startInput({
-      serviceName: "paperclip-dev",
+      serviceName: "todero-dev",
       command: `${guestCommand("dev-runner-wildcard-hmr.mjs")} --bind lan`,
       expose: LEGACY_HTTP_EXPOSE,
       port: { type: "auto", envKey: "PORT" },
@@ -771,7 +771,7 @@ describe("recovers when a guest loses its assigned exposure port during startup 
     const logs: string[] = [];
     const error = await startRuntimeServicesForWorkspaceControl({
       ...startInput({
-        serviceName: "paperclip-dev",
+        serviceName: "todero-dev",
         command: `${guestCommand("dev-runner-eaddrinuse-synthetic.mjs")} --bind lan`,
         expose: LEGACY_HTTP_EXPOSE,
         port: { type: "auto", envKey: "PORT" },
@@ -809,7 +809,7 @@ describe("recovers when a guest loses its assigned exposure port during startup 
     const logs: string[] = [];
     const error = await startRuntimeServicesForWorkspaceControl({
       ...startInput({
-        serviceName: "paperclip-dev",
+        serviceName: "todero-dev",
         command: `${guestCommand("dev-runner-eaddrinuse-auxiliary.mjs")} --bind lan`,
         expose: LEGACY_HTTP_EXPOSE,
         port: { type: "auto", envKey: "PORT" },
@@ -847,7 +847,7 @@ describe("recovers when a guest loses its assigned exposure port during startup 
     const logs: string[] = [];
     const error = await startRuntimeServicesForWorkspaceControl({
       ...startInput({
-        serviceName: "paperclip-dev",
+        serviceName: "todero-dev",
         command: `${guestCommand("dev-runner-eaddrinuse-auxiliary-mixed.mjs")} --bind lan`,
         expose: LEGACY_HTTP_EXPOSE,
         port: { type: "auto", envKey: "PORT" },

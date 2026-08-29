@@ -1,13 +1,13 @@
 # Docker Quickstart
 
-Run Paperclip in Docker without installing Node or pnpm locally.
+Run Todero in Docker without installing Node or pnpm locally.
 
 All commands below assume you are in the **project root** (the directory containing `package.json`), not inside `docker/`.
 
 ## Building the image
 
 ```sh
-docker build -t paperclip-local .
+docker build -t todero-local .
 ```
 
 The Dockerfile installs common agent tools (`git`, `gh`, `curl`, `wget`, `ripgrep`, `python3`) and the Claude, Codex, and OpenCode CLIs.
@@ -20,22 +20,22 @@ Build arguments:
 | `USER_GID` | `1000` | GID for the container `node` group |
 
 ```sh
-docker build -t paperclip-local \
+docker build -t todero-local \
   --build-arg USER_UID=$(id -u) --build-arg USER_GID=$(id -g) .
 ```
 
 ## One-liner (build + run)
 
 ```sh
-docker build -t paperclip-local . && \
-docker run --name paperclip \
+docker build -t todero-local . && \
+docker run --name todero \
   -p 3100:3100 \
   -e HOST=0.0.0.0 \
-  -e PAPERCLIP_HOME=/paperclip \
+  -e PAPERCLIP_HOME=/todero \
   -e BETTER_AUTH_SECRET=$(openssl rand -hex 32) \
   -e PAPERCLIP_TOOL_ACTION_SIGNING_SECRET=$(openssl rand -hex 32) \
-  -v "$(pwd)/data/docker-paperclip:/paperclip" \
-  paperclip-local
+  -v "$(pwd)/data/docker-todero:/todero" \
+  todero-local
 ```
 
 Open: `http://localhost:3100`
@@ -47,7 +47,7 @@ Data persistence:
 - local secrets key
 - local agent workspace data
 
-All persisted under your bind mount (`./data/docker-paperclip` in the example above).
+All persisted under your bind mount (`./data/docker-todero` in the example above).
 
 ## Docker Compose
 
@@ -64,7 +64,7 @@ PAPERCLIP_TOOL_ACTION_SIGNING_SECRET=$(openssl rand -hex 32) \
 Defaults:
 
 - host port: `3100`
-- persistent data dir: `./data/docker-paperclip`
+- persistent data dir: `./data/docker-todero`
 
 Optional overrides:
 
@@ -81,14 +81,14 @@ Pass `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` to enable local adapter runs.
 
 ### Full stack (with PostgreSQL)
 
-Paperclip server + PostgreSQL 17. The database is health-checked before the server starts.
+Todero server + PostgreSQL 17. The database is health-checked before the server starts.
 
 ```sh
 BETTER_AUTH_SECRET=$(openssl rand -hex 32) \
   docker compose -f docker/docker-compose.yml up --build
 ```
 
-PostgreSQL data persists in a named Docker volume (`pgdata`). Paperclip data persists in `paperclip-data`.
+PostgreSQL data persists in a named Docker volume (`pgdata`). Todero data persists in `todero-data`.
 
 ### Untrusted PR review
 
@@ -101,11 +101,11 @@ docker compose -f docker/docker-compose.untrusted-review.yml run --rm --service-
 
 ## Authenticated Compose (Single Public URL)
 
-For authenticated deployments, set one canonical public URL and let Paperclip derive auth/callback defaults:
+For authenticated deployments, set one canonical public URL and let Todero derive auth/callback defaults:
 
 ```yaml
 services:
-  paperclip:
+  todero:
     environment:
       PAPERCLIP_DEPLOYMENT_MODE: authenticated
       PAPERCLIP_DEPLOYMENT_EXPOSURE: private
@@ -121,12 +121,12 @@ services:
 
 For fresh `authenticated/private` Docker or appliance-style installs, the first
 admin can now be claimed entirely from the browser after sign-in. Open the
-Paperclip URL, sign in or create an account, then choose `Claim this instance`
+Todero URL, sign in or create an account, then choose `Claim this instance`
 on the setup screen. This browser claim is disabled for `authenticated/public`;
 public deployments should run the high-entropy CLI invite fallback instead:
 
 ```sh
-pnpm paperclipai auth bootstrap-ceo
+pnpm todero auth bootstrap-ceo
 ```
 
 Granular overrides remain available if needed (`PAPERCLIP_AUTH_PUBLIC_BASE_URL`, `BETTER_AUTH_URL`, `BETTER_AUTH_TRUSTED_ORIGINS`, `PAPERCLIP_ALLOWED_HOSTNAMES`).
@@ -146,7 +146,7 @@ secret only when that token type is accepted by the live Connect API:
 
 ```yaml
 services:
-  paperclip:
+  todero:
     environment:
       PAPERCLIP_VERCEL_CONNECT_ENABLED: "true"
       PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN: ${PAPERCLIP_VERCEL_CONNECT_ACCESS_TOKEN}
@@ -171,30 +171,30 @@ The image pre-installs:
 If you want local adapter runs inside the container, pass API keys when starting the container:
 
 ```sh
-docker run --name paperclip \
+docker run --name todero \
   -p 3100:3100 \
   -e HOST=0.0.0.0 \
-  -e PAPERCLIP_HOME=/paperclip \
+  -e PAPERCLIP_HOME=/todero \
   -e OPENAI_API_KEY=... \
   -e ANTHROPIC_API_KEY=... \
-  -v "$(pwd)/data/docker-paperclip:/paperclip" \
-  paperclip-local
+  -v "$(pwd)/data/docker-todero:/todero" \
+  todero-local
 ```
 
 Notes:
 
 - Without API keys, the app still runs normally.
-- Adapter environment checks in Paperclip will surface missing auth/CLI prerequisites.
+- Adapter environment checks in Todero will surface missing auth/CLI prerequisites.
 
 ## Podman Quadlet (systemd)
 
-The `docker/quadlet/` directory contains unit files to run Paperclip + PostgreSQL as systemd services via Podman Quadlet.
+The `docker/quadlet/` directory contains unit files to run Todero + PostgreSQL as systemd services via Podman Quadlet.
 
 | File | Purpose |
 |------|---------|
-| `docker/quadlet/paperclip.pod` | Pod definition — groups containers into a shared network namespace |
-| `docker/quadlet/paperclip.container` | Paperclip server — joins the pod, connects to Postgres at `127.0.0.1` |
-| `docker/quadlet/paperclip-db.container` | PostgreSQL 17 — joins the pod, health-checked |
+| `docker/quadlet/todero.pod` | Pod definition — groups containers into a shared network namespace |
+| `docker/quadlet/todero.container` | Todero server — joins the pod, connects to Postgres at `127.0.0.1` |
+| `docker/quadlet/todero-db.container` | PostgreSQL 17 — joins the pod, health-checked |
 
 ### Setup
 
@@ -215,13 +215,13 @@ The `docker/quadlet/` directory contains unit files to run Paperclip + PostgreSQ
 3. Create a secrets env file (keep out of version control):
 
    ```sh
-   cat > ~/.config/containers/systemd/paperclip.env <<EOL
+   cat > ~/.config/containers/systemd/todero.env <<EOL
    BETTER_AUTH_SECRET=$(openssl rand -hex 32)
    PAPERCLIP_TOOL_ACTION_SIGNING_SECRET=$(openssl rand -hex 32)
-   POSTGRES_USER=paperclip
-   POSTGRES_PASSWORD=paperclip
-   POSTGRES_DB=paperclip
-   DATABASE_URL=postgres://paperclip:paperclip@127.0.0.1:5432/paperclip
+   POSTGRES_USER=todero
+   POSTGRES_PASSWORD=todero
+   POSTGRES_DB=todero
+   DATABASE_URL=postgres://todero:todero@127.0.0.1:5432/todero
    # OPENAI_API_KEY=sk-...
    # ANTHROPIC_API_KEY=sk-...
    EOL
@@ -230,34 +230,34 @@ The `docker/quadlet/` directory contains unit files to run Paperclip + PostgreSQ
 4. Create the data directory and start:
 
    ```sh
-   mkdir -p ~/.local/share/paperclip
+   mkdir -p ~/.local/share/todero
    systemctl --user daemon-reload
-   systemctl --user start paperclip-pod
+   systemctl --user start todero-pod
    ```
 
 ### Quadlet management
 
 ```sh
-journalctl --user -u paperclip -f        # App logs
-journalctl --user -u paperclip-db -f     # DB logs
-systemctl --user status paperclip-pod    # Pod status
-systemctl --user restart paperclip-pod   # Restart all
-systemctl --user stop paperclip-pod      # Stop all
+journalctl --user -u todero -f        # App logs
+journalctl --user -u todero-db -f     # DB logs
+systemctl --user status todero-pod    # Pod status
+systemctl --user restart todero-pod   # Restart all
+systemctl --user stop todero-pod      # Stop all
 ```
 
 ### Quadlet notes
 
-- **First boot**: Unlike Docker Compose's `condition: service_healthy`, Quadlet's `After=` only waits for the DB unit to *start*, not for PostgreSQL to be ready. On a cold first boot you may see one or two restart attempts in `journalctl --user -u paperclip` while PostgreSQL initialises — this is expected and resolves automatically via `Restart=on-failure`.
-- Containers in a pod share `localhost`, so Paperclip reaches Postgres at `127.0.0.1:5432`.
-- PostgreSQL data persists in the `paperclip-pgdata` named volume.
-- Paperclip data persists at `~/.local/share/paperclip`.
+- **First boot**: Unlike Docker Compose's `condition: service_healthy`, Quadlet's `After=` only waits for the DB unit to *start*, not for PostgreSQL to be ready. On a cold first boot you may see one or two restart attempts in `journalctl --user -u todero` while PostgreSQL initialises — this is expected and resolves automatically via `Restart=on-failure`.
+- Containers in a pod share `localhost`, so Todero reaches Postgres at `127.0.0.1:5432`.
+- PostgreSQL data persists in the `todero-pgdata` named volume.
+- Todero data persists at `~/.local/share/todero`.
 - For rootful quadlet deployment, remove `%h` prefixes and use absolute paths.
 
 ## Onboard Smoke Test (Ubuntu + npm only)
 
 Use this when you want to mimic a fresh machine that only has Ubuntu + npm and verify:
 
-- `npx paperclipai onboard --yes` completes
+- `npx todero onboard --yes` completes
 - the server binds to `0.0.0.0:3100` so host access works
 - onboard/run banners and startup logs are visible in your terminal
 
@@ -272,9 +272,9 @@ Open: `http://localhost:3131` (default smoke host port)
 Useful overrides:
 
 ```sh
-HOST_PORT=3200 PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+HOST_PORT=3200 TODEROAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
 PAPERCLIP_DEPLOYMENT_MODE=authenticated PAPERCLIP_DEPLOYMENT_EXPOSURE=private ./scripts/docker-onboard-smoke.sh
-SMOKE_DETACH=true SMOKE_METADATA_FILE=/tmp/paperclip-smoke.env PAPERCLIPAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
+SMOKE_DETACH=true SMOKE_METADATA_FILE=/tmp/todero-smoke.env TODEROAI_VERSION=latest ./scripts/docker-onboard-smoke.sh
 ```
 
 Notes:
@@ -282,9 +282,9 @@ Notes:
 - Persistent data is mounted at `./data/docker-onboard-smoke` by default.
 - Container runtime user id defaults to your local `id -u` so the mounted data dir stays writable while avoiding root runtime.
 - Smoke script defaults to `authenticated/private` mode so `HOST=0.0.0.0` can be exposed to the host.
-- Smoke script defaults host port to `3131` to avoid conflicts with local Paperclip on `3100`.
+- Smoke script defaults host port to `3131` to avoid conflicts with local Todero on `3100`.
 - Smoke script also defaults `PAPERCLIP_PUBLIC_URL` to `http://localhost:<HOST_PORT>` so bootstrap invite URLs and auth callbacks use the reachable host port instead of the container's internal `3100`.
-- In authenticated mode, the smoke script defaults `SMOKE_AUTO_BOOTSTRAP=true` and drives the real bootstrap path automatically: it signs up a real user, runs `paperclipai auth bootstrap-ceo` inside the container to mint a real bootstrap invite, accepts that invite over HTTP, and verifies board session access.
+- In authenticated mode, the smoke script defaults `SMOKE_AUTO_BOOTSTRAP=true` and drives the real bootstrap path automatically: it signs up a real user, runs `todero auth bootstrap-ceo` inside the container to mint a real bootstrap invite, accepts that invite over HTTP, and verifies board session access.
 - Run the script in the foreground to watch the onboarding flow; stop with `Ctrl+C` after validation.
 - Set `SMOKE_DETACH=true` to leave the container running for automation and optionally write shell-ready metadata to `SMOKE_METADATA_FILE`.
 - Set `SMOKE_CONTAINER_NAME` to fix the container's name up front. Automation that has to collect diagnostics when the script *fails* needs a name it already knows, rather than one it can only read back out of a successful run. Defaults to the image name.
@@ -294,4 +294,4 @@ Notes:
 ## General Notes
 
 - The `docker-entrypoint.sh` adjusts the container `node` user UID/GID at startup to match the values passed via `USER_UID`/`USER_GID`, avoiding permission issues on bind-mounted volumes.
-- Paperclip data persists via Docker volumes/bind mounts (compose) or at `~/.local/share/paperclip` (quadlet).
+- Todero data persists via Docker volumes/bind mounts (compose) or at `~/.local/share/todero` (quadlet).

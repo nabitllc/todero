@@ -30,20 +30,20 @@ try {
   cliArgs = appliedOptions.forwardedArgs;
   dataDir = appliedOptions.dataDir;
 } catch (error) {
-  console.error(`[paperclip] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[todero] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 
 const worktreeEnvBootstrap = bootstrapDevRunnerWorktreeEnv(repoRoot, process.env);
 if (worktreeEnvBootstrap.missingEnv) {
   console.error(
-    `[paperclip] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`paperclipai worktree init\` in this worktree before \`pnpm dev\`.`,
+    `[todero] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`todero worktree init\` in this worktree before \`pnpm dev\`.`,
   );
   process.exit(1);
 }
 if (isWorktreeSeedPending(repoRoot)) {
   console.error(
-    "[paperclip] this worktree database is seed-pending. Run `pnpm paperclipai worktree ensure-seeded` before `pnpm dev`.",
+    "[todero] this worktree database is seed-pending. Run `pnpm todero worktree ensure-seeded` before `pnpm dev`.",
   );
   process.exit(1);
 }
@@ -52,10 +52,10 @@ const scanIntervalMs = 1500;
 const autoRestartPollIntervalMs = 2500;
 const gracefulShutdownTimeoutMs = 10_000;
 const changedPathSampleLimit = 5;
-const devServerStatusFilePath = path.join(repoRoot, ".paperclip", "dev-server-status.json");
-const devServerRestartRequestFilePath = path.join(repoRoot, ".paperclip", "dev-server-restart-request.json");
+const devServerStatusFilePath = path.join(repoRoot, ".todero", "dev-server-status.json");
+const devServerRestartRequestFilePath = path.join(repoRoot, ".todero", "dev-server-restart-request.json");
 const devServerStatusToken = mode === "dev" ? randomUUID() : null;
-const devServerStatusTokenHeader = "x-paperclip-dev-server-status-token";
+const devServerStatusTokenHeader = "x-todero-dev-server-status-token";
 
 const watchedDirectories = [
   "cli",
@@ -89,8 +89,8 @@ const ignoredDirectoryNames = new Set([
 ]);
 
 const ignoredRelativePaths = new Set([
-  ".paperclip/dev-server-restart-request.json",
-  ".paperclip/dev-server-status.json",
+  ".todero/dev-server-restart-request.json",
+  ".todero/dev-server-status.json",
 ]);
 
 const tailscaleAuthFlagNames = new Set([
@@ -113,7 +113,7 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   if (arg === "--bind") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--") || !BIND_MODES.includes(value as BindMode)) {
-      console.error(`[paperclip] invalid --bind value. Use one of: ${BIND_MODES.join(", ")}`);
+      console.error(`[todero] invalid --bind value. Use one of: ${BIND_MODES.join(", ")}`);
       process.exit(1);
     }
     bindMode = value as BindMode;
@@ -123,7 +123,7 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   if (arg === "--bind-host") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--")) {
-      console.error("[paperclip] --bind-host requires a value");
+      console.error("[todero] --bind-host requires a value");
       process.exit(1);
     }
     bindHost = value;
@@ -150,7 +150,7 @@ if (managedRuntimeExposure) {
   bindHost = "127.0.0.1";
 }
 if (bindMode === "custom" && !bindHost) {
-  console.error("[paperclip] --bind custom requires --bind-host <host>");
+  console.error("[todero] --bind custom requires --bind-host <host>");
   process.exit(1);
 }
 
@@ -179,7 +179,7 @@ if (mode === "watch") {
 if (tailscaleAuth || bindMode) {
   const effectiveBind = bindMode ?? "lan";
   if (tailscaleAuth) {
-    console.log("[paperclip] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
+    console.log("[todero] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
   }
   env.PAPERCLIP_BIND = effectiveBind;
   if (bindHost) {
@@ -191,13 +191,13 @@ if (tailscaleAuth || bindMode) {
     delete env.PAPERCLIP_DEPLOYMENT_MODE;
     delete env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
     delete env.PAPERCLIP_AUTH_BASE_URL_MODE;
-    console.log("[paperclip] dev mode: local_trusted (bind=loopback)");
+    console.log("[todero] dev mode: local_trusted (bind=loopback)");
   } else {
     env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
     env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "private";
     env.PAPERCLIP_AUTH_BASE_URL_MODE = managedRuntimeExposure ? "explicit" : "auto";
     console.log(
-      `[paperclip] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
+      `[todero] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
     );
   }
 } else {
@@ -206,7 +206,7 @@ if (tailscaleAuth || bindMode) {
   delete env.PAPERCLIP_DEPLOYMENT_MODE;
   delete env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
   delete env.PAPERCLIP_AUTH_BASE_URL_MODE;
-  console.log("[paperclip] dev mode: local_trusted (default)");
+  console.log("[todero] dev mode: local_trusted (default)");
 }
 
 const serverPort = Number.parseInt(env.PORT ?? process.env.PORT ?? "3100", 10) || 3100;
@@ -225,7 +225,7 @@ const existingRunner = await findAdoptableLocalService({
 });
 if (existingRunner) {
   console.log(
-    `[paperclip] ${devService.serviceName} already running (pid ${existingRunner.pid}${typeof existingRunner.metadata?.childPid === "number" ? `, child ${existingRunner.metadata.childPid}` : ""})`,
+    `[todero] ${devService.serviceName} already running (pid ${existingRunner.pid}${typeof existingRunner.metadata?.childPid === "number" ? `, child ${existingRunner.metadata.childPid}` : ""})`,
   );
   process.exit(0);
 }
@@ -337,7 +337,7 @@ async function updateDevServiceRecord(extra?: Record<string, unknown>) {
   await writeLocalServiceRegistryRecord({
     version: 1,
     serviceKey: devService.serviceKey,
-    profileKind: "paperclip-dev",
+    profileKind: "todero-dev",
     serviceName: devService.serviceName,
     command: "dev-runner.ts",
     cwd: repoRoot,
@@ -404,14 +404,14 @@ async function runPnpm(args: string[], options: {
 
 async function getMigrationStatusPayload() {
   const status = await runPnpm(
-    ["--silent", "--filter", "@paperclipai/db", "exec", "tsx", "src/migration-status.ts", "--json"],
+    ["--silent", "--filter", "@todero/db", "exec", "tsx", "src/migration-status.ts", "--json"],
     { env },
   );
   if (status.code !== 0) {
     process.stderr.write(
       status.stderr ||
         status.stdout ||
-        `[paperclip] Command failed with code ${status.code}: pnpm --filter @paperclipai/db exec tsx src/migration-status.ts --json\n`,
+        `[todero] Command failed with code ${status.code}: pnpm --filter @todero/db exec tsx src/migration-status.ts --json\n`,
     );
     process.exit(status.code);
   }
@@ -433,7 +433,7 @@ async function getMigrationStatusPayload() {
   process.stderr.write(
     status.stderr ||
       status.stdout ||
-      "[paperclip] migration-status returned invalid JSON payload\n",
+      "[todero] migration-status returned invalid JSON payload\n",
   );
   throw new Error("Unable to parse migration-status JSON output");
 }
@@ -483,7 +483,7 @@ async function maybePreflightMigrations(options: { interactive?: boolean; autoAp
   if (!shouldApply) {
     if (exitOnDecline) {
       process.stderr.write(
-        `[paperclip] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
+        `[todero] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
       );
       process.exit(1);
     }
@@ -507,9 +507,9 @@ async function maybePreflightMigrations(options: { interactive?: boolean; autoAp
 }
 
 async function buildPluginSdk() {
-  console.log("[paperclip] building plugin sdk...");
+  console.log("[todero] building plugin sdk...");
   const result = await runPnpm(
-    ["--filter", "@paperclipai/plugin-sdk", "build"],
+    ["--filter", "@todero/plugin-sdk", "build"],
     { stdio: "inherit" },
   );
   if (result.signal) {
@@ -517,7 +517,7 @@ async function buildPluginSdk() {
     return;
   }
   if (result.code !== 0) {
-    console.error("[paperclip] plugin sdk build failed");
+    console.error("[todero] plugin sdk build failed");
     process.exit(result.code);
   }
 }
@@ -551,9 +551,9 @@ function uiBundleIsFresh(): boolean {
 }
 
 async function buildUiBundleForManagedRuntime(): Promise<boolean> {
-  console.log("[paperclip] managed runtime: building the UI bundle for static serving...");
+  console.log("[todero] managed runtime: building the UI bundle for static serving...");
   const result = await runPnpm(
-    ["--filter", "@paperclipai/ui", "build"],
+    ["--filter", "@todero/ui", "build"],
     { stdio: "inherit" },
   );
   if (result.signal) {
@@ -562,7 +562,7 @@ async function buildUiBundleForManagedRuntime(): Promise<boolean> {
   }
   if (result.code !== 0) {
     console.error(
-      "[paperclip] UI bundle build failed; falling back to the Vite dev middleware (the page may load slowly or stay blank over HTTPS)",
+      "[todero] UI bundle build failed; falling back to the Vite dev middleware (the page may load slowly or stay blank over HTTPS)",
     );
     return false;
   }
@@ -636,7 +636,7 @@ async function startServerChild() {
   const serverScript = mode === "watch" ? "dev:watch" : "dev";
   child = spawn(
     pnpmBin,
-    ["--filter", "@paperclipai/server", serverScript, ...forwardedArgs],
+    ["--filter", "@todero/server", serverScript, ...forwardedArgs],
     { stdio: "inherit", env, shell: process.platform === "win32" },
   );
 
@@ -772,7 +772,7 @@ process.on("SIGTERM", () => {
 let uiBundleBuild: Promise<boolean> | null = null;
 if (serveBuiltUiForManagedRuntime) {
   if (uiBundleIsFresh()) {
-    console.log("[paperclip] managed runtime: reusing the up-to-date UI bundle in ui/dist");
+    console.log("[todero] managed runtime: reusing the up-to-date UI bundle in ui/dist");
   } else {
     uiBundleBuild = buildUiBundleForManagedRuntime();
   }

@@ -14,7 +14,7 @@ import {
   heartbeatRuns,
   issues,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { costService } from "../services/costs.ts";
 import { financeService } from "../services/finance.ts";
 import {
@@ -179,7 +179,7 @@ describe("cost routes", () => {
     });
     mockCompanyService.update.mockResolvedValue({
       id: "company-1",
-      name: "Paperclip",
+      name: "Todero",
       budgetMonthlyCents: 100,
       spentMonthlyCents: 0,
     });
@@ -410,7 +410,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-costs-service-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-costs-service-");
     db = createDb(tempDb.connectionString);
     costs = costService(db);
     finance = financeService(db);
@@ -437,7 +437,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -480,7 +480,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -559,7 +559,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -711,7 +711,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
@@ -892,7 +892,7 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

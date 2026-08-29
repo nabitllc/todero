@@ -2,17 +2,17 @@ import type {
   AdapterExecutionContext,
   AdapterExecutionResult,
   UsageSummary,
-} from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
 import {
   asNumber,
   asString,
   parseObject,
-  readPaperclipIssueWorkModeFromContext,
-  renderPaperclipWakePrompt,
-  isPaperclipRecoveryWakePayload,
-  selectPaperclipTaskMarkdown,
-  stringifyPaperclipWakePayload,
-} from "@paperclipai/adapter-utils/server-utils";
+  readToderoIssueWorkModeFromContext,
+  renderToderoWakePrompt,
+  isToderoRecoveryWakePayload,
+  selectToderoTaskMarkdown,
+  stringifyToderoWakePayload,
+} from "@todero/adapter-utils/server-utils";
 import {
   ADAPTER_TYPE,
   DEFAULT_EVENT_RECONNECT_MS,
@@ -157,13 +157,13 @@ export function resolveSessionKey(input: {
 }): string | null {
   if (input.strategy === "none") return null;
   if (input.strategy === "agent") {
-    return `paperclip:company:${input.companyId}:agent:${input.agentId}`;
+    return `todero:company:${input.companyId}:agent:${input.agentId}`;
   }
   if (input.strategy === "run") {
-    return `paperclip:run:${input.runId}`;
+    return `todero:run:${input.runId}`;
   }
   const issuePart = input.issueId ? `issue:${input.issueId}` : `run:${input.runId}`;
-  return `paperclip:company:${input.companyId}:agent:${input.agentId}:${issuePart}`;
+  return `todero:company:${input.companyId}:agent:${input.agentId}:${issuePart}`;
 }
 
 function stringifyForLog(value: unknown, maxChars = 4_000): string {
@@ -263,7 +263,7 @@ function buildHeaders(input: {
   };
 }
 
-function buildInput(ctx: AdapterExecutionContext, paperclipApiUrl: string | null): string {
+function buildInput(ctx: AdapterExecutionContext, toderoApiUrl: string | null): string {
   // Stable session keys (issue/agent strategy) resume the same remote Hermes
   // conversation across runs; a stored session id from a prior run means that
   // conversation already received the task brief, so pick the compact
@@ -272,35 +272,35 @@ function buildInput(ctx: AdapterExecutionContext, paperclipApiUrl: string | null
   const resumedSession =
     (sessionKeyStrategy === "issue" || sessionKeyStrategy === "agent") &&
     Boolean(nonEmpty(ctx.runtime?.sessionId));
-  const taskMarkdown = nonEmpty(selectPaperclipTaskMarkdown(ctx.context, { resumedSession }));
-  const wakePrompt = renderPaperclipWakePrompt(ctx.context.paperclipWake, {
+  const taskMarkdown = nonEmpty(selectToderoTaskMarkdown(ctx.context, { resumedSession }));
+  const wakePrompt = renderToderoWakePrompt(ctx.context.toderoWake, {
     // The task-context markdown is the authoritative brief on this lane; keep
     // the wake prompt's description copy out so the prompt carries it once.
     suppressIssueDescription: Boolean(taskMarkdown),
   });
-  const wakePayloadJson = stringifyPaperclipWakePayload(ctx.context.paperclipWake, {
+  const wakePayloadJson = stringifyToderoWakePayload(ctx.context.toderoWake, {
     omitIssueDescription: Boolean(taskMarkdown),
   });
-  const sessionHandoff = nonEmpty(ctx.context.paperclipSessionHandoffMarkdown);
-  const issueWorkMode = readPaperclipIssueWorkModeFromContext(ctx.context);
+  const sessionHandoff = nonEmpty(ctx.context.toderoSessionHandoffMarkdown);
+  const issueWorkMode = readToderoIssueWorkModeFromContext(ctx.context);
   const lines = [
-    `You are ${ctx.agent.name}, an AI agent employee in a Paperclip-managed company.`,
+    `You are ${ctx.agent.name}, an AI agent employee in a Todero-managed company.`,
     "",
-    "Paperclip runtime identity:",
+    "Todero runtime identity:",
     `- Agent ID: ${ctx.agent.id}`,
     `- Company ID: ${ctx.agent.companyId}`,
     `- Run ID: ${ctx.runId}`,
-    ...(paperclipApiUrl ? [`- Paperclip API URL: ${paperclipApiUrl}`] : []),
+    ...(toderoApiUrl ? [`- Todero API URL: ${toderoApiUrl}`] : []),
     ...(issueWorkMode ? [`- Issue work mode: ${issueWorkMode}`] : []),
     "",
-    ...(isPaperclipRecoveryWakePayload(ctx.context.paperclipWake)
+    ...(isToderoRecoveryWakePayload(ctx.context.toderoWake)
       ? []
       : [
           "Execution contract:",
           "- Take concrete action in this run when the task is actionable.",
           "- Do not stop at a plan unless the issue asks for planning only.",
           "- Leave durable progress and update the issue to a clear final disposition.",
-          "- Use X-Paperclip-Run-Id on mutating Paperclip API requests when a Paperclip API key is available.",
+          "- Use X-Todero-Run-Id on mutating Todero API requests when a Todero API key is available.",
           "",
         ]),
     wakePrompt,
@@ -320,13 +320,13 @@ function buildInput(ctx: AdapterExecutionContext, paperclipApiUrl: string | null
 }
 
 function buildRunBody(ctx: AdapterExecutionContext, sessionKey: string | null): Record<string, unknown> {
-  const paperclipApiUrl = nonEmpty(ctx.config.paperclipApiUrl);
+  const toderoApiUrl = nonEmpty(ctx.config.toderoApiUrl);
   const payloadTemplate = parseObject(ctx.config.payloadTemplate);
-  const input = nonEmpty(payloadTemplate.input) ?? buildInput(ctx, paperclipApiUrl);
+  const input = nonEmpty(payloadTemplate.input) ?? buildInput(ctx, toderoApiUrl);
   const instructions =
     nonEmpty(ctx.config.instructions) ??
     nonEmpty(payloadTemplate.instructions) ??
-    "Follow the Paperclip wake instructions exactly. Do not expose secrets in logs, comments, or final output.";
+    "Follow the Todero wake instructions exactly. Do not expose secrets in logs, comments, or final output.";
   return {
     ...payloadTemplate,
     input,

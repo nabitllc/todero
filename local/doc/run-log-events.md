@@ -2,7 +2,7 @@
 
 Run-log events write to the `heartbeat_run_events` table
 (`packages/db/src/schema/heartbeat_run_events.ts:6-20`). They are not
-Paperclip Telemetry events, and they are not OpenTelemetry exports. A run-log
+Todero Telemetry events, and they are not OpenTelemetry exports. A run-log
 event needs no operator endpoint.
 
 ## Native PRP Run-Log Events
@@ -21,11 +21,11 @@ tickets, reconnect leases, authentication proofs, encryption keys, and raw
 credential material are never written to the run log.
 
 These records remain run-log events. They do not create an OpenTelemetry or
-Paperclip Telemetry export, and legacy adapters do not use this writer.
+Todero Telemetry export, and legacy adapters do not use this writer.
 
 ## Sandbox Startup Run-Log Event
 
-Paperclip writes one `run.startup.step` event to the run log for each bring-up
+Todero writes one `run.startup.step` event to the run log for each bring-up
 step. This event is a run-log record, not a first-party telemetry event. The
 generated telemetry contract does not cover it, so this section is its canonical
 contract.
@@ -51,7 +51,7 @@ endpoint. A run with no endpoint keeps only the three run-log fields above.
 
 ## Run Phase Timing Run-Log Event
 
-Paperclip writes one `run.phase.timing` event to the run log for each
+Todero writes one `run.phase.timing` event to the run log for each
 run-lifecycle phase. This event is a run-log record, not a first-party telemetry
 event. The generated telemetry contract does not cover it, so this section is its
 canonical contract. The producer is `emitRunPhaseTiming` in

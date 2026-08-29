@@ -43,13 +43,13 @@ describe("server package build script", () => {
     };
 
     expect(
-      packageJson.dependencies?.["@paperclipai/paperclip-runner"],
+      packageJson.dependencies?.["@todero/paperclip-runner"],
     ).toBeUndefined();
-    expect(packageJson.devDependencies?.["@paperclipai/paperclip-runner"]).toBe(
+    expect(packageJson.devDependencies?.["@todero/paperclip-runner"]).toBe(
       "workspace:*",
     );
     expect(packageJson.scripts?.["prepare:runner-vendor"]).toBe(
-      "pnpm --filter @paperclipai/paperclip-runner build",
+      "pnpm --filter @todero/paperclip-runner build",
     );
     expect(packageJson.scripts?.build).toContain(
       "cp -R ../packages/paperclip-runner/dist/. dist/vendor/paperclip-runner/",
@@ -63,7 +63,7 @@ describe("server package build script", () => {
       '"../../../../packages/paperclip-runner/src/index.ts"',
     );
     expect(shim).not.toContain(
-      'export * from "@paperclipai/paperclip-runner"',
+      'export * from "@todero/paperclip-runner"',
     );
   });
 });

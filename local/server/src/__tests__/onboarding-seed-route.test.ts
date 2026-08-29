@@ -9,7 +9,7 @@ import {
   goals,
   issues,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { onboardingSeedRoutes } from "../routes/onboarding-seed.js";
 import { logActivity } from "../services/activity-log.js";
 import {
@@ -85,17 +85,17 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
     // The seed's free-text role is a job title; the structural role stays `ceo`.
     expect(companyAgents[0]?.title).toBe("Chief of Staff");
     expect(companyAgents[0]?.role).toBe("ceo");
-    // A seeded CEO arrives with the core paperclip skills enabled. Skills only
+    // A seeded CEO arrives with the core todero skills enabled. Skills only
     // reach an agent's runtime through its own desired set, and the default
     // CEO instructions assume this toolkit.
     expect(companyAgents[0]?.adapterConfig).toMatchObject({
-      paperclipSkillSync: {
+      toderoSkillSync: {
         desiredSkills: expect.arrayContaining([
-          "paperclipai/paperclip/paperclip",
-          "paperclipai/paperclip/paperclip-board",
-          "paperclipai/paperclip/paperclip-converting-plans-to-tasks",
-          "paperclipai/paperclip/paperclip-create-agent",
-          "paperclipai/paperclip/para-memory-files",
+          "nabitllc/todero/todero",
+          "nabitllc/todero/todero-board",
+          "nabitllc/todero/todero-converting-plans-to-tasks",
+          "nabitllc/todero/todero-create-agent",
+          "nabitllc/todero/para-memory-files",
         ]),
       },
     });
@@ -318,13 +318,13 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
   it("never reads the seed from a trusted Cloud header", async () => {
     const { companyId, app } = await seedCompany();
 
-    // The `x-paperclip-cloud-*` set is the trusted identity channel, derived
+    // The `x-todero-cloud-*` set is the trusted identity channel, derived
     // server-side. A mission planted there must be ignored entirely — only the
     // body is read.
     const response = await request(app)
       .post(`/api/companies/${companyId}/onboarding-seed`)
-      .set("x-paperclip-cloud-mission", "Header-supplied mission")
-      .set("x-paperclip-cloud-paperclip-company-name", "Header-supplied mission")
+      .set("x-todero-cloud-mission", "Header-supplied mission")
+      .set("x-todero-cloud-todero-company-name", "Header-supplied mission")
       .send({ revision: "f".repeat(32), mission: "Body-supplied mission" });
 
     expect(response.status).toBe(200);

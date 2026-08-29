@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { PassThrough } from "node:stream";
 
-import type { DurablePrpControlPlane } from "@paperclipai/paperclip-runner";
+import type { DurablePrpControlPlane } from "@todero/paperclip-runner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -37,7 +37,7 @@ describe("runner PRP websocket route", () => {
     const socket = new PassThrough();
     const request = { url: `/api/runner/v1/connect/${runId}`, headers: {} };
     server.emit("upgrade", request, socket, Buffer.alloc(0));
-    expect(request).toMatchObject({ paperclipWebSocketHandled: true });
+    expect(request).toMatchObject({ toderoWebSocketHandled: true });
     expect(handleUpgrade).toHaveBeenCalledWith(
       expect.objectContaining({ url: `/api/runner/v1/connect/${runId}` }),
       socket,

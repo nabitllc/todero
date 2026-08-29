@@ -8,8 +8,8 @@ import { stampClaudeAgentIdHeader } from "./claude-agent-id-header.js";
 import {
   buildSandboxNpmInstallCommand,
   getAdapterSessionManagement,
-} from "@paperclipai/adapter-utils";
-import type { AdapterLoginCapability } from "@paperclipai/adapter-utils";
+} from "@todero/adapter-utils";
+import type { AdapterLoginCapability } from "@todero/adapter-utils";
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -23,12 +23,12 @@ import {
   CLAUDE_SETUP_TOKEN_COMMAND,
   parseSetupTokenPrompt,
   parseSetupTokenCredential,
-} from "@paperclipai/adapter-claude-local/server";
+} from "@todero/adapter-claude-local/server";
 import {
   agentConfigurationDoc as claudeAgentConfigurationDoc,
   models as claudeModels,
   modelProfiles as claudeModelProfiles,
-} from "@paperclipai/adapter-claude-local";
+} from "@todero/adapter-claude-local";
 import {
   execute as codexExecute,
   listCodexSkills,
@@ -39,31 +39,31 @@ import {
   getConfigSchema as getCodexConfigSchema,
   CODEX_DEVICE_LOGIN_COMMAND,
   parseDeviceLoginPrompt,
-} from "@paperclipai/adapter-codex-local/server";
+} from "@todero/adapter-codex-local/server";
 import {
   agentConfigurationDoc as codexAgentConfigurationDoc,
   models as codexModels,
   modelProfiles as codexModelProfiles,
-} from "@paperclipai/adapter-codex-local";
+} from "@todero/adapter-codex-local";
 import {
   execute as cursorExecute,
   listCursorSkills,
   syncCursorSkills,
   testEnvironment as cursorTestEnvironment,
   sessionCodec as cursorSessionCodec,
-} from "@paperclipai/adapter-cursor-local/server";
+} from "@todero/adapter-cursor-local/server";
 import {
   agentConfigurationDoc as cursorAgentConfigurationDoc,
   models as cursorModels,
   modelProfiles as cursorModelProfiles,
-} from "@paperclipai/adapter-cursor-local";
+} from "@todero/adapter-cursor-local";
 import {
   execute as cursorCloudExecute,
   getConfigSchema as getCursorCloudConfigSchema,
   sessionCodec as cursorCloudSessionCodec,
   testEnvironment as cursorCloudTestEnvironment,
-} from "@paperclipai/adapter-cursor-cloud/server";
-import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@paperclipai/adapter-cursor-cloud";
+} from "@todero/adapter-cursor-cloud/server";
+import { agentConfigurationDoc as cursorCloudAgentConfigurationDoc } from "@todero/adapter-cursor-cloud";
 import {
   execute as geminiExecute,
   listGeminiSkills,
@@ -71,12 +71,12 @@ import {
   testEnvironment as geminiTestEnvironment,
   sessionCodec as geminiSessionCodec,
   getConfigSchema as getGeminiConfigSchema,
-} from "@paperclipai/adapter-gemini-local/server";
+} from "@todero/adapter-gemini-local/server";
 import {
   agentConfigurationDoc as geminiAgentConfigurationDoc,
   models as geminiModels,
   modelProfiles as geminiModelProfiles,
-} from "@paperclipai/adapter-gemini-local";
+} from "@todero/adapter-gemini-local";
 import {
   execute as grokExecute,
   listGrokSkills,
@@ -85,26 +85,26 @@ import {
   sessionCodec as grokSessionCodec,
   GROK_DEVICE_LOGIN_COMMAND,
   parseGrokDeviceLoginPrompt,
-} from "@paperclipai/adapter-grok-local/server";
+} from "@todero/adapter-grok-local/server";
 import {
   agentConfigurationDoc as grokAgentConfigurationDoc,
   models as grokModels,
-} from "@paperclipai/adapter-grok-local";
+} from "@todero/adapter-grok-local";
 import {
   execute as kimiExecute,
   listKimiSkills,
   syncKimiSkills,
   testEnvironment as kimiTestEnvironment,
   sessionCodec as kimiSessionCodec,
-} from "@paperclipai/adapter-kimi-local/server";
+} from "@todero/adapter-kimi-local/server";
 import {
   agentConfigurationDoc as kimiAgentConfigurationDoc,
   models as kimiModels,
-} from "@paperclipai/adapter-kimi-local";
+} from "@todero/adapter-kimi-local";
 import {
   createHermesGatewayServerAdapter,
   createHermesLocalServerAdapter,
-} from "@paperclipai/hermes-paperclip-adapter";
+} from "@todero/hermes-paperclip-adapter";
 import {
   execute as openCodeExecute,
   listOpenCodeSkills,
@@ -112,20 +112,20 @@ import {
   testEnvironment as openCodeTestEnvironment,
   sessionCodec as openCodeSessionCodec,
   listOpenCodeModels,
-} from "@paperclipai/adapter-opencode-local/server";
+} from "@todero/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
   models as openCodeModels,
   modelProfiles as openCodeModelProfiles,
-} from "@paperclipai/adapter-opencode-local";
+} from "@todero/adapter-opencode-local";
 import {
   execute as openclawGatewayExecute,
   testEnvironment as openclawGatewayTestEnvironment,
-} from "@paperclipai/adapter-openclaw-gateway/server";
+} from "@todero/adapter-openclaw-gateway/server";
 import {
   agentConfigurationDoc as openclawGatewayAgentConfigurationDoc,
   models as openclawGatewayModels,
-} from "@paperclipai/adapter-openclaw-gateway";
+} from "@todero/adapter-openclaw-gateway";
 import { listCodexModels, refreshCodexModels } from "./codex-models.js";
 import { listCursorModels } from "./cursor-models.js";
 import {
@@ -135,11 +135,11 @@ import {
   testEnvironment as piTestEnvironment,
   sessionCodec as piSessionCodec,
   listPiModels,
-} from "@paperclipai/adapter-pi-local/server";
+} from "@todero/adapter-pi-local/server";
 import {
   agentConfigurationDoc as piAgentConfigurationDoc,
   modelProfiles as piModelProfiles,
-} from "@paperclipai/adapter-pi-local";
+} from "@todero/adapter-pi-local";
 import { BUILTIN_ADAPTER_TYPES } from "./builtin-adapter-types.js";
 import { buildExternalAdapters } from "./plugin-loader.js";
 import { getDisabledAdapterTypes } from "../services/adapter-plugin-store.js";
@@ -197,7 +197,7 @@ The standalone ACPX adapter has been retired. Use:
 - claude_local with adapterConfig.engine="acp" for Claude ACP execution.
 - codex_local with adapterConfig.engine="acp" for Codex ACP execution.
 
-Paperclip keeps this tombstone registered so stale acpx_local rows fail clearly instead of falling back to the process adapter.
+Todero keeps this tombstone registered so stale acpx_local rows fail clearly instead of falling back to the process adapter.
 `;
 
 // The Claude interactive login capability. Claude runs `claude setup-token` on a
@@ -362,7 +362,7 @@ const codexLocalAdapter: ServerAdapterModule = {
   loginCapability: codexLoginCapability,
 };
 
-const paperclipRunnerAdapter: ServerAdapterModule = {
+const toderoRunnerAdapter: ServerAdapterModule = {
   type: "paperclip_runner",
   runtimeToolDelivery: "environment",
   async execute(ctx) {
@@ -393,7 +393,7 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
   requiresMaterializedRuntimeSkills: false,
   getRuntimeCommandSpec: (config) => buildNpmRuntimeCommandSpec(config, "codex", "@openai/codex"),
   agentConfigurationDoc:
-    "# Paperclip Runner\n\nAdapter: paperclip_runner\n\nRuns Codex through the Rust Paperclip runner and authenticated PRP transport.\n",
+    "# Todero Runner\n\nAdapter: paperclip_runner\n\nRuns Codex through the Rust Todero runner and authenticated PRP transport.\n",
   getConfigSchema: () => ({
     fields: [
       {
@@ -402,7 +402,7 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         type: "select",
         default: "codex",
         options: [{ value: "codex", label: "Codex" }],
-        hint: "Paperclip Runner currently supports only Codex app-server.",
+        hint: "Todero Runner currently supports only Codex app-server.",
       },
     ],
   }),
@@ -603,7 +603,7 @@ function registerBuiltInAdapters() {
     acpxLocalAdapter,
     claudeLocalAdapter,
     codexLocalAdapter,
-    paperclipRunnerAdapter,
+    toderoRunnerAdapter,
     openCodeLocalAdapter,
     piLocalAdapter,
     cursorCloudAdapter,
@@ -679,7 +679,7 @@ const externalAdaptersReady: Promise<void> = (async () => {
       const overriding = BUILTIN_ADAPTER_TYPES.has(externalAdapter.type);
       if (overriding) {
         console.log(
-          `[paperclip] External adapter "${externalAdapter.type}" overrides built-in adapter`,
+          `[todero] External adapter "${externalAdapter.type}" overrides built-in adapter`,
         );
         // Save the original builtin for later restoration.
         const existing = adaptersByType.get(externalAdapter.type);
@@ -693,7 +693,7 @@ const externalAdaptersReady: Promise<void> = (async () => {
       );
     }
   } catch (err) {
-    console.error("[paperclip] Failed to load external adapters:", err);
+    console.error("[todero] Failed to load external adapters:", err);
   }
 })();
 
@@ -768,7 +768,7 @@ function getDeclaredAdapterModels(): ReturnType<typeof parseAdapterModelsEnv> {
     value = parseAdapterModelsEnv(process.env);
   } catch (err) {
     console.error(
-      "[paperclip] Invalid PAPERCLIP_ADAPTER_MODELS; ignoring declared model lists:",
+      "[todero] Invalid PAPERCLIP_ADAPTER_MODELS; ignoring declared model lists:",
       err,
     );
   }
@@ -868,12 +868,12 @@ export function setOverridePaused(type: string, paused: boolean): boolean {
   const wasPaused = pausedOverrides.has(type);
   if (paused && !wasPaused) {
     pausedOverrides.add(type);
-    console.log(`[paperclip] Override paused for "${type}" — builtin adapter restored`);
+    console.log(`[todero] Override paused for "${type}" — builtin adapter restored`);
     return true;
   }
   if (!paused && wasPaused) {
     pausedOverrides.delete(type);
-    console.log(`[paperclip] Override resumed for "${type}" — external adapter active`);
+    console.log(`[todero] Override resumed for "${type}" — external adapter active`);
     return true;
   }
   return false;

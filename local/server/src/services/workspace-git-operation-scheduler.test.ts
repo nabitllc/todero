@@ -9,12 +9,12 @@ import {
   workspaceGitSchedulerOptionsFromEnv,
   type WorkspaceGitRunner,
 } from "./workspace-git-operation-scheduler.js";
-import { WORKSPACE_GIT_SCAN_SATURATED_CODE } from "@paperclipai/adapter-utils/git-workspace-sync";
+import { WORKSPACE_GIT_SCAN_SATURATED_CODE } from "@todero/adapter-utils/git-workspace-sync";
 
 const tempPaths: string[] = [];
 
 async function makeWorkspace(name = "workspace"): Promise<string> {
-  const parent = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-git-scheduler-"));
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), "todero-git-scheduler-"));
   tempPaths.push(parent);
   const workspace = path.join(parent, name);
   await fs.mkdir(workspace, { recursive: true });

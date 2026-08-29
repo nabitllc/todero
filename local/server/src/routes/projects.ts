@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   createProjectSchema,
   createProjectWorkspaceSchema,
@@ -9,9 +9,9 @@ import {
   updateProjectSchema,
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
-} from "@paperclipai/shared";
-import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@paperclipai/shared";
-import { trackProjectCreated } from "@paperclipai/shared/telemetry";
+} from "@todero/shared";
+import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@todero/shared";
+import { trackProjectCreated } from "@todero/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
 import { conflict, forbidden, unprocessable } from "../errors.js";
@@ -420,7 +420,7 @@ export function projectRoutes(db: Db) {
 
     const workspaceCwd = workspace.cwd;
     if (!workspaceCwd) {
-      res.status(422).json({ error: "Project workspace needs a local path before Paperclip can run workspace commands" });
+      res.status(422).json({ error: "Project workspace needs a local path before Todero can run workspace commands" });
       return;
     }
 

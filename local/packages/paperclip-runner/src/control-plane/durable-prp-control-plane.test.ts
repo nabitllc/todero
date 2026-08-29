@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { validatePrpEvent } from "../protocol/replay-contract.js";
-import { digestPaperclipSemanticContent } from "../semantic-tools/receipts.js";
+import { digestToderoSemanticContent } from "../semantic-tools/receipts.js";
 import { DurablePrpControlPlane } from "./durable-prp-control-plane.js";
 import type { DurableRecoveryIdentity } from "./prp-transport-types.js";
 
@@ -212,7 +212,7 @@ function authHello(
   selectedIdentity: DurableRecoveryIdentity = identity,
 ): Record<string, unknown> {
   return {
-    protocol: "paperclip.runner",
+    protocol: "todero.runner",
     version: 1,
     kind: "auth_hello",
     payload: {
@@ -255,7 +255,7 @@ async function authenticate(
     [Buffer.from(canonicalChallenge), Buffer.from(serverProof)],
   ).toString("hex");
   sendMaskedJson(socket, {
-    protocol: "paperclip.runner",
+    protocol: "todero.runner",
     version: 1,
     kind: "auth_response",
     payload: {
@@ -303,7 +303,7 @@ function secureAad(
   counter: bigint,
 ): Buffer {
   return Buffer.from(
-    `paperclip.runner.secure-frame.v1\0${client.sessionId}\0${direction}\0${counter}`,
+    `todero.runner.secure-frame.v1\0${client.sessionId}\0${direction}\0${counter}`,
   );
 }
 
@@ -330,7 +330,7 @@ function sendSecure(
     cipher.getAuthTag(),
   ]);
   sendMaskedJson(client.socket, {
-    schema: "paperclip.runner.secure-frame.v1",
+    schema: "todero.runner.secure-frame.v1",
     counter: Number(counter),
     ciphertext: encrypted.toString("hex"),
   });
@@ -370,7 +370,7 @@ async function receiveSecure(
 
 function semanticInputEvent(sourceSeq = 1): Record<string, unknown> {
   return {
-    protocol: "paperclip.runner",
+    protocol: "todero.runner",
     version: 1,
     kind: "event",
     runnerInstanceId: identity.runnerInstanceId,
@@ -389,13 +389,13 @@ function semanticInputEvent(sourceSeq = 1): Record<string, unknown> {
       turnId: identity.turnId,
       itemId: identity.itemId,
       eventType: "semantic_tool.input",
-      schema: "paperclip.prp.event.v1",
+      schema: "todero.prp.event.v1",
       schemaVersion: 1,
       priority: 0,
       emittedAt: "2026-08-25T18:00:00.000Z",
       payload: {
         semantic_tool: {
-          schema: "paperclip.prp.semantic_tool.v1",
+          schema: "todero.prp.semantic_tool.v1",
           schemaVersion: 1,
           phase: "input",
           callId: "call-1",
@@ -408,7 +408,7 @@ function semanticInputEvent(sourceSeq = 1): Record<string, unknown> {
           },
           idempotencyKey: null,
           content: {
-            digest: digestPaperclipSemanticContent({}),
+            digest: digestToderoSemanticContent({}),
             redactionDisposition: "digest_only",
             references: [],
           },
@@ -421,7 +421,7 @@ function semanticInputEvent(sourceSeq = 1): Record<string, unknown> {
 
 describe.sequential("DurablePrpControlPlane", () => {
   it("exchanges a one-use bootstrap for a run-bound reconnect lease", async () => {
-    const root = mkdtempSync(resolve(tmpdir(), "paperclip-prp-auth-"));
+    const root = mkdtempSync(resolve(tmpdir(), "todero-prp-auth-"));
     const controlPlane = new DurablePrpControlPlane({
       stateDirectory: root,
       identity,
@@ -481,7 +481,7 @@ describe.sequential("DurablePrpControlPlane", () => {
   });
 
   it("recovers one semantic call from the durable event after a coordinator restart", async () => {
-    const root = mkdtempSync(resolve(tmpdir(), "paperclip-prp-recovery-"));
+    const root = mkdtempSync(resolve(tmpdir(), "todero-prp-recovery-"));
     let firstCalls = 0;
     const first = new DurablePrpControlPlane({
       stateDirectory: root,
@@ -566,7 +566,7 @@ describe.sequential("DurablePrpControlPlane", () => {
   });
 
   it("does not acknowledge an event before the caller commits it", async () => {
-    const root = mkdtempSync(resolve(tmpdir(), "paperclip-prp-commit-order-"));
+    const root = mkdtempSync(resolve(tmpdir(), "todero-prp-commit-order-"));
     const first = new DurablePrpControlPlane({
       stateDirectory: root,
       identity,

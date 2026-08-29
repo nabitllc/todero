@@ -164,21 +164,21 @@ function buildTestConfig(overrides: Record<string, unknown> = {}) {
     authPublicBaseUrl: undefined,
     authDisableSignUp: false,
     databaseMode: "postgres",
-    databaseUrl: "postgres://paperclip:paperclip@127.0.0.1:5432/paperclip",
-    embeddedPostgresDataDir: "/tmp/paperclip-test-db",
+    databaseUrl: "postgres://todero:todero@127.0.0.1:5432/todero",
+    embeddedPostgresDataDir: "/tmp/todero-test-db",
     embeddedPostgresPort: 54329,
     databaseBackupEnabled: false,
     databaseBackupIntervalMinutes: 60,
     databaseBackupRetentionDays: 30,
-    databaseBackupDir: "/tmp/paperclip-test-backups",
+    databaseBackupDir: "/tmp/todero-test-backups",
     serveUi: false,
     uiDevMiddleware: false,
     secretsProvider: "local_encrypted",
     secretsStrictMode: false,
-    secretsMasterKeyFilePath: "/tmp/paperclip-master.key",
+    secretsMasterKeyFilePath: "/tmp/todero-master.key",
     storageProvider: "local_disk",
-    storageLocalDiskBaseDir: "/tmp/paperclip-storage",
-    storageS3Bucket: "paperclip-test",
+    storageLocalDiskBaseDir: "/tmp/todero-storage",
+    storageS3Bucket: "todero-test",
     storageS3Region: "us-east-1",
     storageS3Endpoint: undefined,
     storageS3Prefix: "",
@@ -200,7 +200,7 @@ vi.mock("detect-port", () => ({
   default: detectPortMock,
 }));
 
-vi.mock("@paperclipai/db", () => ({
+vi.mock("@todero/db", () => ({
   createDb: createDbMock,
   ensurePostgresDatabase: vi.fn(),
   getPostgresDataDirectory: vi.fn(),
@@ -381,7 +381,7 @@ describe("startServer feedback export wiring", () => {
   it("starts without PAPERCLIP_DECISION_SIGNING_SECRET by generating a persisted key", async () => {
     const originalHome = process.env.PAPERCLIP_HOME;
     const originalInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const tempHome = mkdtempSync(path.join(tmpdir(), "paperclip-decision-key-"));
+    const tempHome = mkdtempSync(path.join(tmpdir(), "todero-decision-key-"));
     process.env.PAPERCLIP_HOME = tempHome;
     process.env.PAPERCLIP_INSTANCE_ID = "default";
     delete process.env.PAPERCLIP_DECISION_SIGNING_SECRET;
@@ -406,7 +406,7 @@ describe("startServer feedback export wiring", () => {
   it("repairs permissive permissions on an existing generated decision signing key", async () => {
     const originalHome = process.env.PAPERCLIP_HOME;
     const originalInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const tempHome = mkdtempSync(path.join(tmpdir(), "paperclip-decision-key-mode-"));
+    const tempHome = mkdtempSync(path.join(tmpdir(), "todero-decision-key-mode-"));
     const keyPath = path.join(tempHome, "instances", "default", "secrets", "decision-signing.key");
     const existingKey = Buffer.alloc(32, 7).toString("base64");
     mkdirSync(path.dirname(keyPath), { recursive: true, mode: 0o777 });
@@ -438,7 +438,7 @@ describe("startServer feedback export wiring", () => {
 
     const originalHome = process.env.PAPERCLIP_HOME;
     const originalInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const tempHome = mkdtempSync(path.join(tmpdir(), "paperclip-decision-key-symlink-"));
+    const tempHome = mkdtempSync(path.join(tmpdir(), "todero-decision-key-symlink-"));
     const keyPath = path.join(tempHome, "instances", "default", "secrets", "decision-signing.key");
     const plantedTarget = path.join(tempHome, "planted.key");
     const plantedKey = Buffer.alloc(32, 9).toString("base64");
@@ -590,7 +590,7 @@ describe("startServer feedback export wiring", () => {
       deploymentExposure: "public",
       authBaseUrlMode: "explicit",
       authPublicBaseUrl: "https://tenant.example.com",
-      databaseUrl: "secret://paperclip-cloud/stacks/alpha/database/runtime-url",
+      databaseUrl: "secret://todero-cloud/stacks/alpha/database/runtime-url",
     }));
 
     await expect(startServer()).rejects.toThrow(
@@ -747,14 +747,14 @@ describe("startServer PAPERCLIP_API_URL handling", () => {
     loadConfigMock.mockReturnValueOnce(buildTestConfig({
       port: 3100,
       authBaseUrlMode: "explicit",
-      authPublicBaseUrl: "https://paperclip.example",
+      authPublicBaseUrl: "https://todero.example",
     }));
     detectPortMock.mockResolvedValueOnce(3110);
 
     const started = await startServer();
 
     expect(started.listenPort).toBe(3110);
-    expect(started.apiUrl).toBe("https://paperclip.example");
-    expect(process.env.PAPERCLIP_RUNTIME_API_URL).toBe("https://paperclip.example");
+    expect(started.apiUrl).toBe("https://todero.example");
+    expect(process.env.PAPERCLIP_RUNTIME_API_URL).toBe("https://todero.example");
   });
 });

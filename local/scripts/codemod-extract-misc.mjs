@@ -265,11 +265,11 @@ function resolveThemeColor(raw) {
 }
 
 function registerResolvedVarToken(varName, fallbackRaw, sourceNote) {
-  // varName like "--paperclip-code-highlight-bg" -> token name
-  // "code-highlight-bg-resolved" (strip the leading "--paperclip-" prefix
+  // varName like "--todero-code-highlight-bg" -> token name
+  // "code-highlight-bg-resolved" (strip the leading "--todero-" prefix
   // for readability, matching the mission's suggested name for the first
   // site; other vars in the same family follow the same convention).
-  const bare = varName.replace(/^--paperclip-/, "").replace(/^--/, "");
+  const bare = varName.replace(/^--todero-/, "").replace(/^--/, "");
   const name = `${bare}-resolved`;
   const fallback = resolveThemeColor(fallbackRaw);
   const value = `var(${varName}, ${fallback})`;

@@ -30,7 +30,7 @@ import { MarkdownEditor, type MarkdownEditorRef } from "@/components/MarkdownEdi
 import { nextWorkMode, workModeMetaFor, workModeMetaList } from "@/lib/work-mode-meta";
 import { InlineEntitySelector, type InlineEntityOption } from "@/components/InlineEntitySelector";
 import type { MentionOption } from "@/components/MarkdownEditor";
-import type { IssueAttachment, IssueWorkMode } from "@paperclipai/shared";
+import type { IssueAttachment, IssueWorkMode } from "@todero/shared";
 
 /** Structurally identical to IssueChatThread's module-private CommentReassignment. */
 interface CommentReassignment {
@@ -383,7 +383,7 @@ export function TaskChatComposer({
   return (
     <div
       className={cn(
-        "paperclip-task-chat-composer rounded-xl border border-input bg-card p-(--sz-18px) shadow-(--shadow-extract-7) transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15",
+        "todero-task-chat-composer rounded-xl border border-input bg-card p-(--sz-18px) shadow-(--shadow-extract-7) transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/15",
       )}
       onKeyDownCapture={(e) => {
         // Shift+Tab cycles the pending mode; captured on the wrapper so it

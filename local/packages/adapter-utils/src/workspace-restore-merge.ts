@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { shouldExcludePath } from "./exclude-patterns.js";
-import { resolvePaperclipInstanceRootForAdapter } from "./server-utils.js";
+import { resolveToderoInstanceRootForAdapter } from "./server-utils.js";
 
 type SnapshotEntry =
   | { kind: "dir" }
@@ -190,7 +190,7 @@ async function isLockStale(lockDir: string): Promise<boolean> {
     // this exact state, briefly, between its own `fs.mkdir(lockDir)` and its
     // `fs.writeFile(owner.json)` below. Reading "missing" as "stale" here would
     // let a concurrent acquirer delete a live holder's lock directory during
-    // that window. Mirror the materializePaperclipSkillCopy lock pattern: fall
+    // that window. Mirror the materializeToderoSkillCopy lock pattern: fall
     // back to the lock directory's own mtime, and only call it stale once the
     // directory itself has outlived the stale threshold.
     const stat = await fs.stat(lockDir).catch(() => null);
@@ -216,7 +216,7 @@ async function acquireDirectoryMergeLock(lockDir: string): Promise<() => Promise
       if (code !== "EEXIST") throw error;
       // Stale-lock detection: if the owner PID is dead (SIGKILL / OOM / crash),
       // the lockDir would otherwise persist forever and stall restores. Mirror
-      // the materializePaperclipSkillCopy lock pattern — remove and retry.
+      // the materializeToderoSkillCopy lock pattern — remove and retry.
       if (await isLockStale(lockDir)) {
         await fs.rm(lockDir, { recursive: true, force: true }).catch(() => undefined);
         continue;
@@ -276,7 +276,7 @@ function nonEmpty(value: string | undefined): string | null {
  * would follow the symlink) before any caller treats it as the lock root.
  */
 async function resolveDirectoryMergeLockRoot(env: NodeJS.ProcessEnv = process.env): Promise<string> {
-  const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+  const instanceRoot = resolveToderoInstanceRootForAdapter({
     homeDir: nonEmpty(env.PAPERCLIP_HOME) ?? undefined,
     instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? undefined,
     env,

@@ -1,8 +1,8 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import path from "node:path";
-import type { Db } from "@paperclipai/db";
-import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { agents as agentsTable, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@todero/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   agentSkillSyncSchema,
@@ -33,15 +33,15 @@ import {
   startClaudeSetupTokenSessionRequestSchema,
   submitBrowserCodeRequestSchema,
   type AgentAdapterType,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   isForbiddenConfigEnvKey,
   parseObject,
-  resolvePaperclipInstanceRootForAdapter,
-  readPaperclipSkillSyncPreference,
-  writePaperclipSkillSyncPreference,
-} from "@paperclipai/adapter-utils/server-utils";
-import { trackAgentCreated } from "@paperclipai/shared/telemetry";
+  resolveToderoInstanceRootForAdapter,
+  readToderoSkillSyncPreference,
+  writeToderoSkillSyncPreference,
+} from "@todero/adapter-utils/server-utils";
+import { trackAgentCreated } from "@todero/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import {
   agentService,
@@ -75,14 +75,14 @@ import { environmentService } from "../services/environments.js";
 import { resolveEnvironmentExecutionTarget } from "../services/environment-execution-target.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
 import { resolvePluginSandboxProviderDriverByKey } from "../services/plugin-environment-driver.js";
-import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
+import type { AdapterExecutionTarget } from "@todero/adapter-utils/execution-target";
 import type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestResult,
   AdapterModelProfileDefinition,
-} from "@paperclipai/adapter-utils";
-import { evaluateCodexCredentialReadiness } from "@paperclipai/adapter-codex-local/server";
-import type { AdapterAuthSignal, AdapterAuthSignalResponse } from "@paperclipai/shared";
+} from "@todero/adapter-utils";
+import { evaluateCodexCredentialReadiness } from "@todero/adapter-codex-local/server";
+import type { AdapterAuthSignal, AdapterAuthSignalResponse } from "@todero/shared";
 import { getDisabledAdapterTypes } from "../services/adapter-plugin-store.js";
 import { skillVersionSelectionMap } from "../services/runtime-skill-selections.js";
 import { secretService } from "../services/secrets.js";
@@ -105,7 +105,7 @@ import {
   isTruthyRuntimeEnvValue,
   resolveWorktreeRunExecutionActivationState,
 } from "../services/instance-settings.js";
-import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
+import { runClaudeLogin } from "@todero/adapter-claude-local/server";
 import { createInviteRateLimiter } from "../services/invite-rate-limit.js";
 import {
   SetupTokenSessionService,
@@ -139,17 +139,17 @@ import type {
   ClaudeOAuthTokenStatusResponse,
   ClaudeSetupTokenOverwrite,
   SetupTokenTransportAdvisory,
-} from "@paperclipai/shared";
-import { SETUP_TOKEN_TRANSPORT_ADVISORY_CODE } from "@paperclipai/shared";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
+} from "@todero/shared";
+import { SETUP_TOKEN_TRANSPORT_ADVISORY_CODE } from "@todero/shared";
+import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@todero/adapter-codex-local";
 import {
   checkStagedCredentialReadiness,
   promoteDeviceLoginCredential,
-} from "@paperclipai/adapter-codex-local/server";
+} from "@todero/adapter-codex-local/server";
 import {
   checkStagedGrokCredentialReadiness,
   promoteGrokDeviceLoginCredential,
-} from "@paperclipai/adapter-grok-local/server";
+} from "@todero/adapter-grok-local/server";
 import {
   AdapterAuthSessionConflictError,
   createDeviceLoginService,
@@ -160,12 +160,12 @@ import {
   DEVICE_LOGIN_PROVIDER_UNSUPPORTED_CODE,
   type CredentialPromotion,
 } from "../services/device-login-service.js";
-import type { AdapterAuthSessionOwnerResponse } from "@paperclipai/shared";
-import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
-import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
-import { DEFAULT_KIMI_LOCAL_MODEL } from "@paperclipai/adapter-kimi-local";
-import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@paperclipai/adapter-opencode-local";
-import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
+import type { AdapterAuthSessionOwnerResponse } from "@todero/shared";
+import { DEFAULT_CURSOR_LOCAL_MODEL } from "@todero/adapter-cursor-local";
+import { DEFAULT_GEMINI_LOCAL_MODEL } from "@todero/adapter-gemini-local";
+import { DEFAULT_KIMI_LOCAL_MODEL } from "@todero/adapter-kimi-local";
+import { DEFAULT_OPENCODE_LOCAL_MODEL } from "@todero/adapter-opencode-local";
+import { requireOpenCodeModelId } from "@todero/adapter-opencode-local/server";
 import {
   loadDefaultAgentInstructionsBundle,
   resolveDefaultAgentInstructionsBundleRole,
@@ -233,8 +233,8 @@ function readLiveRunsQueryInt(value: unknown, max: number, fallback = 0) {
 function readRunIssueId(context: Record<string, unknown> | null) {
   const directIssueId = context?.issueId;
   if (typeof directIssueId === "string" && isUuidLike(directIssueId)) return directIssueId;
-  const paperclipIssue = readObject(context?.paperclipIssue);
-  const nestedIssueId = paperclipIssue?.id;
+  const toderoIssue = readObject(context?.toderoIssue);
+  const nestedIssueId = toderoIssue?.id;
   return typeof nestedIssueId === "string" && isUuidLike(nestedIssueId) ? nestedIssueId : null;
 }
 
@@ -686,7 +686,7 @@ export function agentRoutes(
    * Resolve the execution target the adapter should run its test probes against.
    *
    * - No environmentId / local environment → returns a local target so the
-   *   adapter probes the Paperclip host (legacy behavior).
+   *   adapter probes the Todero host (legacy behavior).
    * - SSH environment → builds an SSH execution target from the environment
    *   config so the adapter probes the remote box. No lease is required:
    *   the SSH spec is fully derived from the saved environment config.
@@ -1055,7 +1055,7 @@ export function agentRoutes(
       "template_ref_kind",
     ]);
     const detailParts = [
-      `paperclipLeaseId=${input.lease.id}`,
+      `toderoLeaseId=${input.lease.id}`,
       input.lease.providerLeaseId ? `providerLeaseId=${input.lease.providerLeaseId}` : null,
       provider ? `provider=${provider}` : null,
       sandboxId ? `sandboxId=${sandboxId}` : null,
@@ -1629,7 +1629,7 @@ export function agentRoutes(
       const experimental = await instanceSettings.getExperimental();
       if (experimental.enableNativeRunner !== true) {
         throw unprocessable(
-          "Paperclip Runner is experimental and disabled on this instance.",
+          "Todero Runner is experimental and disabled on this instance.",
           { code: "paperclip_runner_rollout_disabled" },
         );
       }
@@ -1965,7 +1965,7 @@ export function agentRoutes(
   }
 
   function codexLocalAgentHome(companyId: string, agentId: string): string {
-    const instanceRoot = resolvePaperclipInstanceRootForAdapter({
+    const instanceRoot = resolveToderoInstanceRootForAdapter({
       homeDir: asNonEmptyString(process.env.PAPERCLIP_HOME) ?? undefined,
       instanceId: asNonEmptyString(process.env.PAPERCLIP_INSTANCE_ID) ?? undefined,
       env: process.env,
@@ -2278,12 +2278,12 @@ export function agentRoutes(
     };
   }
 
-  // The default CEO instructions assume the core paperclip skills (board
+  // The default CEO instructions assume the core todero skills (board
   // coordination, planning, hiring, memory). Union them into every
   // skills-capable CEO hire/create so a fresh CEO never starts with an empty
   // desired-skill set that contradicts its own instructions. Optional role
   // skills remain removable afterwards. Legacy adapters separately guarantee
-  // the Paperclip operational skill as a runtime invariant.
+  // the Todero operational skill as a runtime invariant.
   function defaultRoleSkillSelections(
     role: string | null | undefined,
     adapterType: string,
@@ -2346,7 +2346,7 @@ export function agentRoutes(
       materializeMissing?: boolean;
     } = {},
   ) {
-    const preference = readPaperclipSkillSyncPreference(config);
+    const preference = readToderoSkillSyncPreference(config);
     const betaSkillsEnabled = (await instanceSettings.getExperimental()).enableBetaSkills === true;
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(companyId, {
       materializeMissing: options.materializeMissing
@@ -2357,7 +2357,7 @@ export function agentRoutes(
     });
     return {
       ...config,
-      paperclipRuntimeSkills: runtimeSkillEntries,
+      toderoRuntimeSkills: runtimeSkillEntries,
     };
   }
 
@@ -2396,7 +2396,7 @@ export function agentRoutes(
       (entry, index, entries) => entries.findIndex((candidate) => candidate.key === entry.key) === index,
     );
 
-    const currentPreference = readPaperclipSkillSyncPreference(adapterConfig);
+    const currentPreference = readToderoSkillSyncPreference(adapterConfig);
     const { resolved: resolvedCurrentSkillEntries, unresolved: unresolvedCurrentSkillKeys } =
       currentPreference.desiredSkillEntries.length > 0
         ? await companySkills.resolveRequestedSkillEntries(
@@ -2429,7 +2429,7 @@ export function agentRoutes(
     });
 
     return {
-      adapterConfig: writePaperclipSkillSyncPreference(adapterConfig, desiredSkillEntries),
+      adapterConfig: writeToderoSkillSyncPreference(adapterConfig, desiredSkillEntries),
       desiredSkills,
       desiredSkillEntries,
       runtimeSkillEntries,
@@ -2789,7 +2789,7 @@ export function agentRoutes(
 
   // The codex_local branch of the auth-signal read. The host filesystem check
   // (`evaluateCodexCredentialReadiness` against `process.env`) describes only
-  // the Paperclip host, so it is authoritative for the null-environment and
+  // the Todero host, so it is authoritative for the null-environment and
   // "local" driver cases, where the host is the execution target. For a
   // non-local environment (a sandbox), the host's own credential state says
   // nothing about that sandbox, so the route checks the environment's own
@@ -3004,7 +3004,7 @@ export function agentRoutes(
 
     const adapter = findActiveServerAdapter(agent.adapterType);
     if (!adapter?.listSkills) {
-      const preference = readPaperclipSkillSyncPreference(
+      const preference = readToderoSkillSyncPreference(
         agent.adapterConfig as Record<string, unknown>,
       );
       const desiredSkillEntries = preference.desiredSkillEntries.filter(
@@ -3089,7 +3089,7 @@ export function agentRoutes(
       );
       const runtimeSkillConfig = {
         ...runtimeConfig,
-        paperclipRuntimeSkills: runtimeSkillEntries,
+        toderoRuntimeSkills: runtimeSkillEntries,
       };
       const snapshot = adapter?.syncSkills
         ? await adapter.syncSkills({
@@ -4902,7 +4902,7 @@ export function agentRoutes(
   /**
    * Assesses the setup-token confidential transport. The product
    * owner set a non-negotiable requirement: do not force TLS. Many users run
-   * Paperclip over plain HTTP on a home server or a Tailscale tailnet. So the
+   * Todero over plain HTTP on a home server or a Tailscale tailnet. So the
    * route does not block a non-confidential transport. It returns a non-blocking
    * advisory instead, and the route attaches it to the confidential response.
    * The client shows a visible disclaimer and lets the login proceed. The

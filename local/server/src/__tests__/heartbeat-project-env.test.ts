@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildSkillMentionHref } from "@paperclipai/shared";
+import { buildSkillMentionHref } from "@todero/shared";
 import {
   LOW_TRUST_REVIEW_PRESET,
   applyRunScopedMentionedSkillKeys,
@@ -491,9 +491,9 @@ describe("resolveExecutionRunAdapterConfig codex_local credential pre-dispatch g
   });
 
   async function stubManagedCodexEnv(options: { seedSharedAuth: boolean }) {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-gate-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-gate-"));
     cleanupDirs.push(root);
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const sharedCodexHome = path.join(root, "shared-codex-home");
     await fs.mkdir(sharedCodexHome, { recursive: true });
     if (options.seedSharedAuth) {
@@ -503,11 +503,11 @@ describe("resolveExecutionRunAdapterConfig codex_local credential pre-dispatch g
         "utf8",
       );
     }
-    vi.stubEnv("PAPERCLIP_HOME", paperclipHome);
+    vi.stubEnv("PAPERCLIP_HOME", toderoHome);
     vi.stubEnv("PAPERCLIP_INSTANCE_ID", "default");
     vi.stubEnv("CODEX_HOME", sharedCodexHome);
     const managedAgentHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -706,30 +706,30 @@ describe("applyRunScopedMentionedSkillKeys", () => {
   it("adds mentioned skills without mutating the original config", () => {
     const originalConfig = {
       command: "codex",
-      paperclipSkillSync: {
-        desiredSkills: ["paperclipai/paperclip/paperclip"],
+      toderoSkillSync: {
+        desiredSkills: ["nabitllc/todero/todero"],
       },
     };
 
     const updatedConfig = applyRunScopedMentionedSkillKeys(originalConfig, [
       "company/company-1/release-changelog",
-      "paperclipai/paperclip/paperclip",
+      "nabitllc/todero/todero",
       "company/company-1/release-changelog",
     ]);
 
     expect(updatedConfig).toEqual({
       command: "codex",
-      paperclipSkillSync: {
+      toderoSkillSync: {
         desiredSkills: [
-          "paperclipai/paperclip/paperclip",
+          "nabitllc/todero/todero",
           "company/company-1/release-changelog",
         ],
       },
     });
     expect(originalConfig).toEqual({
       command: "codex",
-      paperclipSkillSync: {
-        desiredSkills: ["paperclipai/paperclip/paperclip"],
+      toderoSkillSync: {
+        desiredSkills: ["nabitllc/todero/todero"],
       },
     });
   });
@@ -737,7 +737,7 @@ describe("applyRunScopedMentionedSkillKeys", () => {
   it("preserves existing version pins when adding mentioned skills", () => {
     const originalConfig = {
       command: "codex",
-      paperclipSkillSync: {
+      toderoSkillSync: {
         desiredSkills: [
           { key: "company/company-1/release-changelog", versionId: "version-1" },
         ],
@@ -750,7 +750,7 @@ describe("applyRunScopedMentionedSkillKeys", () => {
 
     expect(updatedConfig).toEqual({
       command: "codex",
-      paperclipSkillSync: {
+      toderoSkillSync: {
         desiredSkills: [
           { key: "company/company-1/release-changelog", versionId: "version-1" },
           { key: "company/company-1/security-review", versionId: null },

@@ -1,8 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import { ZodError } from "zod";
 import { HttpError } from "../errors.js";
-import { trackErrorHandlerCrash } from "@paperclipai/shared/telemetry";
+import { trackErrorHandlerCrash } from "@todero/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
 import { captureException } from "../sentry.js";
 import { COMPANY_IMPORT_API_PATH } from "../routes/company-import-paths.js";
@@ -57,9 +57,9 @@ function reportCrash(error: Error): void {
   captureException(error);
 }
 
-function getPaperclipDb(req: Request): Db | null {
-  const locals = req.app?.locals as { paperclipDb?: Db; db?: Db } | undefined;
-  return locals?.paperclipDb ?? locals?.db ?? null;
+function getToderoDb(req: Request): Db | null {
+  const locals = req.app?.locals as { toderoDb?: Db; db?: Db } | undefined;
+  return locals?.toderoDb ?? locals?.db ?? null;
 }
 
 function recordResponsibleUserDenialFromHttpError(
@@ -67,7 +67,7 @@ function recordResponsibleUserDenialFromHttpError(
   details: Record<string, unknown> | null,
 ) {
   if (req.actor?.type !== "agent") return;
-  const db = getPaperclipDb(req);
+  const db = getToderoDb(req);
   if (!db) return;
 
   void recordResponsibleUserDenialOnActiveRun(db, {

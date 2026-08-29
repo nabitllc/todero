@@ -18,12 +18,12 @@ import {
 import { startWorkerRpcHost } from "../src/worker-rpc-host.js";
 
 const MANIFEST = {
-  id: "paperclip.sync-negotiation-test",
+  id: "todero.sync-negotiation-test",
   apiVersion: 1,
   version: "1.0.0",
   displayName: "Sync Negotiation Test",
   description: "Test plugin",
-  author: "Paperclip",
+  author: "Todero",
   categories: ["automation"],
   capabilities: [],
   entrypoints: {},

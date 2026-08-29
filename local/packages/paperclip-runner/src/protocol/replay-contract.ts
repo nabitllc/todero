@@ -18,9 +18,9 @@ import {
 } from "./generated/schema-bundle.js";
 import { normalizeLegacyPrpStructuredRunResult } from "./result-normalization.js";
 
-export const PRP_PROTOCOL_NAME = "paperclip.runner";
+export const PRP_PROTOCOL_NAME = "todero.runner";
 export const PRP_PROTOCOL_VERSION = 1;
-export const PRP_FIXTURE_SCHEMA = "paperclip.prp.fixture.v1";
+export const PRP_FIXTURE_SCHEMA = "todero.prp.fixture.v1";
 
 type TerminalReferences = [typeof stopReasonSchema];
 type EventReferences = [

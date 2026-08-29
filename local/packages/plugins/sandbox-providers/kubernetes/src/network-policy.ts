@@ -1,6 +1,6 @@
 export interface BuildNetworkPolicyInput {
   namespace: string;
-  paperclipServerNamespace: string;
+  toderoServerNamespace: string;
   egressAllowCidrs: string[];
   /**
    * Adapter-configured FQDNs (e.g. `api.anthropic.com`). Standard
@@ -38,20 +38,20 @@ const PRIVATE_AND_LINK_LOCAL_EXCEPT_CIDRS = [
 ];
 
 // Design note: the deny-all baseline blocks all ingress to agent pods.
-// Paperclip-server does NOT push to agent pods — the agent shim makes
-// outbound calls to paperclip-server via the egress allow-list (port 3100).
+// Todero-server does NOT push to agent pods — the agent shim makes
+// outbound calls to todero-server via the egress allow-list (port 3100).
 // This pull/callback model means no ingress rule is needed. If a future
 // feature requires server→agent push (e.g. forced shutdown, live exec),
-// add a targeted ingress rule here scoped to the paperclip-server pod
+// add a targeted ingress rule here scoped to the todero-server pod
 // selector.
 export function buildNetworkPolicyManifests(input: BuildNetworkPolicyInput): Record<string, unknown>[] {
   const denyAll = {
     apiVersion: "networking.k8s.io/v1",
     kind: "NetworkPolicy",
     metadata: {
-      name: "paperclip-deny-all",
+      name: "todero-deny-all",
       namespace: input.namespace,
-      labels: { "paperclip.io/managed-by": "paperclip-k8s-plugin" },
+      labels: { "todero.io/managed-by": "todero-k8s-plugin" },
     },
     spec: {
       podSelector: {},
@@ -64,10 +64,10 @@ export function buildNetworkPolicyManifests(input: BuildNetworkPolicyInput): Rec
     kind: "NetworkPolicy",
     metadata: {
       namespace: input.namespace,
-      labels: { "paperclip.io/managed-by": "paperclip-k8s-plugin" },
+      labels: { "todero.io/managed-by": "todero-k8s-plugin" },
     },
     spec: {
-      podSelector: { matchLabels: input.podSelector ?? { "paperclip.io/role": "agent" } },
+      podSelector: { matchLabels: input.podSelector ?? { "todero.io/role": "agent" } },
       policyTypes: ["Egress"],
       egress: [
         ...(input.includeBaseRules === false ? [] : [{
@@ -85,8 +85,8 @@ export function buildNetworkPolicyManifests(input: BuildNetworkPolicyInput): Rec
         ...(input.includeBaseRules === false ? [] : [{
           to: [
             {
-              namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": input.paperclipServerNamespace } },
-              podSelector: { matchLabels: { app: "paperclip-server" } },
+              namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": input.toderoServerNamespace } },
+              podSelector: { matchLabels: { app: "todero-server" } },
             },
           ],
           ports: [{ protocol: "TCP", port: 3100 }],
@@ -131,7 +131,7 @@ export function buildNetworkPolicyManifests(input: BuildNetworkPolicyInput): Rec
     },
   };
 
-  (egressAllow.metadata as Record<string, unknown>).name = input.name ?? "paperclip-egress-allow";
+  (egressAllow.metadata as Record<string, unknown>).name = input.name ?? "todero-egress-allow";
   if (input.ownerReferences) {
     (egressAllow.metadata as Record<string, unknown>).ownerReferences = input.ownerReferences;
   }

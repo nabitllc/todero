@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from "vitest";
-import type { CompanySecretProviderConfig, SecretProviderDescriptor } from "@paperclipai/shared";
+import type { CompanySecretProviderConfig, SecretProviderDescriptor } from "@todero/shared";
 import {
   findCreateProviderReplacement,
   getAwsManagedPathPreview,
@@ -60,7 +60,7 @@ describe("Secrets page provider helpers", () => {
           status: "ok",
           message: "AWS Secrets Manager provider is configured",
           details: {
-            prefix: "paperclip",
+            prefix: "todero",
             deploymentId: "prod-us-1",
           },
         },
@@ -74,7 +74,7 @@ describe("Secrets page provider helpers", () => {
         companyId: "company-123",
         secretKeySource: "Anthropic API Key",
       }),
-    ).toBe("paperclip/prod-us-1/company-123/anthropic-api-key");
+    ).toBe("todero/prod-us-1/company-123/anthropic-api-key");
   });
 
   it("blocks unconfigured providers before create submission", () => {

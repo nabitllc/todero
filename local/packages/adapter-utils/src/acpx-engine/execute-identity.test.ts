@@ -30,7 +30,7 @@ const SAMPLE_FINGERPRINT_IDENTITY: SessionFingerprintIdentity = {
   additionalSourcesIdentity: {},
   skillsIdentity: {},
   skillPromptInstructions: "",
-  paperclipClaudeSettings: null,
+  toderoClaudeSettings: null,
   mcpServers: [],
   secretManifestHash: "0000",
   adapterEnvHash: "0000",

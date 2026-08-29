@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { companies, companySkills, createDb, projects, projectWorkspaces } from "@paperclipai/db";
+import { companies, companySkills, createDb, projects, projectWorkspaces } from "@todero/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { companySkillService } from "../services/company-skills.js";
 
@@ -16,7 +16,7 @@ describeEmbeddedPostgres("company skill local import boundary", () => {
   const cleanupDirs = new Set<string>();
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-skill-import-boundary-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-skill-import-boundary-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -36,8 +36,8 @@ describeEmbeddedPostgres("company skill local import boundary", () => {
   it("allows configured workspace imports and rejects out-of-tree and symlink escapes", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
-    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-approved-workspace-"));
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-outside-skill-"));
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "todero-approved-workspace-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "todero-outside-skill-"));
     cleanupDirs.add(workspace);
     cleanupDirs.add(outside);
     await fs.writeFile(path.join(outside, "SKILL.md"), "---\nname: escaped\ndescription: escaped\n---\n# Escaped\n", "utf8");

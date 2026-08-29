@@ -24,7 +24,7 @@ import {
   issues,
   labels,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -85,7 +85,7 @@ describeEmbeddedPostgres("cases routes", () => {
 
   beforeAll(async () => {
     process.env.PAPERCLIP_AGENT_JWT_SECRET = "cases-routes-test-secret";
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-cases-routes-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-cases-routes-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -413,7 +413,7 @@ describeEmbeddedPostgres("cases routes", () => {
     const createResponse = await http
       .post(`/api/companies/${company.id}/cases`)
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId)
+      .set("X-Todero-Run-Id", runId)
       .send({
         caseType: "blog_post",
         key: "launch-post",
@@ -426,14 +426,14 @@ describeEmbeddedPostgres("cases routes", () => {
     await http
       .put(`/api/cases/${createResponse.body.identifier}/documents/body`)
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId)
+      .set("X-Todero-Run-Id", runId)
       .send({ body: "# Launch\n\nDraft body." })
       .expect(200);
 
     await http
       .patch(`/api/cases/${caseId}`)
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId)
+      .set("X-Todero-Run-Id", runId)
       .send({
         status: "in_review",
         fields: { slug: "launch-post", target_audience: "operators", publish_url: "https://example.com/launch" },
@@ -443,7 +443,7 @@ describeEmbeddedPostgres("cases routes", () => {
     await http
       .post(`/api/cases/${caseId}/attachments`)
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId)
+      .set("X-Todero-Run-Id", runId)
       .attach("file", Buffer.from("asset"), "asset.txt")
       .expect(201);
 
@@ -460,7 +460,7 @@ describeEmbeddedPostgres("cases routes", () => {
     const detail = await http
       .get(`/api/cases/${createResponse.body.identifier}`)
       .set("Authorization", `Bearer ${token}`)
-      .set("X-Paperclip-Run-Id", runId)
+      .set("X-Todero-Run-Id", runId)
       .expect(200);
     expect(detail.body.status).toBe("in_review");
     expect(detail.body.documents).toHaveLength(1);

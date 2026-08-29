@@ -1,12 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { Issue } from "@paperclipai/shared";
+import type { Issue } from "@todero/shared";
 import { IssueMonitorBanner, IssueMonitorComposerStrip } from "@/components/IssueMonitorBanner";
 import { IssueProperties } from "@/components/IssueProperties";
 import {
   storybookExecutionWorkspaces,
   storybookIssueDocuments,
   storybookIssues,
-} from "../fixtures/paperclipData";
+} from "../fixtures/toderoData";
 
 const issueDocumentSummaries = storybookIssueDocuments.map(({ body: _body, ...summary }) => summary);
 

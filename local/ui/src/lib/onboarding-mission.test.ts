@@ -1,4 +1,4 @@
-import type { Goal } from "@paperclipai/shared";
+import type { Goal } from "@todero/shared";
 import { describe, expect, it } from "vitest";
 import { parseOnboardingGoalInput } from "./onboarding-goal";
 import {

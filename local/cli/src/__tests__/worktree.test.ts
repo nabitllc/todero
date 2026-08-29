@@ -23,7 +23,7 @@ import {
   routines,
   routineTriggers,
   workspaceRuntimeServices,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   copyGitHooksToWorktreeGitDir,
   copySeededSecretsKey,
@@ -62,7 +62,7 @@ import {
   rewriteLocalUrlPort,
   sanitizeWorktreeInstanceId,
 } from "../commands/worktree-lib.js";
-import type { PaperclipConfig } from "../config/schema.js";
+import type { ToderoConfig } from "../config/schema.js";
 import {
   EMBEDDED_POSTGRES_TEST_TIMEOUT_MS,
   getEmbeddedPostgresTestSupport,
@@ -126,7 +126,7 @@ async function seedValidWorktreeSource(
   const now = new Date();
   await db.insert(authUsers).values({
     id: userId,
-    email: userId === "local-board" ? "local@paperclip.local" : "existing@paperclip.ing",
+    email: userId === "local-board" ? "local@todero.local" : "existing@todero.vercel.app",
     name: userId === "local-board" ? "Board" : "Existing User",
     emailVerified: true,
     createdAt: now,
@@ -137,7 +137,7 @@ async function seedValidWorktreeSource(
       id: "credential-existing",
       // The issuer Better Auth stamps on an email/password account.
       issuer: "local:credential",
-      accountId: "existing@paperclip.ing",
+      accountId: "existing@todero.vercel.app",
       providerId: "credential",
       userId,
       password: "fixture-password-hash",
@@ -220,7 +220,7 @@ afterEach(() => {
   }
 });
 
-function buildSourceConfig(): PaperclipConfig {
+function buildSourceConfig(): ToderoConfig {
   return {
     $meta: {
       version: 1,
@@ -264,7 +264,7 @@ function buildSourceConfig(): PaperclipConfig {
         baseDir: "/tmp/main/storage",
       },
       s3: {
-        bucket: "paperclip",
+        bucket: "todero",
         region: "us-east-1",
         prefix: "",
         forcePathStyle: false,
@@ -282,12 +282,12 @@ function buildSourceConfig(): PaperclipConfig {
 
 describe("worktree helpers", () => {
   it("uses the repo-local config for the current worktree", () => {
-    const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-current-worktree-"));
+    const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-current-worktree-"));
     try {
-      const localConfig = path.join(targetRoot, ".paperclip", "config.json");
+      const localConfig = path.join(targetRoot, ".todero", "config.json");
       fs.mkdirSync(path.dirname(localConfig), { recursive: true });
       fs.writeFileSync(localConfig, "{}\n");
-      process.env.PAPERCLIP_CONFIG = "/tmp/ambient-paperclip/config.json";
+      process.env.PAPERCLIP_CONFIG = "/tmp/ambient-todero/config.json";
       process.chdir(targetRoot);
 
       expect(resolveCurrentWorktreeEndpoint()).toMatchObject({
@@ -302,15 +302,15 @@ describe("worktree helpers", () => {
   });
 
   it("uses the repository config from a nested working directory", () => {
-    const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-current-worktree-nested-"));
+    const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-current-worktree-nested-"));
     try {
       execFileSync("git", ["init", "-q"], { cwd: targetRoot });
       const nestedDirectory = path.join(targetRoot, "packages", "example", "src");
-      const localConfig = path.join(targetRoot, ".paperclip", "config.json");
+      const localConfig = path.join(targetRoot, ".todero", "config.json");
       fs.mkdirSync(nestedDirectory, { recursive: true });
       fs.mkdirSync(path.dirname(localConfig), { recursive: true });
       fs.writeFileSync(localConfig, "{}\n");
-      process.env.PAPERCLIP_CONFIG = "/tmp/ambient-paperclip/config.json";
+      process.env.PAPERCLIP_CONFIG = "/tmp/ambient-todero/config.json";
       process.chdir(nestedDirectory);
 
       expect(resolveCurrentWorktreeEndpoint()).toMatchObject({
@@ -330,13 +330,13 @@ describe("worktree helpers", () => {
   });
 
   it("resolves worktree:make target paths under the user home directory", () => {
-    expect(resolveWorktreeMakeTargetPath("paperclip-pr-432")).toBe(
-      path.resolve(os.homedir(), "paperclip-pr-432"),
+    expect(resolveWorktreeMakeTargetPath("todero-pr-432")).toBe(
+      path.resolve(os.homedir(), "todero-pr-432"),
     );
   });
 
   it("rejects worktree:make names that are not safe directory/branch names", () => {
-    expect(() => resolveWorktreeMakeTargetPath("paperclip/pr-432")).toThrow(
+    expect(() => resolveWorktreeMakeTargetPath("todero/pr-432")).toThrow(
       "Worktree name must contain only letters, numbers, dots, underscores, or dashes.",
     );
   });
@@ -414,13 +414,13 @@ describe("worktree helpers", () => {
   it("rewrites auth URLs only when they already include a port", () => {
     expect(rewriteLocalUrlPort("http://127.0.0.1:3100", 3110)).toBe("http://127.0.0.1:3110/");
     expect(rewriteLocalUrlPort("http://my-host.ts.net:3100", 3110)).toBe("http://my-host.ts.net:3110/");
-    expect(rewriteLocalUrlPort("https://paperclip.example", 3110)).toBe("https://paperclip.example");
+    expect(rewriteLocalUrlPort("https://todero.example", 3110)).toBe("https://todero.example");
   });
 
   it("builds isolated config and env paths for a worktree", () => {
     const paths = resolveWorktreeLocalPaths({
-      cwd: "/tmp/paperclip-feature",
-      homeDir: "/tmp/paperclip-worktrees",
+      cwd: "/tmp/todero-feature",
+      homeDir: "/tmp/todero-worktrees",
       instanceId: "feature-worktree-support",
     });
     const config = buildWorktreeConfig({
@@ -432,21 +432,21 @@ describe("worktree helpers", () => {
     });
 
     expect(config.database.embeddedPostgresDataDir).toBe(
-      path.resolve("/tmp/paperclip-worktrees", "instances", "feature-worktree-support", "db"),
+      path.resolve("/tmp/todero-worktrees", "instances", "feature-worktree-support", "db"),
     );
     expect(config.database.embeddedPostgresPort).toBe(54339);
     expect(config.database.backup.enabled).toBe(false);
     expect(config.server.port).toBe(3110);
     expect(config.auth.publicBaseUrl).toBe("http://127.0.0.1:3110/");
     expect(config.storage.localDisk.baseDir).toBe(
-      path.resolve("/tmp/paperclip-worktrees", "instances", "feature-worktree-support", "data", "storage"),
+      path.resolve("/tmp/todero-worktrees", "instances", "feature-worktree-support", "data", "storage"),
     );
 
     const env = buildWorktreeEnvEntries(paths, {
       name: "feature-worktree-support",
       color: "#3abf7a",
     });
-    expect(env.PAPERCLIP_HOME).toBe(path.resolve("/tmp/paperclip-worktrees"));
+    expect(env.PAPERCLIP_HOME).toBe(path.resolve("/tmp/todero-worktrees"));
     expect(env.PAPERCLIP_INSTANCE_ID).toBe("feature-worktree-support");
     expect(env.PAPERCLIP_IN_WORKTREE).toBe("true");
     expect(env.PAPERCLIP_DB_BACKUP_ENABLED).toBe("false");
@@ -511,7 +511,7 @@ describe("worktree helpers", () => {
   });
 
   it("requires the seed process to own the target embedded Postgres lifecycle", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-live-target-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-live-target-"));
     try {
       fs.writeFileSync(
         path.join(tempRoot, "postmaster.pid"),
@@ -561,7 +561,7 @@ describe("worktree helpers", () => {
       availableMigrations: ["0001_initial.sql", "0002_current.sql"],
       appliedMigrations: ["0001_initial.sql", "0003_unknown.sql"],
       journalEntryCount: 3,
-    }, "sourcePrefix")).toThrow("Migration journal is not a prefix of this Paperclip checkout");
+    }, "sourcePrefix")).toThrow("Migration journal is not a prefix of this Todero checkout");
   });
 
   it("accepts a current source whose migration application order differs from filename order", () => {
@@ -602,13 +602,13 @@ describe("worktree helpers", () => {
   });
 
   itEmbeddedPostgres("recognizes positive legacy database schema evidence", async () => {
-    const tempDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-legacy-evidence-");
+    const tempDb = await startEmbeddedPostgresTestDatabase("todero-worktree-legacy-evidence-");
     onTestFinished(() => tempDb.cleanup());
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-legacy-config-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-legacy-config-"));
     try {
       const configPath = path.join(tempRoot, "config.json");
       const sourceConfig = buildSourceConfig();
-      const config: PaperclipConfig = {
+      const config: ToderoConfig = {
         ...sourceConfig,
         database: {
           ...sourceConfig.database,
@@ -638,11 +638,11 @@ describe("worktree helpers", () => {
   });
 
   it("ensure-seeded seeds once and fast-exits on the verified manifest", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-ensure-seeded-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-ensure-seeded-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -661,7 +661,7 @@ describe("worktree helpers", () => {
       fs.writeFileSync(path.join(path.dirname(sourceConfigPath), ".env"), "PAPERCLIP_INSTANCE_ID=source\n");
       fs.writeFileSync(targetConfigPath, `${JSON.stringify(targetConfig)}\n`);
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", ".env"),
+        path.join(targetRoot, ".todero", ".env"),
         `PAPERCLIP_HOME=${targetPaths.homeDir}\nPAPERCLIP_INSTANCE_ID=${targetPaths.instanceId}\n`,
       );
       markWorktreeSeedPending({ configPath: targetConfigPath, sourceConfigPath });
@@ -694,8 +694,8 @@ describe("worktree helpers", () => {
         seedMode: "minimal",
         instanceId: "ensure-seeded-test",
       }));
-      expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed-pending"))).toBe(false);
-      expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed-complete"))).toBe(false);
+      expect(fs.existsSync(path.join(targetRoot, ".todero", "seed-pending"))).toBe(false);
+      expect(fs.existsSync(path.join(targetRoot, ".todero", "seed-complete"))).toBe(false);
       expect(readWorktreeSeedManifest(targetConfigPath)).toMatchObject({
         version: 2,
         state: "verified",
@@ -709,7 +709,7 @@ describe("worktree helpers", () => {
   });
 
   it("treats an unregistered markerless config as a normal non-worktree boot", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-unregistered-markerless-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-unregistered-markerless-"));
     try {
       const configPath = path.join(tempRoot, "config.json");
       fs.writeFileSync(configPath, `${JSON.stringify(buildSourceConfig())}\n`);
@@ -734,7 +734,7 @@ describe("worktree helpers", () => {
   });
 
   it("honors a legacy complete marker without resolving a seed source", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-complete-marker-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-complete-marker-"));
     try {
       const configPath = path.join(tempRoot, "config.json");
       fs.writeFileSync(configPath, `${JSON.stringify(buildSourceConfig())}\n`);
@@ -757,11 +757,11 @@ describe("worktree helpers", () => {
   });
 
   it("seeds a configured worktree with no seed markers when no legacy database is present", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-unmarked-empty-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-unmarked-empty-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -780,7 +780,7 @@ describe("worktree helpers", () => {
       fs.writeFileSync(path.join(path.dirname(sourceConfigPath), ".env"), "PAPERCLIP_INSTANCE_ID=source\n");
       fs.writeFileSync(targetConfigPath, `${JSON.stringify(targetConfig)}\n`);
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", ".env"),
+        path.join(targetRoot, ".todero", ".env"),
         `PAPERCLIP_HOME=${targetPaths.homeDir}\nPAPERCLIP_INSTANCE_ID=${targetPaths.instanceId}\n`,
       );
       const inspectLegacyDatabase = vi.fn().mockResolvedValue(null);
@@ -804,11 +804,11 @@ describe("worktree helpers", () => {
   });
 
   it("adopts a markerless legacy worktree only after validating its database schema", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-unmarked-legacy-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-unmarked-legacy-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -827,7 +827,7 @@ describe("worktree helpers", () => {
       fs.writeFileSync(path.join(path.dirname(sourceConfigPath), ".env"), "PAPERCLIP_INSTANCE_ID=source\n");
       fs.writeFileSync(targetConfigPath, `${JSON.stringify(targetConfig)}\n`);
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", ".env"),
+        path.join(targetRoot, ".todero", ".env"),
         `PAPERCLIP_HOME=${targetPaths.homeDir}\nPAPERCLIP_INSTANCE_ID=${targetPaths.instanceId}\n`,
       );
       const seedDatabase = vi.fn();
@@ -852,12 +852,12 @@ describe("worktree helpers", () => {
   });
 
   it("managed ensure-seeded derives a valid source from the registered base workspace", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-managed-seed-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-managed-seed-"));
     try {
       const baseRoot = path.join(tempRoot, "base");
-      const sourceConfigPath = path.join(baseRoot, ".paperclip", "config.json");
+      const sourceConfigPath = path.join(baseRoot, ".todero", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -901,12 +901,12 @@ describe("worktree helpers", () => {
   it.each(["sibling", "foreign_instance", "symlink", "instance_mismatch"] as const)(
     "managed ensure-seeded re-derives a stale %s manifest source from registration",
     async (variant) => {
-      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `paperclip-worktree-managed-${variant}-`));
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `todero-worktree-managed-${variant}-`));
       try {
         const baseRoot = path.join(tempRoot, "base");
-        const canonicalSource = path.join(baseRoot, ".paperclip", "config.json");
+        const canonicalSource = path.join(baseRoot, ".todero", "config.json");
         const targetRoot = path.join(tempRoot, "worktree");
-        const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+        const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
         const attackerRoot = path.join(tempRoot, variant);
         const attackerConfig = path.join(attackerRoot, "config.json");
         fs.mkdirSync(path.dirname(canonicalSource), { recursive: true });
@@ -967,7 +967,7 @@ describe("worktree helpers", () => {
             }),
           ]),
         });
-        expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed.lock"))).toBe(false);
+        expect(fs.existsSync(path.join(targetRoot, ".todero", "seed.lock"))).toBe(false);
       } finally {
         fs.rmSync(tempRoot, { recursive: true, force: true });
       }
@@ -975,11 +975,11 @@ describe("worktree helpers", () => {
   );
 
   it("ensure-seeded records a target shutdown diagnostic when restore fails", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-ensure-seeded-failure-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-ensure-seeded-failure-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -998,7 +998,7 @@ describe("worktree helpers", () => {
       fs.writeFileSync(path.join(path.dirname(sourceConfigPath), ".env"), "PAPERCLIP_INSTANCE_ID=source\n");
       fs.writeFileSync(targetConfigPath, `${JSON.stringify(targetConfig)}\n`);
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", ".env"),
+        path.join(targetRoot, ".todero", ".env"),
         `PAPERCLIP_HOME=${targetPaths.homeDir}\nPAPERCLIP_INSTANCE_ID=${targetPaths.instanceId}\n`,
       );
       markWorktreeSeedPending({ configPath: targetConfigPath, sourceConfigPath });
@@ -1029,20 +1029,20 @@ describe("worktree helpers", () => {
           }),
         ]),
       });
-      expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed-pending"))).toBe(false);
-      expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed-complete"))).toBe(false);
-      expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed.lock"))).toBe(false);
+      expect(fs.existsSync(path.join(targetRoot, ".todero", "seed-pending"))).toBe(false);
+      expect(fs.existsSync(path.join(targetRoot, ".todero", "seed-complete"))).toBe(false);
+      expect(fs.existsSync(path.join(targetRoot, ".todero", "seed.lock"))).toBe(false);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
   it("serializes concurrent ensure-seeded calls across the seed marker lock", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-ensure-seeded-lock-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-ensure-seeded-lock-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -1061,7 +1061,7 @@ describe("worktree helpers", () => {
       fs.writeFileSync(path.join(path.dirname(sourceConfigPath), ".env"), "PAPERCLIP_INSTANCE_ID=source\n");
       fs.writeFileSync(targetConfigPath, `${JSON.stringify(targetConfig)}\n`);
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", ".env"),
+        path.join(targetRoot, ".todero", ".env"),
         `PAPERCLIP_HOME=${targetPaths.homeDir}\nPAPERCLIP_INSTANCE_ID=${targetPaths.instanceId}\n`,
       );
       markWorktreeSeedPending({ configPath: targetConfigPath, sourceConfigPath });
@@ -1081,18 +1081,18 @@ describe("worktree helpers", () => {
         { seeded: false, reason: "verified_manifest" },
       ]));
       expect(seedDatabase).toHaveBeenCalledTimes(1);
-      expect(fs.existsSync(path.join(targetRoot, ".paperclip", "seed.lock"))).toBe(false);
+      expect(fs.existsSync(path.join(targetRoot, ".todero", "seed.lock"))).toBe(false);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
   it("records an interrupted phase before retrying to a verified terminal state", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-interrupted-seed-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-interrupted-seed-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetRoot = path.join(tempRoot, "worktree");
-      const targetConfigPath = path.join(targetRoot, ".paperclip", "config.json");
+      const targetConfigPath = path.join(targetRoot, ".todero", "config.json");
       const targetPaths = resolveWorktreeLocalPaths({
         cwd: targetRoot,
         homeDir: path.join(tempRoot, "worktree-home"),
@@ -1111,13 +1111,13 @@ describe("worktree helpers", () => {
       fs.writeFileSync(path.join(path.dirname(sourceConfigPath), ".env"), "PAPERCLIP_INSTANCE_ID=source\n");
       fs.writeFileSync(targetConfigPath, `${JSON.stringify(targetConfig)}\n`);
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", ".env"),
+        path.join(targetRoot, ".todero", ".env"),
         `PAPERCLIP_HOME=${targetPaths.homeDir}\nPAPERCLIP_INSTANCE_ID=${targetPaths.instanceId}\n`,
       );
       markWorktreeSeedPending({ configPath: targetConfigPath, sourceConfigPath });
       const interrupted = readWorktreeSeedManifest(targetConfigPath)!;
       fs.writeFileSync(
-        path.join(targetRoot, ".paperclip", "seed-manifest.json"),
+        path.join(targetRoot, ".todero", "seed-manifest.json"),
         `${JSON.stringify({ ...interrupted, state: "running", phase: "restore" }, null, 2)}\n`,
       );
 
@@ -1141,10 +1141,10 @@ describe("worktree helpers", () => {
   });
 
   it("fails closed instead of racing to reclaim a stale seed lock", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-ensure-seeded-stale-lock-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-ensure-seeded-stale-lock-"));
     try {
-      const targetConfigPath = path.join(tempRoot, ".paperclip", "config.json");
-      const lockPath = path.join(tempRoot, ".paperclip", "seed.lock");
+      const targetConfigPath = path.join(tempRoot, ".todero", "config.json");
+      const lockPath = path.join(tempRoot, ".todero", "seed.lock");
       fs.mkdirSync(path.dirname(targetConfigPath), { recursive: true });
       fs.writeFileSync(
         lockPath,
@@ -1169,7 +1169,7 @@ describe("worktree helpers", () => {
   });
 
   itEmbeddedPostgres("quarantines copied live execution state in seeded worktree databases", async () => {
-    const tempDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-quarantine-");
+    const tempDb = await startEmbeddedPostgresTestDatabase("todero-worktree-quarantine-");
     onTestFinished(() => tempDb.cleanup());
     const db = createDb(tempDb.connectionString);
     const companyId = randomUUID();
@@ -1187,7 +1187,7 @@ describe("worktree helpers", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: "WTQ",
         requireBoardApprovalForNewAgents: false,
       });
@@ -1233,7 +1233,7 @@ describe("worktree helpers", () => {
         metadata: {
           keep: "project-metadata",
           runtimeConfig: {
-            workspaceRuntime: { services: [{ name: "paperclip-dev" }] },
+            workspaceRuntime: { services: [{ name: "todero-dev" }] },
             desiredState: "running",
             serviceStates: { "0": "running", "1": "manual" },
           },
@@ -1266,14 +1266,14 @@ describe("worktree helpers", () => {
         executionWorkspaceId,
         scopeType: "project_workspace",
         scopeId: projectWorkspaceId,
-        serviceName: "paperclip-dev",
+        serviceName: "todero-dev",
         status: "running",
         lifecycle: "shared",
         provider: "local_process",
         providerRef: "12345",
         ownerAgentId: agentId,
         port: 42013,
-        url: "https://paperclip-dev.example.test:42013",
+        url: "https://todero-dev.example.test:42013",
         healthStatus: "healthy",
       });
       await db.insert(issues).values([
@@ -1368,7 +1368,7 @@ describe("worktree helpers", () => {
       expect(projectWorkspace?.metadata).toEqual({
         keep: "project-metadata",
         runtimeConfig: {
-          workspaceRuntime: { services: [{ name: "paperclip-dev" }] },
+          workspaceRuntime: { services: [{ name: "todero-dev" }] },
           desiredState: "stopped",
           serviceStates: { "0": "stopped", "1": "manual" },
         },
@@ -1407,7 +1407,7 @@ describe("worktree helpers", () => {
   });
 
   it("copies the source local_encrypted secrets key into the seeded worktree instance", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-secrets-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-secrets-"));
     const originalInlineMasterKey = process.env.PAPERCLIP_SECRETS_MASTER_KEY;
     const originalKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
     try {
@@ -1446,7 +1446,7 @@ describe("worktree helpers", () => {
   });
 
   it("writes the source inline secrets master key into the seeded worktree instance", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-secrets-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-secrets-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetKeyPath = path.join(tempRoot, "target", "secrets", "master.key");
@@ -1467,7 +1467,7 @@ describe("worktree helpers", () => {
   });
 
   it("persists the current agent jwt secret into the worktree env file", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-jwt-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-jwt-"));
     const repoRoot = path.join(tempRoot, "repo");
     const originalCwd = process.cwd();
     const originalJwtSecret = process.env.PAPERCLIP_AGENT_JWT_SECRET;
@@ -1480,10 +1480,10 @@ describe("worktree helpers", () => {
       await worktreeInitCommand({
         seed: false,
         fromConfig: path.join(tempRoot, "missing", "config.json"),
-        home: path.join(tempRoot, ".paperclip-worktrees"),
+        home: path.join(tempRoot, ".todero-worktrees"),
       });
 
-      const envPath = path.join(repoRoot, ".paperclip", ".env");
+      const envPath = path.join(repoRoot, ".todero", ".env");
       const envContents = fs.readFileSync(envPath, "utf8");
       expect(envContents).toContain("PAPERCLIP_AGENT_JWT_SECRET=worktree-shared-secret");
       expect(envContents).toContain("PAPERCLIP_WORKTREE_NAME=repo");
@@ -1500,13 +1500,13 @@ describe("worktree helpers", () => {
   });
 
   it("preserves repo-managed worktree checkouts when --force re-runs from the source repo", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-force-preserve-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-force-preserve-"));
     const repoRoot = path.join(tempRoot, "repo");
     const originalCwd = process.cwd();
 
     try {
       fs.mkdirSync(repoRoot, { recursive: true });
-      const repoConfigDir = path.join(repoRoot, ".paperclip");
+      const repoConfigDir = path.join(repoRoot, ".todero");
       fs.mkdirSync(repoConfigDir, { recursive: true });
       fs.writeFileSync(path.join(repoConfigDir, "config.json"), "stale", "utf8");
       fs.writeFileSync(path.join(repoConfigDir, ".env"), "STALE=1", "utf8");
@@ -1525,7 +1525,7 @@ describe("worktree helpers", () => {
         seed: false,
         force: true,
         fromConfig: path.join(tempRoot, "missing", "config.json"),
-        home: path.join(tempRoot, ".paperclip-worktrees"),
+        home: path.join(tempRoot, ".todero-worktrees"),
       });
 
       expect(fs.existsSync(sentinelPath)).toBe(true);
@@ -1541,7 +1541,7 @@ describe("worktree helpers", () => {
   itEmbeddedPostgres(
     "seeds a local-trusted implicit board user without a credential account",
     async () => {
-      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-local-board-seed-"));
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-local-board-seed-"));
       const originalCwd = process.cwd();
       onTestFinished(() => {
         process.chdir(originalCwd);
@@ -1551,8 +1551,8 @@ describe("worktree helpers", () => {
       const sourceConfigDir = path.join(tempRoot, "source");
       const sourceConfigPath = path.join(sourceConfigDir, "config.json");
       const sourceKeyPath = path.join(sourceConfigDir, "secrets", "master.key");
-      const worktreeHome = path.join(tempRoot, ".paperclip-worktrees");
-      const sourceDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-local-board-source-");
+      const worktreeHome = path.join(tempRoot, ".todero-worktrees");
+      const sourceDb = await startEmbeddedPostgresTestDatabase("todero-worktree-local-board-source-");
       onTestFinished(() => sourceDb.cleanup());
 
       await seedValidWorktreeSource(sourceDb.connectionString, {
@@ -1585,8 +1585,8 @@ describe("worktree helpers", () => {
         force: true,
       });
 
-      const targetConfigPath = path.join(worktreeRoot, ".paperclip", "config.json");
-      const targetConfig = JSON.parse(fs.readFileSync(targetConfigPath, "utf8")) as PaperclipConfig;
+      const targetConfigPath = path.join(worktreeRoot, ".todero", "config.json");
+      const targetConfig = JSON.parse(fs.readFileSync(targetConfigPath, "utf8")) as ToderoConfig;
       expect(readWorktreeSeedManifest(targetConfigPath)).toMatchObject({
         state: "verified",
         phase: "complete",
@@ -1595,8 +1595,8 @@ describe("worktree helpers", () => {
       const { default: EmbeddedPostgres } = await import("embedded-postgres");
       const targetPg = new EmbeddedPostgres({
         databaseDir: targetConfig.database.embeddedPostgresDataDir,
-        user: "paperclip",
-        password: "paperclip",
+        user: "todero",
+        password: "todero",
         port: targetConfig.database.embeddedPostgresPort,
         persistent: true,
         initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -1607,7 +1607,7 @@ describe("worktree helpers", () => {
       await targetPg.start();
       onTestFinished(() => targetPg.stop());
       const targetDb = createDb(
-        `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+        `postgres://todero:todero@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/todero`,
       );
       const [seededLocalBoard] = await targetDb
         .select({ id: authUsers.id })
@@ -1623,7 +1623,7 @@ describe("worktree helpers", () => {
   itEmbeddedPostgres(
     "seeds a lagging source whose migration application order differs from filename order",
     async () => {
-      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-auth-seed-"));
+      const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-auth-seed-"));
       const originalCwd = process.cwd();
       onTestFinished(() => {
         process.chdir(originalCwd);
@@ -1635,8 +1635,8 @@ describe("worktree helpers", () => {
       const sourceConfigPath = path.join(sourceConfigDir, "config.json");
       const sourceEnvPath = path.join(sourceConfigDir, ".env");
       const sourceKeyPath = path.join(sourceConfigDir, "secrets", "master.key");
-      const worktreeHome = path.join(tempRoot, ".paperclip-worktrees");
-      const sourceDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-auth-source-");
+      const worktreeHome = path.join(tempRoot, ".todero-worktrees");
+      const sourceDb = await startEmbeddedPostgresTestDatabase("todero-worktree-auth-source-");
       onTestFinished(() => sourceDb.cleanup());
 
       await seedValidWorktreeSource(sourceDb.connectionString);
@@ -1724,10 +1724,10 @@ describe("worktree helpers", () => {
       });
 
       const targetConfig = JSON.parse(
-        fs.readFileSync(path.join(worktreeRoot, ".paperclip", "config.json"), "utf8"),
-      ) as PaperclipConfig;
+        fs.readFileSync(path.join(worktreeRoot, ".todero", "config.json"), "utf8"),
+      ) as ToderoConfig;
       const manifestText = fs.readFileSync(
-        path.join(worktreeRoot, ".paperclip", "seed-manifest.json"),
+        path.join(worktreeRoot, ".todero", "seed-manifest.json"),
         "utf8",
       );
       expect(JSON.parse(manifestText)).toMatchObject({
@@ -1742,8 +1742,8 @@ describe("worktree helpers", () => {
       const { default: EmbeddedPostgres } = await import("embedded-postgres");
       const targetPg = new EmbeddedPostgres({
         databaseDir: targetConfig.database.embeddedPostgresDataDir,
-        user: "paperclip",
-        password: "paperclip",
+        user: "todero",
+        password: "todero",
         port: targetConfig.database.embeddedPostgresPort,
         persistent: true,
         initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -1754,17 +1754,17 @@ describe("worktree helpers", () => {
       await targetPg.start();
       onTestFinished(() => targetPg.stop());
       const targetDb = createDb(
-        `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+        `postgres://todero:todero@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/todero`,
       );
       const seededUsers = await targetDb.select().from(authUsers);
-      expect(seededUsers.some((row) => row.email === "existing@paperclip.ing")).toBe(true);
+      expect(seededUsers.some((row) => row.email === "existing@todero.vercel.app")).toBe(true);
     },
   );
 
   it("avoids ports already claimed by sibling worktree instance configs", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-claimed-ports-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-claimed-ports-"));
     const repoRoot = path.join(tempRoot, "repo");
-    const homeDir = path.join(tempRoot, ".paperclip-worktrees");
+    const homeDir = path.join(tempRoot, ".todero-worktrees");
     const siblingInstanceRoot = path.join(homeDir, "instances", "existing-worktree");
     const originalCwd = process.cwd();
 
@@ -1805,7 +1805,7 @@ describe("worktree helpers", () => {
                 baseDir: path.join(siblingInstanceRoot, "storage"),
               },
               s3: {
-                bucket: "paperclip",
+                bucket: "todero",
                 region: "us-east-1",
                 prefix: "",
                 forcePathStyle: false,
@@ -1831,7 +1831,7 @@ describe("worktree helpers", () => {
         home: homeDir,
       });
 
-      const config = JSON.parse(fs.readFileSync(path.join(repoRoot, ".paperclip", "config.json"), "utf8"));
+      const config = JSON.parse(fs.readFileSync(path.join(repoRoot, ".todero", "config.json"), "utf8"));
       expect(config.server.port).toBeGreaterThan(3101);
       expect(config.database.embeddedPostgresPort).not.toBe(54330);
       expect(config.database.embeddedPostgresPort).not.toBe(config.server.port);
@@ -1843,14 +1843,14 @@ describe("worktree helpers", () => {
   });
 
   it("reserves distinct ports for postgres-mode siblings under a custom worktree parent", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-custom-parent-"));
-    const homeDir = path.join(tempRoot, ".paperclip-worktrees");
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-custom-parent-"));
+    const homeDir = path.join(tempRoot, ".todero-worktrees");
     const customParentDir = path.join(tempRoot, "custom", "workspace-lanes");
     const firstWorktreeRoot = path.join(customParentDir, "lane-one");
     const secondWorktreeRoot = path.join(customParentDir, "lane-two");
     const missingSourceConfig = path.join(tempRoot, "missing", "config.json");
-    const firstConfigPath = path.join(firstWorktreeRoot, ".paperclip", "config.json");
-    const secondConfigPath = path.join(secondWorktreeRoot, ".paperclip", "config.json");
+    const firstConfigPath = path.join(firstWorktreeRoot, ".todero", "config.json");
+    const secondConfigPath = path.join(secondWorktreeRoot, ".todero", "config.json");
     const originalCwd = process.cwd();
 
     try {
@@ -1869,7 +1869,7 @@ describe("worktree helpers", () => {
       firstConfig.database = {
         ...firstConfig.database,
         mode: "postgres",
-        connectionString: "postgres://paperclip:paperclip@127.0.0.1:54330/paperclip",
+        connectionString: "postgres://todero:todero@127.0.0.1:54330/todero",
       };
       fs.writeFileSync(firstConfigPath, `${JSON.stringify(firstConfig, null, 2)}\n`, "utf8");
 
@@ -1897,12 +1897,12 @@ describe("worktree helpers", () => {
     }
   });
 
-  it("defaults the seed source config to the current repo-local Paperclip config", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-source-config-"));
+  it("defaults the seed source config to the current repo-local Todero config", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-source-config-"));
     const repoRoot = path.join(tempRoot, "repo");
-    const localConfigPath = path.join(repoRoot, ".paperclip", "config.json");
+    const localConfigPath = path.join(repoRoot, ".todero", "config.json");
     const originalCwd = process.cwd();
-    const originalPaperclipConfig = process.env.PAPERCLIP_CONFIG;
+    const originalToderoConfig = process.env.PAPERCLIP_CONFIG;
 
     try {
       fs.mkdirSync(path.dirname(localConfigPath), { recursive: true });
@@ -1913,21 +1913,21 @@ describe("worktree helpers", () => {
       expect(fs.realpathSync(resolveSourceConfigPath({}))).toBe(fs.realpathSync(localConfigPath));
     } finally {
       process.chdir(originalCwd);
-      if (originalPaperclipConfig === undefined) {
+      if (originalToderoConfig === undefined) {
         delete process.env.PAPERCLIP_CONFIG;
       } else {
-        process.env.PAPERCLIP_CONFIG = originalPaperclipConfig;
+        process.env.PAPERCLIP_CONFIG = originalToderoConfig;
       }
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
   it("preserves the source config path across worktree:make cwd changes", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-source-override-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-source-override-"));
     const sourceConfigPath = path.join(tempRoot, "source", "config.json");
     const targetRoot = path.join(tempRoot, "target");
     const originalCwd = process.cwd();
-    const originalPaperclipConfig = process.env.PAPERCLIP_CONFIG;
+    const originalToderoConfig = process.env.PAPERCLIP_CONFIG;
 
     try {
       fs.mkdirSync(path.dirname(sourceConfigPath), { recursive: true });
@@ -1941,10 +1941,10 @@ describe("worktree helpers", () => {
       );
     } finally {
       process.chdir(originalCwd);
-      if (originalPaperclipConfig === undefined) {
+      if (originalToderoConfig === undefined) {
         delete process.env.PAPERCLIP_CONFIG;
       } else {
-        process.env.PAPERCLIP_CONFIG = originalPaperclipConfig;
+        process.env.PAPERCLIP_CONFIG = originalToderoConfig;
       }
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -1966,10 +1966,10 @@ describe("worktree helpers", () => {
   });
 
   it("derives worktree reseed target paths from the adjacent env file", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-reseed-target-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-reseed-target-"));
     const worktreeRoot = path.join(tempRoot, "repo");
-    const configPath = path.join(worktreeRoot, ".paperclip", "config.json");
-    const envPath = path.join(worktreeRoot, ".paperclip", ".env");
+    const configPath = path.join(worktreeRoot, ".todero", "config.json");
+    const envPath = path.join(worktreeRoot, ".todero", ".env");
 
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -1977,7 +1977,7 @@ describe("worktree helpers", () => {
       fs.writeFileSync(
         envPath,
         [
-          "PAPERCLIP_HOME=/tmp/paperclip-worktrees",
+          "PAPERCLIP_HOME=/tmp/todero-worktrees",
           "PAPERCLIP_INSTANCE_ID=pap-1132-chat",
         ].join("\n"),
         "utf8",
@@ -1989,7 +1989,7 @@ describe("worktree helpers", () => {
         }),
       ).toMatchObject({
         cwd: worktreeRoot,
-        homeDir: "/tmp/paperclip-worktrees",
+        homeDir: "/tmp/todero-worktrees",
         instanceId: "pap-1132-chat",
       });
     } finally {
@@ -1998,20 +1998,20 @@ describe("worktree helpers", () => {
   });
 
   it("rejects reseed targets without worktree env metadata", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-reseed-target-missing-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-reseed-target-missing-"));
     const worktreeRoot = path.join(tempRoot, "repo");
-    const configPath = path.join(worktreeRoot, ".paperclip", "config.json");
+    const configPath = path.join(worktreeRoot, ".todero", "config.json");
 
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
       fs.writeFileSync(configPath, JSON.stringify(buildSourceConfig()), "utf8");
-      fs.writeFileSync(path.join(worktreeRoot, ".paperclip", ".env"), "", "utf8");
+      fs.writeFileSync(path.join(worktreeRoot, ".todero", ".env"), "", "utf8");
 
       expect(() =>
         resolveWorktreeReseedTargetPaths({
           configPath,
           rootPath: worktreeRoot,
-        })).toThrow("does not look like a worktree-local Paperclip instance");
+        })).toThrow("does not look like a worktree-local Todero instance");
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -2023,10 +2023,10 @@ describe("worktree helpers", () => {
   });
 
   itEmbeddedPostgres("reseed preserves the current worktree ports, instance id, and branding", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-reseed-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-reseed-"));
     const repoRoot = path.join(tempRoot, "repo");
     const sourceRoot = path.join(tempRoot, "source");
-    const homeDir = path.join(tempRoot, ".paperclip-worktrees");
+    const homeDir = path.join(tempRoot, ".todero-worktrees");
     const currentInstanceId = "existing-worktree";
     const currentPaths = resolveWorktreeLocalPaths({
       cwd: repoRoot,
@@ -2035,14 +2035,14 @@ describe("worktree helpers", () => {
     });
     const sourcePaths = resolveWorktreeLocalPaths({
       cwd: sourceRoot,
-      homeDir: path.join(tempRoot, ".paperclip-source"),
+      homeDir: path.join(tempRoot, ".todero-source"),
       instanceId: "default",
     });
     const originalCwd = process.cwd();
-    const originalPaperclipConfig = process.env.PAPERCLIP_CONFIG;
+    const originalToderoConfig = process.env.PAPERCLIP_CONFIG;
     const currentDatabaseReservation = await reserveTestPort();
     const currentDatabasePort = currentDatabaseReservation.port;
-    const sourceDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-reseed-source-");
+    const sourceDb = await startEmbeddedPostgresTestDatabase("todero-worktree-reseed-source-");
     onTestFinished(() => sourceDb.cleanup());
 
     try {
@@ -2118,20 +2118,20 @@ describe("worktree helpers", () => {
     } finally {
       await currentDatabaseReservation.release();
       process.chdir(originalCwd);
-      if (originalPaperclipConfig === undefined) {
+      if (originalToderoConfig === undefined) {
         delete process.env.PAPERCLIP_CONFIG;
       } else {
-        process.env.PAPERCLIP_CONFIG = originalPaperclipConfig;
+        process.env.PAPERCLIP_CONFIG = originalToderoConfig;
       }
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
   it("restores the current worktree config and instance data if reseed fails", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-reseed-rollback-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-reseed-rollback-"));
     const repoRoot = path.join(tempRoot, "repo");
     const sourceRoot = path.join(tempRoot, "source");
-    const homeDir = path.join(tempRoot, ".paperclip-worktrees");
+    const homeDir = path.join(tempRoot, ".todero-worktrees");
     const currentInstanceId = "rollback-worktree";
     const currentPaths = resolveWorktreeLocalPaths({
       cwd: repoRoot,
@@ -2140,11 +2140,11 @@ describe("worktree helpers", () => {
     });
     const sourcePaths = resolveWorktreeLocalPaths({
       cwd: sourceRoot,
-      homeDir: path.join(tempRoot, ".paperclip-source"),
+      homeDir: path.join(tempRoot, ".todero-source"),
       instanceId: "default",
     });
     const originalCwd = process.cwd();
-    const originalPaperclipConfig = process.env.PAPERCLIP_CONFIG;
+    const originalToderoConfig = process.env.PAPERCLIP_CONFIG;
 
     try {
       fs.mkdirSync(path.dirname(currentPaths.configPath), { recursive: true });
@@ -2173,7 +2173,7 @@ describe("worktree helpers", () => {
             keyFilePath: sourcePaths.secretsKeyFilePath,
           },
         },
-      } as PaperclipConfig;
+      } as ToderoConfig;
 
       fs.writeFileSync(currentPaths.configPath, JSON.stringify(currentConfig, null, 2), "utf8");
       fs.writeFileSync(currentPaths.envPath, `PAPERCLIP_HOME=${homeDir}\nPAPERCLIP_INSTANCE_ID=${currentInstanceId}\n`, "utf8");
@@ -2199,10 +2199,10 @@ describe("worktree helpers", () => {
       expect(restoredMarker).toBe("keep me");
     } finally {
       process.chdir(originalCwd);
-      if (originalPaperclipConfig === undefined) {
+      if (originalToderoConfig === undefined) {
         delete process.env.PAPERCLIP_CONFIG;
       } else {
-        process.env.PAPERCLIP_CONFIG = originalPaperclipConfig;
+        process.env.PAPERCLIP_CONFIG = originalToderoConfig;
       }
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
@@ -2211,33 +2211,33 @@ describe("worktree helpers", () => {
   it("rebinds same-repo workspace paths onto the current worktree root", () => {
     expect(
       rebindWorkspaceCwd({
-        sourceRepoRoot: "/Users/example/paperclip",
-        targetRepoRoot: "/Users/example/paperclip-pr-432",
-        workspaceCwd: "/Users/example/paperclip",
+        sourceRepoRoot: "/Users/example/todero",
+        targetRepoRoot: "/Users/example/todero-pr-432",
+        workspaceCwd: "/Users/example/todero",
       }),
-    ).toBe("/Users/example/paperclip-pr-432");
+    ).toBe("/Users/example/todero-pr-432");
 
     expect(
       rebindWorkspaceCwd({
-        sourceRepoRoot: "/Users/example/paperclip",
-        targetRepoRoot: "/Users/example/paperclip-pr-432",
-        workspaceCwd: "/Users/example/paperclip/packages/db",
+        sourceRepoRoot: "/Users/example/todero",
+        targetRepoRoot: "/Users/example/todero-pr-432",
+        workspaceCwd: "/Users/example/todero/packages/db",
       }),
-    ).toBe("/Users/example/paperclip-pr-432/packages/db");
+    ).toBe("/Users/example/todero-pr-432/packages/db");
   });
 
   it("does not rebind paths outside the source repo root", () => {
     expect(
       rebindWorkspaceCwd({
-        sourceRepoRoot: "/Users/example/paperclip",
-        targetRepoRoot: "/Users/example/paperclip-pr-432",
+        sourceRepoRoot: "/Users/example/todero",
+        targetRepoRoot: "/Users/example/todero-pr-432",
         workspaceCwd: "/Users/example/other-project",
       }),
     ).toBeNull();
   });
 
   it("copies shared git hooks into a linked worktree git dir", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-hooks-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-hooks-"));
     const repoRoot = path.join(tempRoot, "repo");
     const worktreePath = path.join(tempRoot, "repo-feature");
 
@@ -2285,10 +2285,10 @@ describe("worktree helpers", () => {
   }, 15_000);
 
   it("creates and initializes a worktree from the top-level worktree:make command", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-make-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-make-"));
     const repoRoot = path.join(tempRoot, "repo");
     const fakeHome = path.join(tempRoot, "home");
-    const worktreePath = path.join(fakeHome, "paperclip-make-test");
+    const worktreePath = path.join(fakeHome, "todero-make-test");
     const originalCwd = process.cwd();
     const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(fakeHome);
 
@@ -2304,14 +2304,14 @@ describe("worktree helpers", () => {
 
       process.chdir(repoRoot);
 
-      await worktreeMakeCommand("paperclip-make-test", {
+      await worktreeMakeCommand("todero-make-test", {
         seed: false,
-        home: path.join(tempRoot, ".paperclip-worktrees"),
+        home: path.join(tempRoot, ".todero-worktrees"),
       });
 
       expect(fs.existsSync(path.join(worktreePath, ".git"))).toBe(true);
-      expect(fs.existsSync(path.join(worktreePath, ".paperclip", "config.json"))).toBe(true);
-      expect(fs.existsSync(path.join(worktreePath, ".paperclip", ".env"))).toBe(true);
+      expect(fs.existsSync(path.join(worktreePath, ".todero", "config.json"))).toBe(true);
+      expect(fs.existsSync(path.join(worktreePath, ".todero", ".env"))).toBe(true);
     } finally {
       process.chdir(originalCwd);
       homedirSpy.mockRestore();
@@ -2320,7 +2320,7 @@ describe("worktree helpers", () => {
   }, 20_000);
 
   it("no-ops on the primary checkout unless --branch is provided", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-repair-primary-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-repair-primary-"));
     const repoRoot = path.join(tempRoot, "repo");
     const originalCwd = process.cwd();
 
@@ -2336,20 +2336,20 @@ describe("worktree helpers", () => {
       process.chdir(repoRoot);
       await worktreeRepairCommand({});
 
-      expect(fs.existsSync(path.join(repoRoot, ".paperclip", "config.json"))).toBe(false);
-      expect(fs.existsSync(path.join(repoRoot, ".paperclip", "worktrees"))).toBe(false);
+      expect(fs.existsSync(path.join(repoRoot, ".todero", "config.json"))).toBe(false);
+      expect(fs.existsSync(path.join(repoRoot, ".todero", "worktrees"))).toBe(false);
     } finally {
       process.chdir(originalCwd);
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it("repairs the current linked worktree when Paperclip metadata is missing", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-repair-current-"));
+  it("repairs the current linked worktree when Todero metadata is missing", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-repair-current-"));
     const repoRoot = path.join(tempRoot, "repo");
-    const worktreePath = path.join(repoRoot, ".paperclip", "worktrees", "repair-me");
+    const worktreePath = path.join(repoRoot, ".todero", "worktrees", "repair-me");
     const sourceConfigPath = path.join(tempRoot, "source-config.json");
-    const worktreeHome = path.join(tempRoot, ".paperclip-worktrees");
+    const worktreeHome = path.join(tempRoot, ".todero-worktrees");
     const worktreePaths = resolveWorktreeLocalPaths({
       cwd: worktreePath,
       homeDir: worktreeHome,
@@ -2382,8 +2382,8 @@ describe("worktree helpers", () => {
         noSeed: true,
       });
 
-      expect(fs.existsSync(path.join(worktreePath, ".paperclip", "config.json"))).toBe(true);
-      expect(fs.existsSync(path.join(worktreePath, ".paperclip", ".env"))).toBe(true);
+      expect(fs.existsSync(path.join(worktreePath, ".todero", "config.json"))).toBe(true);
+      expect(fs.existsSync(path.join(worktreePath, ".todero", ".env"))).toBe(true);
       expect(fs.existsSync(path.join(worktreePaths.instanceRoot, "marker.txt"))).toBe(false);
     } finally {
       process.chdir(originalCwd);
@@ -2392,12 +2392,12 @@ describe("worktree helpers", () => {
   }, 20_000);
 
   it("creates and repairs a missing branch worktree when --branch is provided", async () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-repair-branch-"));
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "todero-worktree-repair-branch-"));
     const repoRoot = path.join(tempRoot, "repo");
     const sourceConfigPath = path.join(tempRoot, "source-config.json");
-    const worktreeHome = path.join(tempRoot, ".paperclip-worktrees");
+    const worktreeHome = path.join(tempRoot, ".todero-worktrees");
     const originalCwd = process.cwd();
-    const expectedWorktreePath = path.join(repoRoot, ".paperclip", "worktrees", "feature-repair-me");
+    const expectedWorktreePath = path.join(repoRoot, ".todero", "worktrees", "feature-repair-me");
 
     try {
       fs.mkdirSync(repoRoot, { recursive: true });
@@ -2418,8 +2418,8 @@ describe("worktree helpers", () => {
       });
 
       expect(fs.existsSync(path.join(expectedWorktreePath, ".git"))).toBe(true);
-      expect(fs.existsSync(path.join(expectedWorktreePath, ".paperclip", "config.json"))).toBe(true);
-      expect(fs.existsSync(path.join(expectedWorktreePath, ".paperclip", ".env"))).toBe(true);
+      expect(fs.existsSync(path.join(expectedWorktreePath, ".todero", "config.json"))).toBe(true);
+      expect(fs.existsSync(path.join(expectedWorktreePath, ".todero", ".env"))).toBe(true);
     } finally {
       process.chdir(originalCwd);
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2429,7 +2429,7 @@ describe("worktree helpers", () => {
 
 describeEmbeddedPostgres("pauseSeededScheduledRoutines", () => {
   it("pauses only routines with enabled schedule triggers", async () => {
-    const tempDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-routines-");
+    const tempDb = await startEmbeddedPostgresTestDatabase("todero-worktree-routines-");
     const db = createDb(tempDb.connectionString);
     const companyId = randomUUID();
     const projectId = randomUUID();
@@ -2443,7 +2443,7 @@ describeEmbeddedPostgres("pauseSeededScheduledRoutines", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
         requireBoardApprovalForNewAgents: false,
       });

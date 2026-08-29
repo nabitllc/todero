@@ -1,4 +1,4 @@
-import type { PaperclipJsonValue } from "../catalog/semantic-action-types.js";
+import type { ToderoJsonValue } from "../catalog/semantic-action-types.js";
 
 const SENSITIVE_KEY =
   /(?:authorization|cookie|credential|password|passwd|private.?key|secret|token|api.?key|connection.?string)/i;
@@ -18,14 +18,14 @@ const MAX_STRING_LENGTH = 200_000;
 export const PAPERCLIP_SEMANTIC_REDACTED = "[REDACTED]";
 export const PAPERCLIP_SEMANTIC_TRUNCATED = "[TRUNCATED]";
 
-export interface PaperclipSemanticValueSafety {
+export interface ToderoSemanticValueSafety {
   readonly containsProtectedData: boolean;
   readonly withinBounds: boolean;
 }
 
-export function inspectPaperclipSemanticValue(
+export function inspectToderoSemanticValue(
   value: unknown,
-): PaperclipSemanticValueSafety {
+): ToderoSemanticValueSafety {
   const state = { nodes: 0, protected: false, withinBounds: true };
   inspect(value, "", 0, state, new Set<object>());
   return Object.freeze({
@@ -34,9 +34,9 @@ export function inspectPaperclipSemanticValue(
   });
 }
 
-export function redactPaperclipSemanticValue(
+export function redactToderoSemanticValue(
   value: unknown,
-): PaperclipJsonValue {
+): ToderoJsonValue {
   const state = { nodes: 0 };
   return redact(value, "", 0, state, new Set<object>());
 }
@@ -106,7 +106,7 @@ function redact(
   depth: number,
   state: { nodes: number },
   ancestors: Set<object>,
-): PaperclipJsonValue {
+): ToderoJsonValue {
   state.nodes += 1;
   if (state.nodes > MAX_NODES || depth > MAX_DEPTH) {
     return PAPERCLIP_SEMANTIC_TRUNCATED;
@@ -148,7 +148,7 @@ function redact(
           ] as const,
       );
     ancestors.delete(value);
-    const result: Record<string, PaperclipJsonValue> =
+    const result: Record<string, ToderoJsonValue> =
       Object.fromEntries(entries);
     if (Object.keys(value).length > MAX_OBJECT_KEYS) {
       result.__paperclip_truncated__ = PAPERCLIP_SEMANTIC_TRUNCATED;

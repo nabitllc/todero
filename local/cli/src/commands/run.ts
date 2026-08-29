@@ -7,14 +7,14 @@ import pc from "picocolors";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 import { onboard } from "./onboard.js";
 import { doctor } from "./doctor.js";
-import { loadPaperclipEnvFile } from "../config/env.js";
+import { loadToderoEnvFile } from "../config/env.js";
 import { configExists, resolveConfigPath } from "../config/store.js";
-import type { PaperclipConfig } from "../config/schema.js";
+import type { ToderoConfig } from "../config/schema.js";
 import { readConfig } from "../config/store.js";
 import {
   describeLocalInstancePaths,
-  resolvePaperclipHomeDir,
-  resolvePaperclipInstanceId,
+  resolveToderoHomeDir,
+  resolveToderoInstanceId,
 } from "../config/home.js";
 import { assertForegroundRunAllowed } from "../services/service-manager.js";
 import { removeRuntimeInfoForPid, writeRuntimeInfo } from "../runtime-info.js";
@@ -38,11 +38,11 @@ interface StartedServer {
 }
 
 export async function runCommand(opts: RunOptions): Promise<void> {
-  const instanceId = resolvePaperclipInstanceId(opts.instance);
+  const instanceId = resolveToderoInstanceId(opts.instance);
   process.env.PAPERCLIP_INSTANCE_ID = instanceId;
   await assertForegroundRunAllowed(instanceId, opts.force);
 
-  const homeDir = resolvePaperclipHomeDir();
+  const homeDir = resolveToderoHomeDir();
   fs.mkdirSync(homeDir, { recursive: true });
 
   const paths = describeLocalInstancePaths(instanceId);
@@ -50,10 +50,10 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 
   const configPath = resolveConfigPath(opts.config);
   process.env.PAPERCLIP_CONFIG = configPath;
-  loadPaperclipEnvFile(configPath);
+  loadToderoEnvFile(configPath);
   await printUpdateNotice(configPath);
 
-  p.intro(pc.bgCyan(pc.black(" paperclipai run ")));
+  p.intro(pc.bgCyan(pc.black(" todero run ")));
   p.log.message(pc.dim(`Home: ${paths.homeDir}`));
   p.log.message(pc.dim(`Instance: ${paths.instanceId}`));
   p.log.message(pc.dim(`Config: ${configPath}`));
@@ -61,7 +61,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   if (!configExists(configPath)) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       p.log.error("No config found and terminal is non-interactive.");
-      p.log.message(`Run ${pc.cyan("paperclipai onboard")} once, then retry ${pc.cyan("paperclipai run")}.`);
+      p.log.message(`Run ${pc.cyan("todero onboard")} once, then retry ${pc.cyan("todero run")}.`);
       process.exit(1);
     }
 
@@ -92,7 +92,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
     process.exit(1);
   }
 
-  p.log.step("Starting Paperclip server...");
+  p.log.step("Starting Todero server...");
   const startedServer = await importServerEntry();
   writeRuntimeInfo({
     schemaVersion: 1,
@@ -116,7 +116,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 }
 
 function resolveBootstrapInviteBaseUrl(
-  config: PaperclipConfig,
+  config: ToderoConfig,
   startedServer: StartedServer,
 ): string {
   const explicitBaseUrl =
@@ -165,7 +165,7 @@ function getMissingModuleSpecifier(err: unknown): string | null {
 function maybeEnableUiDevMiddleware(entrypoint: string): void {
   if (process.env.PAPERCLIP_UI_DEV_MIDDLEWARE !== undefined) return;
   const normalized = entrypoint.replaceAll("\\", "/");
-  if (normalized.endsWith("/server/src/index.ts") || normalized.endsWith("@paperclipai/server/src/index.ts")) {
+  if (normalized.endsWith("/server/src/index.ts") || normalized.endsWith("@todero/server/src/index.ts")) {
     process.env.PAPERCLIP_UI_DEV_MIDDLEWARE = "true";
   }
 }
@@ -182,13 +182,13 @@ function ensureDevWorkspaceBuildDeps(projectRoot: string): void {
 
   if (result.error) {
     throw new Error(
-      `Failed to prepare workspace build artifacts before starting the Paperclip dev server.\n${formatError(result.error)}`,
+      `Failed to prepare workspace build artifacts before starting the Todero dev server.\n${formatError(result.error)}`,
     );
   }
 
   if ((result.status ?? 1) !== 0) {
     throw new Error(
-      "Failed to prepare workspace build artifacts before starting the Paperclip dev server.",
+      "Failed to prepare workspace build artifacts before starting the Todero dev server.",
     );
   }
 }
@@ -204,35 +204,35 @@ async function importServerEntry(): Promise<StartedServer> {
     return await startServerFromModule(mod, devEntry);
   }
 
-  // Production mode: import the published @paperclipai/server package
+  // Production mode: import the published @todero/server package
   try {
-    const mod = await import("@paperclipai/server");
-    return await startServerFromModule(mod, "@paperclipai/server");
+    const mod = await import("@todero/server");
+    return await startServerFromModule(mod, "@todero/server");
   } catch (err) {
     const missingSpecifier = getMissingModuleSpecifier(err);
-    const missingServerEntrypoint = !missingSpecifier || missingSpecifier === "@paperclipai/server";
+    const missingServerEntrypoint = !missingSpecifier || missingSpecifier === "@todero/server";
     if (isModuleNotFoundError(err) && missingServerEntrypoint) {
       throw new Error(
-        `Could not locate a Paperclip server entrypoint.\n` +
-          `Tried: ${devEntry}, @paperclipai/server\n` +
+        `Could not locate a Todero server entrypoint.\n` +
+          `Tried: ${devEntry}, @todero/server\n` +
           `${formatError(err)}`,
       );
     }
     throw new Error(
-      `Paperclip server failed to start.\n` +
+      `Todero server failed to start.\n` +
         `${formatError(err)}`,
     );
   }
 }
 
-function shouldGenerateBootstrapInviteAfterStart(config: PaperclipConfig): boolean {
+function shouldGenerateBootstrapInviteAfterStart(config: ToderoConfig): boolean {
   return config.server.deploymentMode === "authenticated" && config.database.mode === "embedded-postgres";
 }
 
 async function startServerFromModule(mod: unknown, label: string): Promise<StartedServer> {
   const startServer = (mod as { startServer?: () => Promise<StartedServer> }).startServer;
   if (typeof startServer !== "function") {
-    throw new Error(`Paperclip server entrypoint did not export startServer(): ${label}`);
+    throw new Error(`Todero server entrypoint did not export startServer(): ${label}`);
   }
   return await startServer();
 }

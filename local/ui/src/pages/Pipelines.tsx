@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { groupWarningsByStage, LOW_TRUST_REVIEW_PRESET } from "@paperclipai/shared";
+import { groupWarningsByStage, LOW_TRUST_REVIEW_PRESET } from "@todero/shared";
 import type {
   Agent,
   AskUserQuestionsAnswer,
@@ -19,7 +19,7 @@ import type {
   RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, Paperclip, Plus, Search, Settings, Trash2, X } from "lucide-react";
 import {
   DndContext,
@@ -1017,7 +1017,7 @@ type PipelineTransitionEdge = { fromStageId: string; toStageId: string; label?: 
 type PipelineBoardGroupBy = "none" | "builtFor";
 
 const PIPELINE_BOARD_UNGROUPED_KEY = "__ungrouped";
-const PIPELINE_BOARD_GROUP_BY_STORAGE_PREFIX = "paperclip.pipelineBoard.groupBy.";
+const PIPELINE_BOARD_GROUP_BY_STORAGE_PREFIX = "todero.pipelineBoard.groupBy.";
 
 function asText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -2918,7 +2918,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
                   Moving this item may skip stage automation, review expectations, and configured transition paths.
-                  Paperclip will still enforce blockers and other hard safety checks.
+                  Todero will still enforce blockers and other hard safety checks.
                 </p>
               </div>
             </div>
@@ -2968,7 +2968,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
           <DialogHeader>
             <DialogTitle>{retryDialogScope === "previous_stage" ? "Retry previous step" : "Re-run this step"}</DialogTitle>
             <DialogDescription>
-              Review the automation preflight before Paperclip dispatches a fresh run.
+              Review the automation preflight before Todero dispatches a fresh run.
             </DialogDescription>
           </DialogHeader>
           {retryPlan.isLoading ? (
@@ -3306,7 +3306,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
                   currentUserId={currentUserId}
                   userLabelMap={userLabelMap}
                   userProfileMap={userProfileMap}
-                  draftKey={`paperclip:pipeline-item-conversation-draft:${activeConversationIssue.id}`}
+                  draftKey={`todero:pipeline-item-conversation-draft:${activeConversationIssue.id}`}
                   autoScrollToLatestOnInitialLoad={false}
                   enableReassign
                   reassignOptions={commentReassignOptions}

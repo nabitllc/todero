@@ -1,4 +1,4 @@
-import { createDb } from "@paperclipai/db";
+import { createDb } from "@todero/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../config.js";
 import { createBetterAuthInstance } from "../auth/better-auth.js";
@@ -41,7 +41,7 @@ describeEmbeddedPostgres("managed runtime loopback auth cookies", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-managed-loopback-auth-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-managed-loopback-auth-");
   }, 20_000);
 
   afterAll(async () => {

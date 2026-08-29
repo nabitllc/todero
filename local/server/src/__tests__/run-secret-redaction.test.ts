@@ -35,7 +35,7 @@ describe("registered run secret redaction", () => {
     const result = redactRegisteredSecretValues({
       contextSnapshot: {
         issueId: "issue-1",
-        paperclipSecretRedactions: [{ material: { ciphertext: "encrypted" } }],
+        toderoSecretRedactions: [{ material: { ciphertext: "encrypted" } }],
       },
       stdoutExcerpt: `stdout ${secret}`,
       events: [{ message: secret, payload: { output: secret } }],

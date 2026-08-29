@@ -1,5 +1,5 @@
-import { PERMISSION_KEYS } from "@paperclipai/shared";
-import type { HumanCompanyMembershipRole } from "@paperclipai/shared";
+import { PERMISSION_KEYS } from "@todero/shared";
+import type { HumanCompanyMembershipRole } from "@todero/shared";
 
 const HUMAN_COMPANY_MEMBERSHIP_ROLES: HumanCompanyMembershipRole[] = [
   "owner",

@@ -3,21 +3,21 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { SandboxManagedRuntimeAsset } from "@paperclipai/adapter-utils/sandbox-managed-runtime";
+import type { SandboxManagedRuntimeAsset } from "@todero/adapter-utils/sandbox-managed-runtime";
 
 // Captured Codex `home` asset descriptor + the sandbox `auth.json` fixture the
 // mocked runtime hands back during teardown. Mutated per-test so a single
 // harness drives every round-trip case through the REAL `execute()` wiring.
 const captured: { assets: SandboxManagedRuntimeAsset[] } = { assets: [] };
 const sandboxAuthFixture: { bytes: Buffer } = { bytes: Buffer.from("{}") };
-const REMOTE_RUNTIME_ROOT = "/remote/workspace/.paperclip-runtime/codex";
+const REMOTE_RUNTIME_ROOT = "/remote/workspace/.todero-runtime/codex";
 
 const {
   runChildProcess,
   ensureCommandResolvable,
   resolveCommandForLogs,
   prepareAdapterExecutionTargetRuntime,
-  startAdapterExecutionTargetPaperclipBridge,
+  startAdapterExecutionTargetToderoBridge,
 } = vi.hoisted(() => ({
   runChildProcess: vi.fn(async () => ({
     exitCode: 0,
@@ -31,12 +31,12 @@ const {
   ensureCommandResolvable: vi.fn(async () => undefined),
   resolveCommandForLogs: vi.fn(async () => "/usr/bin/codex"),
   prepareAdapterExecutionTargetRuntime: vi.fn(),
-  startAdapterExecutionTargetPaperclipBridge: vi.fn(async () => null),
+  startAdapterExecutionTargetToderoBridge: vi.fn(async () => null),
 }));
 
-vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/server-utils")>(
-    "@paperclipai/adapter-utils/server-utils",
+vi.mock("@todero/adapter-utils/server-utils", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/server-utils")>(
+    "@todero/adapter-utils/server-utils",
   );
   return {
     ...actual,
@@ -46,14 +46,14 @@ vi.mock("@paperclipai/adapter-utils/server-utils", async () => {
   };
 });
 
-vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
-  const actual = await vi.importActual<typeof import("@paperclipai/adapter-utils/execution-target")>(
-    "@paperclipai/adapter-utils/execution-target",
+vi.mock("@todero/adapter-utils/execution-target", async () => {
+  const actual = await vi.importActual<typeof import("@todero/adapter-utils/execution-target")>(
+    "@todero/adapter-utils/execution-target",
   );
   return {
     ...actual,
     prepareAdapterExecutionTargetRuntime,
-    startAdapterExecutionTargetPaperclipBridge,
+    startAdapterExecutionTargetToderoBridge,
   };
 });
 
@@ -121,7 +121,7 @@ describe("codex execute — outbound auth copy-back restore contribution", () =>
     sandboxAuth: string;
     hostAuth: string;
   }): Promise<{ finalHostAuth: string; finalHostMode: number }> {
-    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-codex-copyback-e2e-"));
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "todero-codex-copyback-e2e-"));
     cleanupDirs.push(rootDir);
     const workspaceDir = path.join(rootDir, "workspace");
     // The shared host home is what `resolveSharedCodexHomeDir` returns
@@ -155,7 +155,7 @@ describe("codex execute — outbound auth copy-back restore contribution", () =>
         env: { CODEX_HOME: sharedHostHome },
       },
       context: {
-        paperclipWorkspace: {
+        toderoWorkspace: {
           cwd: workspaceDir,
           source: "project_primary",
         },

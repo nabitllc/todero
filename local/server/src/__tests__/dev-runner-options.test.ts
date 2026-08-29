@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 import { applyDevRunnerOptions } from "../../../scripts/dev-runner-options.ts";
 
 describe("applyDevRunnerOptions", () => {
-  it("turns --data-dir into isolated Paperclip paths and consumes the option", () => {
+  it("turns --data-dir into isolated Todero paths and consumes the option", () => {
     const env: NodeJS.ProcessEnv = {};
-    const cwd = path.join(os.tmpdir(), "paperclip-dev-runner-options");
+    const cwd = path.join(os.tmpdir(), "todero-dev-runner-options");
     const previousInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
     process.env.PAPERCLIP_INSTANCE_ID = "ambient-test-instance";
 
@@ -38,15 +38,15 @@ describe("applyDevRunnerOptions", () => {
   });
 
   it.each([
-    ["short option", ["-d", "~/paperclip-dev"]],
-    ["equals form", ["--data-dir=~/paperclip-dev"]],
+    ["short option", ["-d", "~/todero-dev"]],
+    ["equals form", ["--data-dir=~/todero-dev"]],
   ])("supports the %s", (_label, args) => {
     const env: NodeJS.ProcessEnv = {};
 
     const result = applyDevRunnerOptions(args, env, "/unused");
 
     expect(result.forwardedArgs).toEqual([]);
-    expect(result.dataDir).toBe(path.join(os.homedir(), "paperclip-dev"));
+    expect(result.dataDir).toBe(path.join(os.homedir(), "todero-dev"));
   });
 
   it("uses the selected instance for the default config path", () => {

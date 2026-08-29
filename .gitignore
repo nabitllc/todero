@@ -14,8 +14,8 @@ local/node_modules/
 local/**/node_modules/
 local/dist/
 local/data/
-local/.paperclip/
-local/.paperclip-local/
-local/.paperclip-runtime/
+local/.todero/
+local/.todero-local/
+local/.todero-runtime/
 local/.env
 local/.env.local

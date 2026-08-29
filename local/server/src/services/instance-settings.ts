@@ -1,5 +1,5 @@
-import type { Db } from "@paperclipai/db";
-import { companies, instanceSettings } from "@paperclipai/db";
+import type { Db } from "@todero/db";
+import { companies, instanceSettings } from "@todero/db";
 
 /**
  * A `Db` or an open transaction handle — the subset of query builders the
@@ -27,8 +27,8 @@ import {
   type InstanceSettings,
   type PatchInstanceSettings,
   type PatchInstanceExperimentalSettings,
-} from "@paperclipai/shared";
-import { applyOperatorGeneralDefaults, stripOperatorGeneralEchoes } from "@paperclipai/shared";
+} from "@todero/shared";
+import { applyOperatorGeneralDefaults, stripOperatorGeneralEchoes } from "@todero/shared";
 import { eq } from "drizzle-orm";
 import { getManagedInstanceConfig, type ManagedInstanceConfig } from "./managed-config.js";
 import { getOperatorSettingDefaults } from "./setting-defaults.js";

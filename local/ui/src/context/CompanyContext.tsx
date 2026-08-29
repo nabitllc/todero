@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Company } from "@paperclipai/shared";
+import type { Company } from "@todero/shared";
 import { companiesApi } from "../api/companies";
 import {
   fetchCompanyListForCurrentAccount,
@@ -44,7 +44,7 @@ interface CompanyContextValue {
   }) => Promise<Company>;
 }
 
-const STORAGE_KEY = "paperclip.selectedCompanyId";
+const STORAGE_KEY = "todero.selectedCompanyId";
 
 const CompanyContext = createContext<CompanyContextValue | null>(null);
 

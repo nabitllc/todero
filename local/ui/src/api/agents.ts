@@ -27,12 +27,12 @@ import type {
   AgentConfigRevision,
   ClearAgentErrorResponse,
   AgentApiKeyScope,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import type {
   AdapterModelProfileDefinition,
   AdapterModelProfileKey,
-} from "@paperclipai/adapter-utils";
-import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
+} from "@todero/adapter-utils";
+import { isUuidLike, normalizeAgentUrlKey } from "@todero/shared";
 import { ApiError, api } from "./client";
 
 export interface AgentKey {
@@ -323,5 +323,5 @@ export const agentsApi = {
 export interface AvailableSkill {
   name: string;
   description: string;
-  isPaperclipManaged: boolean;
+  isToderoManaged: boolean;
 }

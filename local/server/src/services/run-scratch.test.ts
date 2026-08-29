@@ -44,8 +44,8 @@ describe("heartbeat run scratch cleanup", () => {
     await expect(fs.stat(scratch.dir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("preserves paperclip-named directories without the ownership marker", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-run-unmarked-"));
+  it("preserves todero-named directories without the ownership marker", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-run-unmarked-"));
     cleanupDirs.add(dir);
     const scratch: HeartbeatRunScratch = {
       dir,

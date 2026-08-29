@@ -31,9 +31,9 @@ export type {
   RegisteredPluginEventName,
 } from "./types.js";
 export type {
-  AnyPaperclipTelemetryEvent,
+  AnyToderoTelemetryEvent,
   EventDimensionsMap,
-  PaperclipEventName,
+  ToderoEventName,
 } from "./generated/paperclip-telemetry.js";
 export { EVENT_RETENTION_CLASS, RETENTION_DAYS } from "./retention.js";
 export type { RetentionClass } from "./retention.js";

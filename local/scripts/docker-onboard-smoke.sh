@@ -2,9 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE_NAME="${IMAGE_NAME:-paperclip-onboard-smoke}"
+IMAGE_NAME="${IMAGE_NAME:-todero-onboard-smoke}"
 HOST_PORT="${HOST_PORT:-3131}"
-PAPERCLIPAI_VERSION="${PAPERCLIPAI_VERSION:-latest}"
+TODEROAI_VERSION="${TODEROAI_VERSION:-latest}"
 DATA_DIR="${DATA_DIR:-$REPO_ROOT/data/docker-onboard-smoke}"
 HOST_UID="${HOST_UID:-$(id -u)}"
 SMOKE_DETACH="${SMOKE_DETACH:-false}"
@@ -14,13 +14,13 @@ PAPERCLIP_DEPLOYMENT_EXPOSURE="${PAPERCLIP_DEPLOYMENT_EXPOSURE:-private}"
 PAPERCLIP_PUBLIC_URL="${PAPERCLIP_PUBLIC_URL:-http://localhost:${HOST_PORT}}"
 SMOKE_AUTO_BOOTSTRAP="${SMOKE_AUTO_BOOTSTRAP:-true}"
 # Seconds to wait for /api/health after the container starts. The container
-# cold-installs paperclipai from npm and initializes embedded postgres before
+# cold-installs todero from npm and initializes embedded postgres before
 # it can serve health, so CI callers with no warm caches need far more than
 # the local default.
 SMOKE_READY_TIMEOUT_SECONDS="${SMOKE_READY_TIMEOUT_SECONDS:-90}"
 SMOKE_ADMIN_NAME="${SMOKE_ADMIN_NAME:-Smoke Admin}"
-SMOKE_ADMIN_EMAIL="${SMOKE_ADMIN_EMAIL:-smoke-admin@paperclip.local}"
-SMOKE_ADMIN_PASSWORD="${SMOKE_ADMIN_PASSWORD:-paperclip-smoke-password}"
+SMOKE_ADMIN_EMAIL="${SMOKE_ADMIN_EMAIL:-smoke-admin@todero.local}"
+SMOKE_ADMIN_PASSWORD="${SMOKE_ADMIN_PASSWORD:-todero-smoke-password}"
 # Overridable so a caller can fix the name before this script runs. CI needs
 # that: a name it only learns from this script's output is a name it does not
 # have when this script fails, which is precisely when its diagnostics steps
@@ -130,7 +130,7 @@ write_metadata_file() {
     printf 'SMOKE_LOG_FILE=%q\n' "$SMOKE_LOG_FILE"
     printf 'SMOKE_DATA_DIR=%q\n' "$DATA_DIR"
     printf 'SMOKE_IMAGE_NAME=%q\n' "$IMAGE_NAME"
-    printf 'SMOKE_PAPERCLIPAI_VERSION=%q\n' "$PAPERCLIPAI_VERSION"
+    printf 'SMOKE_TODEROAI_VERSION=%q\n' "$TODEROAI_VERSION"
   } >"$SMOKE_METADATA_FILE"
 }
 
@@ -142,9 +142,9 @@ generate_bootstrap_invite_url() {
       -e PAPERCLIP_DEPLOYMENT_MODE="$PAPERCLIP_DEPLOYMENT_MODE" \
       -e PAPERCLIP_DEPLOYMENT_EXPOSURE="$PAPERCLIP_DEPLOYMENT_EXPOSURE" \
       -e PAPERCLIP_PUBLIC_URL="$PAPERCLIP_PUBLIC_URL" \
-      -e PAPERCLIP_HOME="/paperclip" \
+      -e PAPERCLIP_HOME="/todero" \
       "$CONTAINER_NAME" bash -lc \
-      'timeout 20s npx --yes "paperclipai@${PAPERCLIPAI_VERSION}" auth bootstrap-ceo --data-dir "$PAPERCLIP_HOME" --base-url "$PAPERCLIP_PUBLIC_URL"' \
+      'timeout 20s npx --yes "todero@${TODEROAI_VERSION}" auth bootstrap-ceo --data-dir "$PAPERCLIP_HOME" --base-url "$PAPERCLIP_PUBLIC_URL"' \
       2>&1
   )"; then
     bootstrap_status=0
@@ -291,7 +291,7 @@ auto_bootstrap_authenticated_smoke() {
 
 echo "==> Building onboard smoke image"
 docker build \
-  --build-arg PAPERCLIPAI_VERSION="$PAPERCLIPAI_VERSION" \
+  --build-arg TODEROAI_VERSION="$TODEROAI_VERSION" \
   --build-arg HOST_UID="$HOST_UID" \
   -f "$REPO_ROOT/docker/Dockerfile.onboard-smoke" \
   -t "$IMAGE_NAME" \
@@ -324,7 +324,7 @@ docker run -d \
   -e PAPERCLIP_DEPLOYMENT_MODE="$PAPERCLIP_DEPLOYMENT_MODE" \
   -e PAPERCLIP_DEPLOYMENT_EXPOSURE="$PAPERCLIP_DEPLOYMENT_EXPOSURE" \
   -e PAPERCLIP_PUBLIC_URL="$PAPERCLIP_PUBLIC_URL" \
-  -v "$DATA_DIR:/paperclip" \
+  -v "$DATA_DIR:/todero" \
   "$IMAGE_NAME" >/dev/null
 
 if [[ "$SMOKE_DETACH" != "true" ]]; then
@@ -332,7 +332,7 @@ if [[ "$SMOKE_DETACH" != "true" ]]; then
   LOG_PID=$!
 fi
 
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/paperclip-onboard-smoke.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/todero-onboard-smoke.XXXXXX")"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 
 if ! wait_for_http "$PAPERCLIP_PUBLIC_URL/api/health" "$SMOKE_READY_TIMEOUT_SECONDS" 1; then

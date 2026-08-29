@@ -9,7 +9,7 @@ import {
   getSshEnvLabSupport,
   startSshEnvLabFixture,
   stopSshEnvLabFixture,
-} from "@paperclipai/adapter-utils/ssh";
+} from "@todero/adapter-utils/ssh";
 import {
   agents,
   builtInManagedResources,
@@ -23,7 +23,7 @@ import {
   heartbeatRuns,
   plugins,
   projects,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -46,7 +46,7 @@ import {
   getActiveStepContext,
   runWithRuntimeParent,
   type StartupSpanContext,
-} from "@paperclipai/adapter-utils/acpx-engine/startup-timing";
+} from "@todero/adapter-utils/acpx-engine/startup-timing";
 import { traceparentFromContextToken } from "../instrumentation.ts";
 import { ROOT_CONTEXT, trace } from "@opentelemetry/api";
 
@@ -347,7 +347,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Reusable Sandbox Provider",
         description: "Test provider with reusable lease support",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -490,7 +490,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         host: "ssh.example.test",
         port: 22,
         username: "ssh-user",
-        remoteWorkspacePath: "/srv/paperclip/workspace",
+        remoteWorkspacePath: "/srv/todero/workspace",
         privateKey: null,
         knownHosts: null,
         strictHostKeyChecking: true,
@@ -530,7 +530,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
       return;
     }
 
-    const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "paperclip-environment-runtime-ssh-"));
+    const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "todero-environment-runtime-ssh-"));
     fixtureRoots.push(fixtureRoot);
     const statePath = path.join(fixtureRoot, "state.json");
     const fixture = await startSshEnvLabFixture({ statePath });
@@ -699,18 +699,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -1037,18 +1037,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -1814,18 +1814,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -2181,18 +2181,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-ready-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-ready-sandbox",
+      pluginKey: "todero.fake-plugin-ready-sandbox-provider",
+      packageName: "@todero/plugin-fake-ready-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-ready-sandbox-provider",
+        id: "todero.fake-plugin-ready-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Ready Sandbox Provider",
         description: "Test fake plugin provider readiness",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -2280,18 +2280,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-reload-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-reload-sandbox",
+      pluginKey: "todero.fake-plugin-reload-sandbox-provider",
+      packageName: "@todero/plugin-fake-reload-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-reload-sandbox-provider",
+        id: "todero.fake-plugin-reload-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Reload Sandbox Provider",
         description: "Test fake plugin provider reload readiness",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -2398,18 +2398,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     // provider and the probe reports ready.
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-missing-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-missing-sandbox",
+      pluginKey: "todero.fake-plugin-missing-sandbox-provider",
+      packageName: "@todero/plugin-fake-missing-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-missing-sandbox-provider",
+        id: "todero.fake-plugin-missing-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Missing Sandbox Provider",
         description: "Test fake plugin provider missing readiness",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -2524,7 +2524,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
   // orphan teardown must resolve that recorded ref even when the environment
   // binding is gone, so these tests register a provider with a real secret-ref
   // field, unlike the plain `fake-plugin` tests above.
-  const SECRET_REF_PLUGIN_KEY = "paperclip.secret-plugin-sandbox-provider";
+  const SECRET_REF_PLUGIN_KEY = "todero.secret-plugin-sandbox-provider";
   const SECRET_REF_PROVIDER = "secret-plugin";
 
   async function registerSecretRefPluginProvider(): Promise<string> {
@@ -2532,7 +2532,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: SECRET_REF_PLUGIN_KEY,
-      packageName: "@paperclipai/plugin-secret-sandbox",
+      packageName: "@todero/plugin-secret-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -2542,7 +2542,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Secret Plugin Sandbox Provider",
         description: "Test plugin provider with a secret-ref config field",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -2783,18 +2783,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -2907,18 +2907,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -3046,18 +3046,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -3365,18 +3365,18 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     });
     await db.insert(plugins).values({
       id: pluginId,
-      pluginKey: "paperclip.fake-plugin-sandbox-provider",
-      packageName: "@paperclipai/plugin-fake-sandbox",
+      pluginKey: "todero.fake-plugin-sandbox-provider",
+      packageName: "@todero/plugin-fake-sandbox",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
       manifestJson: {
-        id: "paperclip.fake-plugin-sandbox-provider",
+        id: "todero.fake-plugin-sandbox-provider",
         apiVersion: 1,
         version: "1.0.0",
         displayName: "Fake Plugin Sandbox Provider",
         description: "Test fake plugin provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -3609,7 +3609,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Secure Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -3763,7 +3763,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Secure Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4102,7 +4102,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Long Lease Sandbox Provider",
         description: "Test plugin worker acquire timeout",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4199,7 +4199,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Fake Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4379,7 +4379,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Fake Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4586,7 +4586,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Fake Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4749,7 +4749,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Fake Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -4937,7 +4937,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Secure Sandbox Provider",
         description: "Test schema-driven provider",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -5159,7 +5159,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Non-reusable Sandbox Provider",
         description: "Test provider without reusable lease support",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -5305,7 +5305,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Nested-disabled Sandbox Provider",
         description: "Test provider with a legacy flag and a disabled nested capability",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -5467,7 +5467,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Unverified-worker Sandbox Provider",
         description: "Test provider that declares reusable leases but whose worker lacks the reuse methods",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -5852,7 +5852,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
           version: "1.0.0",
           displayName: "Reusable Sandbox Provider",
           description: "Owner plugin that denies reusable leases",
-          author: "Paperclip",
+          author: "Todero",
           categories: ["automation"],
           capabilities: ["environment.drivers.register"],
           entrypoints: { worker: "dist/worker.js" },
@@ -5888,7 +5888,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
         version: "1.0.0",
         displayName: "Colliding Sandbox Provider",
         description: "Earlier plugin that shares the driver key",
-        author: "Paperclip",
+        author: "Todero",
         categories: ["automation"],
         capabilities: ["environment.drivers.register"],
         entrypoints: { worker: "dist/worker.js" },
@@ -5991,7 +5991,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
           version: "1.0.0",
           displayName: "Reusable Sandbox Provider",
           description: "Owner plugin that no longer declares the provider key",
-          author: "Paperclip",
+          author: "Todero",
           categories: ["automation"],
           capabilities: ["environment.drivers.register"],
           entrypoints: { worker: "dist/worker.js" },
@@ -6051,7 +6051,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
           version: "1.0.0",
           displayName: "Reusable Sandbox Provider",
           description: "Owner plugin that omits the capability declaration",
-          author: "Paperclip",
+          author: "Todero",
           categories: ["automation"],
           capabilities: ["environment.drivers.register"],
           entrypoints: { worker: "dist/worker.js" },
@@ -6164,7 +6164,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "acme.environments",
-      packageName: "@acme/paperclip-environments",
+      packageName: "@acme/todero-environments",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -6290,7 +6290,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "acme.environments",
-      packageName: "@acme/paperclip-environments",
+      packageName: "@acme/todero-environments",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -6396,7 +6396,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "acme.environments",
-      packageName: "@acme/paperclip-environments",
+      packageName: "@acme/todero-environments",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],
@@ -6551,7 +6551,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     await db.insert(plugins).values({
       id: pluginId,
       pluginKey: "acme.environments",
-      packageName: "@acme/paperclip-environments",
+      packageName: "@acme/todero-environments",
       version: "1.0.0",
       apiVersion: 1,
       categories: ["automation"],

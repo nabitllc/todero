@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { normalizeAgentApiKeyScope, type AgentApiKeyScope } from "@paperclipai/shared";
-import { resolvePaperclipInstanceId } from "./home-paths.js";
+import { normalizeAgentApiKeyScope, type AgentApiKeyScope } from "@todero/shared";
+import { resolveToderoInstanceId } from "./home-paths.js";
 
 interface JwtHeader {
   alg: string;
@@ -49,14 +49,14 @@ function jwtConfig() {
     // closed fire during ~2s dark wakes, and the spawned session can then sit
     // frozen for over an hour before it first executes.
     ttlSeconds: parseNumber(process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS, 60 * 60 * 48),
-    issuer: process.env.PAPERCLIP_AGENT_JWT_ISSUER ?? "paperclip",
-    audience: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ?? "paperclip-api",
+    issuer: process.env.PAPERCLIP_AGENT_JWT_ISSUER ?? "todero",
+    audience: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ?? "todero-api",
     // The control-plane instance this process belongs to. The live plane runs as
     // "default"; every worktree/fork instance gets a distinct id (its worktree
     // name) even though it deliberately shares PAPERCLIP_AGENT_JWT_SECRET with
     // the source instance. Folding this into the signing-key derivation is what
     // prevents a fork-minted token from authenticating against the live plane.
-    instanceId: resolvePaperclipInstanceId(),
+    instanceId: resolveToderoInstanceId(),
     disableLegacyFallback: parseBooleanEnv(process.env.PAPERCLIP_AGENT_JWT_DISABLE_LEGACY_FALLBACK),
   };
 }

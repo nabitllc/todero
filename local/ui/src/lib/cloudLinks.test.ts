@@ -3,11 +3,11 @@ import { cloudAppUrl, cloudStackCreateUrl, cloudStackEnterUrl } from "./cloudLin
 
 describe("cloudLinks", () => {
   it("resolves stack links against the cloud origin", () => {
-    expect(cloudStackEnterUrl("https://app.paperclip.app", "acme")).toBe(
-      "https://app.paperclip.app/stacks/acme/enter",
+    expect(cloudStackEnterUrl("https://app.todero.app", "acme")).toBe(
+      "https://app.todero.app/stacks/acme/enter",
     );
-    expect(cloudStackCreateUrl("https://app.paperclip.app")).toBe(
-      "https://app.paperclip.app/stacks/new",
+    expect(cloudStackCreateUrl("https://app.todero.app")).toBe(
+      "https://app.todero.app/stacks/new",
     );
   });
 
@@ -18,15 +18,15 @@ describe("cloudLinks", () => {
   });
 
   it("escapes slugs so a crafted portfolio entry cannot climb the path", () => {
-    expect(cloudStackEnterUrl("https://app.paperclip.app", "../../evil")).toBe(
-      "https://app.paperclip.app/stacks/..%2F..%2Fevil/enter",
+    expect(cloudStackEnterUrl("https://app.todero.app", "../../evil")).toBe(
+      "https://app.todero.app/stacks/..%2F..%2Fevil/enter",
     );
   });
 
   it("returns null without a usable base or slug", () => {
     expect(cloudStackEnterUrl(null, "acme")).toBeNull();
     expect(cloudStackEnterUrl("   ", "acme")).toBeNull();
-    expect(cloudStackEnterUrl("https://app.paperclip.app", "  ")).toBeNull();
+    expect(cloudStackEnterUrl("https://app.todero.app", "  ")).toBeNull();
     expect(cloudStackEnterUrl("not a url", "acme")).toBeNull();
     expect(cloudStackCreateUrl(undefined)).toBeNull();
   });

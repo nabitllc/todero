@@ -11,7 +11,7 @@ import {
   heartbeatRuns,
   issueComments,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import { runningProcesses } from "../adapters/index.js";
 import { heartbeatService } from "../services/heartbeat.ts";
 import { SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY } from "../services/recovery/index.ts";
@@ -165,7 +165,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    const started = await startEmbeddedPostgresTestDatabase("paperclip-heartbeat-comment-wake-");
+    const started = await startEmbeddedPostgresTestDatabase("todero-heartbeat-comment-wake-");
     db = createDb(started.connectionString);
     tempDb = started;
   }, 120_000);
@@ -189,7 +189,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "responsible-user",
@@ -306,7 +306,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
       defaultResponsibleUserId: "responsible-user",
@@ -425,7 +425,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -600,7 +600,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
         return statusesByRunId.get(firstRun!.id) === "succeeded" && statusesByRunId.get(secondRunId) === "succeeded";
       }, 90_000);
 
-      expect(secondPayload.paperclip).toBeUndefined();
+      expect(secondPayload.todero).toBeUndefined();
       const secondWake = parseWakePayloadFromMessage(secondPayload.message);
       expect(secondWake).toMatchObject({
         commentIds: [comment2.id, comment3.id],
@@ -626,7 +626,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -741,7 +741,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
 
       await waitFor(() => gateway.getAgentPayloads().length === 2);
       const promotedPayload = gateway.getAgentPayloads()[1] ?? {};
-      expect(promotedPayload.paperclip).toBeUndefined();
+      expect(promotedPayload.todero).toBeUndefined();
       const promotedWake = parseWakePayloadFromMessage(promotedPayload.message);
       expect(promotedWake).toMatchObject({
         commentIds: [queuedComment.id],
@@ -774,7 +774,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -936,7 +936,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
       });
 
       const secondPayload = gateway.getAgentPayloads()[1] ?? {};
-      expect(secondPayload.paperclip).toBeUndefined();
+      expect(secondPayload.todero).toBeUndefined();
       const secondWake = parseWakePayloadFromMessage(secondPayload.message);
       expect(secondWake).toMatchObject({
         reason: "issue_commented",
@@ -969,7 +969,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -1138,7 +1138,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
       expect(issueAfterPromotion?.completedAt).not.toBeNull();
 
       const secondPayload = gateway.getAgentPayloads()[1] ?? {};
-      expect(secondPayload.paperclip).toBeUndefined();
+      expect(secondPayload.todero).toBeUndefined();
       const secondWake = parseWakePayloadFromMessage(secondPayload.message);
       expect(secondWake).toMatchObject({
         reason: "issue_comment_mentioned",
@@ -1170,7 +1170,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -1338,7 +1338,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -1519,7 +1519,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
       });
 
       const secondPayload = gateway.getAgentPayloads()[1] ?? {};
-      expect(secondPayload.paperclip).toBeUndefined();
+      expect(secondPayload.todero).toBeUndefined();
       const secondWake = parseWakePayloadFromMessage(secondPayload.message);
       expect(secondWake).toMatchObject({
         reason: "issue_commented",
@@ -1551,7 +1551,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -1607,8 +1607,8 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
       expect(firstRun).not.toBeNull();
       await waitFor(() => gateway.getAgentPayloads().length === 1);
       const firstPayload = gateway.getAgentPayloads()[0] ?? {};
-      expect(firstPayload.paperclip).toBeUndefined();
-      expect(String(firstPayload.message ?? "")).toContain("## Paperclip Wake Payload");
+      expect(firstPayload.todero).toBeUndefined();
+      expect(String(firstPayload.message ?? "")).toContain("## Todero Wake Payload");
       expect(String(firstPayload.message ?? "")).toContain("Do not switch to another issue until you have handled this wake.");
       expect(String(firstPayload.message ?? "")).toContain("- checkout: already claimed by the harness for this run");
       expect(String(firstPayload.message ?? "")).toContain(
@@ -1703,7 +1703,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -1906,7 +1906,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",
@@ -2055,7 +2055,7 @@ describeEmbeddedPostgres("heartbeat comment wake batching", () => {
     try {
       await db.insert(companies).values({
         id: companyId,
-        name: "Paperclip",
+        name: "Todero",
         issuePrefix,
         requireBoardApprovalForNewAgents: false,
         defaultResponsibleUserId: "responsible-user",

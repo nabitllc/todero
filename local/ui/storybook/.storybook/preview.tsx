@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   CONNECTABLE_APP_DEFINITIONS,
   type WorkTimelineResult,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { MemoryRouter } from "@/lib/router";
 import { ONBOARDING_STORAGE_KEY } from "@/components/OnboardingWizard";
 import { BreadcrumbProvider } from "@/context/BreadcrumbContext";
@@ -33,7 +33,7 @@ import {
   storybookSecretProviders,
   storybookSecrets,
   storybookSidebarBadges,
-} from "../fixtures/paperclipData";
+} from "../fixtures/toderoData";
 import timelineSample from "../fixtures/workTimeline.human.sample.json";
 import "@mdxeditor/editor/style.css";
 import "./tailwind-entry.css";
@@ -114,7 +114,7 @@ function installStorybookApiFixtures() {
             status: "active",
             user: {
               id: "user-board",
-              email: "board@paperclip.local",
+              email: "board@todero.local",
               name: "Board Operator",
               image: null,
             },
@@ -124,7 +124,7 @@ function installStorybookApiFixtures() {
             status: "active",
             user: {
               id: "user-product",
-              email: "product@paperclip.local",
+              email: "product@todero.local",
               name: "Product Lead",
               image: null,
             },
@@ -531,7 +531,7 @@ const preview: Preview = {
   ],
   globalTypes: {
     theme: {
-      description: "Paperclip color mode",
+      description: "Todero color mode",
       defaultValue: "dark",
       toolbar: {
         title: "Theme",

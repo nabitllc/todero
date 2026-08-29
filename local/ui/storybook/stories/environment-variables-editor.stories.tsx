@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { CompanySecret, EnvBinding, SecretStatus } from "@paperclipai/shared";
+import type { CompanySecret, EnvBinding, SecretStatus } from "@todero/shared";
 import { EnvironmentVariablesEditor } from "@/components/environment-variables-editor";
 import { ToastProvider } from "@/context/ToastContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +41,7 @@ const SECRETS: CompanySecret[] = [
   secret("s-github", "GITHUB_TOKEN", { latestVersion: 3 }),
   secret("s-db", "DB_CONNECTION", { latestVersion: 3 }),
   secret("s-openai", "OPENAI_API_KEY", { latestVersion: 2 }),
-  secret("s-resend-long", "/paperclip-cloud/prod/provider/resend/api-key-with-a-very-long-name", { latestVersion: 4 }),
+  secret("s-resend-long", "/todero-cloud/prod/provider/resend/api-key-with-a-very-long-name", { latestVersion: 4 }),
   secret("s-legacy", "LEGACY_DEPLOY_KEY", { status: "disabled", latestVersion: 2 }),
   secret("s-archived", "OLD_STRIPE_KEY", { status: "archived", latestVersion: 4 }),
 ];

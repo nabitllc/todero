@@ -5,7 +5,7 @@ import type {
   CompanySkillDetail,
   CompanySkillUsageAgent,
   CompanySkillVersion,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   AgentsUsingSkillBadge,
   AgentsUsingSkillDialog,
@@ -63,7 +63,7 @@ function makeSkill(overrides: Partial<CompanySkillDetail> = {}): CompanySkillDet
   return {
     id: SKILL_ID,
     companyId: COMPANY_ID,
-    key: "paperclip/code-review",
+    key: "todero/code-review",
     slug: "code-review",
     name: "Code Review",
     description: "Structured pull-request review with actionable findings.",

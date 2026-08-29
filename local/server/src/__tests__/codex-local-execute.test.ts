@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
-import { execute } from "@paperclipai/adapter-codex-local/server";
+import { runChildProcess } from "@todero/adapter-utils/server-utils";
+import { execute } from "@todero/adapter-codex-local/server";
 
 async function writeFakeCodexCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
@@ -17,11 +17,11 @@ const payload = {
   codexConfigContents: process.env.CODEX_HOME && fs.existsSync(process.env.CODEX_HOME + "/config.toml")
     ? fs.readFileSync(process.env.CODEX_HOME + "/config.toml", "utf8")
     : null,
-  paperclipWakePayloadJson: process.env.PAPERCLIP_WAKE_PAYLOAD_JSON || null,
-  paperclipApiUrl: process.env.PAPERCLIP_API_URL || null,
-  paperclipApiKey: process.env.PAPERCLIP_API_KEY || null,
-  paperclipApiBridgeMode: process.env.PAPERCLIP_API_BRIDGE_MODE || null,
-  paperclipEnvKeys: Object.keys(process.env)
+  toderoWakePayloadJson: process.env.PAPERCLIP_WAKE_PAYLOAD_JSON || null,
+  toderoApiUrl: process.env.PAPERCLIP_API_URL || null,
+  toderoApiKey: process.env.PAPERCLIP_API_KEY || null,
+  toderoApiBridgeMode: process.env.PAPERCLIP_API_BRIDGE_MODE || null,
+  toderoEnvKeys: Object.keys(process.env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort(),
 };
@@ -50,11 +50,11 @@ type CapturePayload = {
   prompt: string;
   codexHome: string | null;
   codexConfigContents?: string | null;
-  paperclipWakePayloadJson: string | null;
-  paperclipApiUrl?: string | null;
-  paperclipApiKey?: string | null;
-  paperclipApiBridgeMode?: string | null;
-  paperclipEnvKeys: string[];
+  toderoWakePayloadJson: string | null;
+  toderoApiUrl?: string | null;
+  toderoApiKey?: string | null;
+  toderoApiBridgeMode?: string | null;
+  toderoEnvKeys: string[];
 };
 
 type LogEntry = {
@@ -117,15 +117,15 @@ function createLocalSandboxRunner() {
 }
 
 describe("codex execute", () => {
-  it("uses a Paperclip-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-default-"));
+  it("uses a Todero-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-default-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const managedCodexHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -139,12 +139,12 @@ describe("codex execute", () => {
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousPaperclipInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
+    const previousToderoInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    const previousToderoInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    process.env.PAPERCLIP_HOME = toderoHome;
     delete process.env.PAPERCLIP_INSTANCE_ID;
     delete process.env.PAPERCLIP_IN_WORKTREE;
     process.env.CODEX_HOME = sharedCodexHome;
@@ -173,7 +173,7 @@ describe("codex execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -201,18 +201,18 @@ describe("codex execute", () => {
       expect(logs).toContainEqual(
         expect.objectContaining({
           stream: "stdout",
-          chunk: expect.stringContaining("Using Paperclip-managed Codex home"),
+          chunk: expect.stringContaining("Using Todero-managed Codex home"),
         }),
       );
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousPaperclipInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
-      else process.env.PAPERCLIP_IN_WORKTREE = previousPaperclipInWorktree;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
+      if (previousToderoInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+      else process.env.PAPERCLIP_INSTANCE_ID = previousToderoInstanceId;
+      if (previousToderoInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
+      else process.env.PAPERCLIP_IN_WORKTREE = previousToderoInWorktree;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });
@@ -220,14 +220,14 @@ describe("codex execute", () => {
   });
 
   it("writes managed MCP gateways into Codex config and warns on overlapping direct entries without logging tokens", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-managed-mcp-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-managed-mcp-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const managedCodexHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "default",
       "companies",
@@ -251,14 +251,14 @@ describe("codex execute", () => {
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipApiUrl = process.env.PAPERCLIP_API_URL;
-    const previousPaperclipRuntimeApiUrl = process.env.PAPERCLIP_RUNTIME_API_URL;
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
+    const previousToderoApiUrl = process.env.PAPERCLIP_API_URL;
+    const previousToderoRuntimeApiUrl = process.env.PAPERCLIP_RUNTIME_API_URL;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_API_URL = "http://paperclip.local:3100";
-    process.env.PAPERCLIP_RUNTIME_API_URL = "http://paperclip.local:3100";
+    process.env.PAPERCLIP_HOME = toderoHome;
+    process.env.PAPERCLIP_API_URL = "http://todero.local:3100";
+    process.env.PAPERCLIP_RUNTIME_API_URL = "http://todero.local:3100";
     process.env.CODEX_HOME = sharedCodexHome;
 
     try {
@@ -285,13 +285,13 @@ describe("codex execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         runtimeMcp: {
           getServers: () => [
             {
               name: "github",
-              url: "http://paperclip.local:3100/api/tool-gateway/gateways/gateway-1/mcp",
+              url: "http://todero.local:3100/api/tool-gateway/gateways/gateway-1/mcp",
               token: "pcgw_secret-managed-token",
               connectionId: "connection-github",
             },
@@ -309,14 +309,14 @@ describe("codex execute", () => {
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       const configText = capture.codexConfigContents ?? "";
       expect(configText).toContain("[mcp_servers.github]");
-      expect(configText).toContain("[mcp_servers.\"paperclip-github\"]");
-      expect(configText).toContain('url = "http://paperclip.local:3100/api/tool-gateway/gateways/gateway-1/mcp"');
+      expect(configText).toContain("[mcp_servers.\"todero-github\"]");
+      expect(configText).toContain('url = "http://todero.local:3100/api/tool-gateway/gateways/gateway-1/mcp"');
       expect(configText).toContain('Authorization = "Bearer pcgw_secret-managed-token"');
       expect(logs).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             stream: "stderr",
-            chunk: expect.stringContaining("Paperclip cannot enforce policies for that direct entry"),
+            chunk: expect.stringContaining("Todero cannot enforce policies for that direct entry"),
           }),
         ]),
       );
@@ -324,12 +324,12 @@ describe("codex execute", () => {
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipApiUrl === undefined) delete process.env.PAPERCLIP_API_URL;
-      else process.env.PAPERCLIP_API_URL = previousPaperclipApiUrl;
-      if (previousPaperclipRuntimeApiUrl === undefined) delete process.env.PAPERCLIP_RUNTIME_API_URL;
-      else process.env.PAPERCLIP_RUNTIME_API_URL = previousPaperclipRuntimeApiUrl;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
+      if (previousToderoApiUrl === undefined) delete process.env.PAPERCLIP_API_URL;
+      else process.env.PAPERCLIP_API_URL = previousToderoApiUrl;
+      if (previousToderoRuntimeApiUrl === undefined) delete process.env.PAPERCLIP_RUNTIME_API_URL;
+      else process.env.PAPERCLIP_RUNTIME_API_URL = previousToderoRuntimeApiUrl;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });
@@ -337,7 +337,7 @@ describe("codex execute", () => {
   });
 
   it("emits a command note that Codex auto-applies repo-scoped AGENTS.md files", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-notes-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-notes-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
@@ -372,7 +372,7 @@ describe("codex execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -385,7 +385,7 @@ describe("codex execute", () => {
       expect(result.exitCode).toBe(0);
       expect(result.errorMessage).toBeNull();
       expect(commandNotes).toContain(
-        "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; Paperclip does not currently suppress that discovery.",
+        "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; Todero does not currently suppress that discovery.",
       );
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
@@ -395,7 +395,7 @@ describe("codex execute", () => {
   });
 
   it("logs HOME and the resolved executable path in invocation metadata", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-meta-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-meta-"));
     const workspace = path.join(root, "workspace");
     const binDir = path.join(root, "bin");
     const commandPath = path.join(binDir, "codex");
@@ -435,7 +435,7 @@ describe("codex execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -461,7 +461,7 @@ describe("codex execute", () => {
   });
 
   it("injects bridge env into sandbox-managed remote runs", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-sandbox-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-sandbox-"));
     const localWorkspace = path.join(root, "workspace");
     const remoteWorkspace = path.join(root, "sandbox");
     const binDir = path.join(root, "bin");
@@ -502,7 +502,7 @@ describe("codex execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         executionTarget: {
@@ -523,10 +523,10 @@ describe("codex execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.codexHome).toBe(path.join(remoteWorkspace, ".paperclip-runtime", "codex", "home"));
-      expect(capture.paperclipApiUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
-      expect(capture.paperclipApiKey).not.toBe("run-jwt-token");
-      expect(capture.paperclipApiBridgeMode).toBe("queue_v1");
+      expect(capture.codexHome).toBe(path.join(remoteWorkspace, ".todero-runtime", "codex", "home"));
+      expect(capture.toderoApiUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+      expect(capture.toderoApiKey).not.toBe("run-jwt-token");
+      expect(capture.toderoApiBridgeMode).toBe("queue_v1");
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
@@ -536,8 +536,8 @@ describe("codex execute", () => {
     }
   });
 
-  it("injects structured Paperclip wake payloads into env and prompt", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-wake-"));
+  it("injects structured Todero wake payloads into env and prompt", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
@@ -571,14 +571,14 @@ describe("codex execute", () => {
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {
           issueId: "issue-1",
           taskId: "issue-1",
           wakeReason: "issue_commented",
           wakeCommentId: "comment-2",
-          paperclipWake: {
+          toderoWake: {
             reason: "issue_commented",
             issue: {
               id: "issue-1",
@@ -624,14 +624,14 @@ describe("codex execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.paperclipEnvKeys).toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
-      expect(capture.paperclipWakePayloadJson).not.toBeNull();
-      expect(JSON.parse(capture.paperclipWakePayloadJson ?? "{}")).toMatchObject({
+      expect(capture.toderoEnvKeys).toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
+      expect(capture.toderoWakePayloadJson).not.toBeNull();
+      expect(JSON.parse(capture.toderoWakePayloadJson ?? "{}")).toMatchObject({
         reason: "issue_commented",
         latestCommentId: "comment-2",
         commentIds: ["comment-1", "comment-2"],
       });
-      expect(capture.prompt).toContain("## Paperclip Wake Payload");
+      expect(capture.prompt).toContain("## Todero Wake Payload");
       expect(capture.prompt).toContain("Treat this wake payload as the highest-priority change for the current heartbeat.");
       expect(capture.prompt).toContain("Do not switch to another issue until you have handled this wake.");
       expect(capture.prompt).toContain(
@@ -647,7 +647,7 @@ describe("codex execute", () => {
   });
 
   it("classifies remote-compaction high-demand failures as retryable transient upstream errors", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-transient-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-transient-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     await fs.mkdir(workspace, { recursive: true });
@@ -680,7 +680,7 @@ describe("codex execute", () => {
           engine: "cli",
           command: commandPath,
           cwd: workspace,
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -699,7 +699,7 @@ describe("codex execute", () => {
   });
 
   it("classifies mid-turn harness crashes as retryable transient upstream errors", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-harness-crash-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-harness-crash-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     await fs.mkdir(workspace, { recursive: true });
@@ -739,7 +739,7 @@ process.exit(1);
           engine: "cli",
           command: commandPath,
           cwd: workspace,
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -761,7 +761,7 @@ process.exit(1);
   });
 
   it("persists retry-not-before metadata for codex provider quota failures", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-usage-limit-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-usage-limit-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     await fs.mkdir(workspace, { recursive: true });
@@ -800,7 +800,7 @@ process.exit(1);
           command: commandPath,
           cwd: workspace,
           model: "gpt-5.3-codex-spark",
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -826,7 +826,7 @@ process.exit(1);
   });
 
   it("classifies Codex refresh-token auth failures without credential telemetry", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-refresh-token-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-refresh-token-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     await fs.mkdir(workspace, { recursive: true });
@@ -856,7 +856,7 @@ process.exit(1);
           engine: "cli",
           command: commandPath,
           cwd: workspace,
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -876,7 +876,7 @@ process.exit(1);
   });
 
   it("uses safer invocation settings and a fresh-session handoff for codex transient fallback retries", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-fallback-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-fallback-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
@@ -916,11 +916,11 @@ process.exit(1);
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {
           codexTransientFallbackMode: "fresh_session_safer_invocation",
-          paperclipContinuationSummary: {
+          toderoContinuationSummary: {
             key: "continuation-summary",
             title: "Continuation Summary",
             body: "Issue continuation summary for the next fresh session.",
@@ -942,7 +942,7 @@ process.exit(1);
       expect(capture.argv).not.toContain("resume");
       expect(capture.argv).not.toContain('service_tier="fast"');
       expect(capture.argv).not.toContain("features.fast_mode=true");
-      expect(capture.prompt).toContain("Paperclip session handoff:");
+      expect(capture.prompt).toContain("Todero session handoff:");
       expect(capture.prompt).toContain("Issue continuation summary for the next fresh session.");
       expect(commandNotes).toContain("Codex transient fallback requested safer invocation settings for this retry.");
       expect(commandNotes).toContain("Codex transient fallback forced a fresh session with a continuation handoff.");
@@ -954,7 +954,7 @@ process.exit(1);
   });
 
   it("renders execution-stage wake instructions for reviewer and executor roles", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-stage-wake-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-stage-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
@@ -988,13 +988,13 @@ process.exit(1);
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {
           issueId: "issue-1",
           taskId: "issue-1",
           wakeReason: "execution_review_requested",
-          paperclipWake: {
+          toderoWake: {
             reason: "execution_review_requested",
             issue: {
               id: "issue-1",
@@ -1058,13 +1058,13 @@ process.exit(1);
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: executorCapturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {
           issueId: "issue-1",
           taskId: "issue-1",
           wakeReason: "execution_changes_requested",
-          paperclipWake: {
+          toderoWake: {
             reason: "execution_changes_requested",
             issue: {
               id: "issue-1",
@@ -1111,7 +1111,7 @@ process.exit(1);
   });
 
   it("renders an issue-scoped wake prompt even when the wake has no comments yet", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-issue-wake-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-issue-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
@@ -1145,13 +1145,13 @@ process.exit(1);
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {
           issueId: "issue-1",
           taskId: "issue-1",
           wakeReason: "issue_assigned",
-          paperclipWake: {
+          toderoWake: {
             reason: "issue_assigned",
             issue: {
               id: "issue-1",
@@ -1181,9 +1181,9 @@ process.exit(1);
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.paperclipEnvKeys).toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
-      expect(capture.paperclipWakePayloadJson).not.toBeNull();
-      expect(JSON.parse(capture.paperclipWakePayloadJson ?? "{}")).toMatchObject({
+      expect(capture.toderoEnvKeys).toContain("PAPERCLIP_WAKE_PAYLOAD_JSON");
+      expect(capture.toderoWakePayloadJson).not.toBeNull();
+      expect(JSON.parse(capture.toderoWakePayloadJson ?? "{}")).toMatchObject({
         reason: "issue_assigned",
         issue: {
           identifier: "PAP-1201",
@@ -1194,7 +1194,7 @@ process.exit(1);
         checkedOutByHarness: true,
         commentIds: [],
       });
-      expect(capture.prompt).toContain("## Paperclip Wake Payload");
+      expect(capture.prompt).toContain("## Todero Wake Payload");
       expect(capture.prompt).toContain("Do not switch to another issue until you have handled this wake.");
       expect(capture.prompt).toContain("- issue: PAP-1201 Fix gallery opening for inline images");
       expect(capture.prompt).not.toContain("- pending comments:");
@@ -1211,7 +1211,7 @@ process.exit(1);
   });
 
   it("uses a compact wake delta instead of the full heartbeat prompt when resuming a session", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-resume-wake-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-resume-wake-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
@@ -1254,14 +1254,14 @@ process.exit(1);
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {
           issueId: "issue-1",
           taskId: "issue-1",
           wakeReason: "issue_commented",
           wakeCommentId: "comment-2",
-          paperclipWake: {
+          toderoWake: {
             reason: "issue_commented",
             issue: {
               id: "issue-1",
@@ -1305,12 +1305,12 @@ process.exit(1);
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.argv).toEqual(expect.arrayContaining(["resume", "codex-session-1", "-"]));
-      expect(capture.prompt).toContain("## Paperclip Resume Delta");
+      expect(capture.prompt).toContain("## Todero Resume Delta");
       expect(capture.prompt).toContain("Do not switch to another issue until you have handled this wake.");
       expect(capture.prompt).toContain("Second comment");
-      expect(capture.prompt).not.toContain("Follow the paperclip heartbeat.");
+      expect(capture.prompt).not.toContain("Follow the todero heartbeat.");
       expect(capture.prompt).not.toContain("You are managed instructions.");
-      expect(invocationPrompt).toContain("## Paperclip Resume Delta");
+      expect(invocationPrompt).toContain("## Todero Resume Delta");
       expect(invocationNotes).toContain(
         "Skipped stdin instruction reinjection because an existing Codex session is being resumed with a wake delta.",
       );
@@ -1323,21 +1323,21 @@ process.exit(1);
     }
   });
   it("uses a worktree-isolated CODEX_HOME and mounts the operational skill by default", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
     const sharedCodexHome = path.join(root, "shared-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     const isolatedCodexHome = path.join(
-      paperclipHome,
+      toderoHome,
       "instances",
       "worktree-1",
       "companies",
       "company-1",
       "codex-home",
     );
-    const homeSkill = path.join(isolatedCodexHome, "skills", "paperclip");
+    const homeSkill = path.join(isolatedCodexHome, "skills", "todero");
     await fs.mkdir(workspace, { recursive: true });
     await fs.mkdir(sharedCodexHome, { recursive: true });
     await fs.writeFile(path.join(sharedCodexHome, "auth.json"), `${fakeCodexAuthJson}\n`, "utf8");
@@ -1345,12 +1345,12 @@ process.exit(1);
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousPaperclipInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
+    const previousToderoInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    const previousToderoInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    process.env.PAPERCLIP_HOME = toderoHome;
     process.env.PAPERCLIP_INSTANCE_ID = "worktree-1";
     process.env.PAPERCLIP_IN_WORKTREE = "true";
     process.env.CODEX_HOME = sharedCodexHome;
@@ -1379,7 +1379,7 @@ process.exit(1);
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
+          promptTemplate: "Follow the todero heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -1394,8 +1394,8 @@ process.exit(1);
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.codexHome).toBe(isolatedCodexHome);
       expect(capture.argv).toEqual(expect.arrayContaining(["exec", "--json", "-"]));
-      expect(capture.prompt).toContain("Follow the paperclip heartbeat.");
-      expect(capture.paperclipEnvKeys).toEqual(
+      expect(capture.prompt).toContain("Follow the todero heartbeat.");
+      expect(capture.toderoEnvKeys).toEqual(
         expect.arrayContaining([
           "PAPERCLIP_AGENT_ID",
           "PAPERCLIP_API_KEY",
@@ -1422,18 +1422,18 @@ process.exit(1);
       expect(logs).toContainEqual(
         expect.objectContaining({
           stream: "stdout",
-          chunk: expect.stringContaining('Injected Codex skill "paperclip"'),
+          chunk: expect.stringContaining('Injected Codex skill "todero"'),
         }),
       );
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousPaperclipInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
-      else process.env.PAPERCLIP_IN_WORKTREE = previousPaperclipInWorktree;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
+      if (previousToderoInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+      else process.env.PAPERCLIP_INSTANCE_ID = previousToderoInstanceId;
+      if (previousToderoInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
+      else process.env.PAPERCLIP_IN_WORKTREE = previousToderoInWorktree;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });
@@ -1441,25 +1441,25 @@ process.exit(1);
   });
 
   it("respects an explicit CODEX_HOME config override even in worktree mode", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-explicit-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-codex-execute-explicit-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
     const capturePath = path.join(root, "capture.json");
     const sharedCodexHome = path.join(root, "shared-codex-home");
     const explicitCodexHome = path.join(root, "explicit-codex-home");
-    const paperclipHome = path.join(root, "paperclip-home");
+    const toderoHome = path.join(root, "todero-home");
     await fs.mkdir(workspace, { recursive: true });
     await fs.mkdir(sharedCodexHome, { recursive: true });
     await fs.writeFile(path.join(sharedCodexHome, "auth.json"), `${fakeCodexAuthJson}\n`, "utf8");
     await writeFakeCodexCommand(commandPath);
 
     const previousHome = process.env.HOME;
-    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
-    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
-    const previousPaperclipInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
+    const previousToderoHome = process.env.PAPERCLIP_HOME;
+    const previousToderoInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    const previousToderoInWorktree = process.env.PAPERCLIP_IN_WORKTREE;
     const previousCodexHome = process.env.CODEX_HOME;
     process.env.HOME = root;
-    process.env.PAPERCLIP_HOME = paperclipHome;
+    process.env.PAPERCLIP_HOME = toderoHome;
     process.env.PAPERCLIP_INSTANCE_ID = "worktree-1";
     process.env.PAPERCLIP_IN_WORKTREE = "true";
     process.env.CODEX_HOME = sharedCodexHome;
@@ -1488,9 +1488,9 @@ process.exit(1);
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
             CODEX_HOME: explicitCodexHome,
           },
-          promptTemplate: "Follow the paperclip heartbeat.",
-          paperclipSkillSync: {
-            desiredSkills: ["paperclip"],
+          promptTemplate: "Follow the todero heartbeat.",
+          toderoSkillSync: {
+            desiredSkills: ["todero"],
           },
         },
         context: {},
@@ -1503,17 +1503,17 @@ process.exit(1);
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.codexHome).toBe(explicitCodexHome);
-      expect((await fs.lstat(path.join(explicitCodexHome, "skills", "paperclip"))).isSymbolicLink()).toBe(true);
-      await expect(fs.lstat(path.join(paperclipHome, "instances", "worktree-1", "codex-home"))).rejects.toThrow();
+      expect((await fs.lstat(path.join(explicitCodexHome, "skills", "todero"))).isSymbolicLink()).toBe(true);
+      await expect(fs.lstat(path.join(toderoHome, "instances", "worktree-1", "codex-home"))).rejects.toThrow();
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
-      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
-      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
-      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
-      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
-      if (previousPaperclipInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
-      else process.env.PAPERCLIP_IN_WORKTREE = previousPaperclipInWorktree;
+      if (previousToderoHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousToderoHome;
+      if (previousToderoInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+      else process.env.PAPERCLIP_INSTANCE_ID = previousToderoInstanceId;
+      if (previousToderoInWorktree === undefined) delete process.env.PAPERCLIP_IN_WORKTREE;
+      else process.env.PAPERCLIP_IN_WORKTREE = previousToderoInWorktree;
       if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
       else process.env.CODEX_HOME = previousCodexHome;
       await fs.rm(root, { recursive: true, force: true });

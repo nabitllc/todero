@@ -3,8 +3,8 @@ import { createServer as createHttpServer, type Server as HttpServer } from "nod
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { Db } from "@paperclipai/db";
-import { derivePaperclipViteHmrPort, type DeploymentExposure, type DeploymentMode } from "@paperclipai/shared";
+import type { Db } from "@todero/db";
+import { deriveToderoViteHmrPort, type DeploymentExposure, type DeploymentMode } from "@todero/shared";
 import type { InspectDatabaseBackupHealthOptions } from "./services/database-backup-health.js";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
@@ -115,7 +115,7 @@ import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
-import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
+import { createHostClientHandlers } from "@todero/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-limits.js";
@@ -150,7 +150,7 @@ export function isDatabaseConnectionUnavailableError(err: unknown): boolean {
 }
 
 export function resolveViteHmrPort(serverPort: number): number {
-  return derivePaperclipViteHmrPort(serverPort);
+  return deriveToderoViteHmrPort(serverPort);
 }
 
 export function resolveViteHmrHost(bindHost: string): string | undefined {
@@ -328,7 +328,7 @@ export async function createApp(
   },
 ) {
   const app = express();
-  app.locals.paperclipDb = db;
+  app.locals.toderoDb = db;
   const captureRawBody = (req: express.Request, _res: express.Response, buf: Buffer) => {
     (req as unknown as { rawBody: Buffer }).rawBody = buf;
   };
@@ -742,7 +742,7 @@ export async function createApp(
           .end(readBrandedStaticIndexHtml(uiDist));
       });
     } else {
-      console.warn("[paperclip] UI dist not found; running in API-only mode");
+      console.warn("[todero] UI dist not found; running in API-only mode");
     }
     if (process.env.PAPERCLIP_MANAGED_RUNTIME_EXPOSURE === "tailscale_https") {
       // The managed-runtime supervisor waits for the app port AND its derived
@@ -985,7 +985,7 @@ export async function createApp(
     })();
     return appServicesShutdown;
   };
-  app.locals.paperclipShutdown = shutdownAppServices;
+  app.locals.toderoShutdown = shutdownAppServices;
 
   // The `exit` event is synchronous. It cannot await the teardown, so it runs
   // the best-effort cleanup and drops the returned promise. The orderly signal

@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AdapterExecutionContext, AdapterInvocationMeta } from "@paperclipai/adapter-utils";
-import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
+import type { AdapterExecutionContext, AdapterInvocationMeta } from "@todero/adapter-utils";
+import { runChildProcess } from "@todero/adapter-utils/server-utils";
 import {
   buildClaudeAcpConfig,
   createClaudeAcpExecutor,
@@ -224,8 +224,8 @@ function buildContext(root: string, overrides: Partial<AdapterExecutionContext> 
     },
     context: {
       issueId: "issue-1",
-      paperclipTaskMarkdown: "Task context",
-      paperclipWorkspace: {
+      toderoTaskMarkdown: "Task context",
+      toderoWorkspace: {
         cwd: root,
         source: "project_workspace",
         workspaceId: "workspace-1",
@@ -266,7 +266,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("defaults to ACP when prerequisites pass and falls back to CLI only for auto resolution", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-default-");
+    const root = await makeTempRoot("todero-claude-acp-default-");
     const commandPath = path.join(root, "bin", "claude-agent-acp");
     await fs.mkdir(path.dirname(commandPath), { recursive: true });
     await fs.writeFile(commandPath, "#!/usr/bin/env sh\n", "utf8");
@@ -414,7 +414,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("reports ACP prerequisites for the ACP lane", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-env-");
+    const root = await makeTempRoot("todero-claude-acp-env-");
     const commandPath = path.join(root, "bin", "claude-agent-acp");
     await fs.mkdir(path.dirname(commandPath), { recursive: true });
     await fs.writeFile(commandPath, "#!/usr/bin/env sh\n", "utf8");
@@ -464,7 +464,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("executes through ACPX with Claude model env, settings.local.json, and ephemeral skills", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-exec-");
+    const root = await makeTempRoot("todero-claude-acp-exec-");
     const skill = await createRuntimeSkill(root);
     const runtimes: FakeRuntime[] = [];
     const meta: AdapterInvocationMeta[] = [];
@@ -484,8 +484,8 @@ describe("claude_local ACP lane", () => {
         model: "claude-opus-4-7",
         effort: "high",
         promptTemplate: "Do the assigned work.",
-        paperclipRuntimeSkills: [skill],
-        paperclipSkillSync: { desiredSkills: [skill.key] },
+        toderoRuntimeSkills: [skill],
+        toderoSkillSync: { desiredSkills: [skill.key] },
       },
       onMeta: async (payload: AdapterInvocationMeta) => {
         meta.push(payload);
@@ -515,7 +515,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("creates the ACP session on the in-sandbox workspace cwd for runner-backed remote runs", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-remote-cwd-");
+    const root = await makeTempRoot("todero-claude-acp-remote-cwd-");
     const localCwd = path.join(root, "worktree");
     const remoteCwd = path.join(root, "remote-workspace");
     await fs.mkdir(localCwd, { recursive: true });
@@ -544,8 +544,8 @@ describe("claude_local ACP lane", () => {
         },
         context: {
           issueId: "issue-1",
-          paperclipTaskMarkdown: "Task context",
-          paperclipWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
+          toderoTaskMarkdown: "Task context",
+          toderoWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
         },
         executionTarget: {
           kind: "remote",
@@ -565,7 +565,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("seeds the managed Claude config into the sandbox and repoints CLAUDE_CONFIG_DIR to the in-sandbox path", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-home-seed-");
+    const root = await makeTempRoot("todero-claude-acp-home-seed-");
     const localCwd = path.join(root, "worktree");
     const remoteCwd = path.join(root, "remote-workspace");
     const sharedClaudeConfig = path.join(root, "shared-claude-config");
@@ -579,7 +579,7 @@ describe("claude_local ACP lane", () => {
       "utf8",
     );
     await fs.writeFile(path.join(sharedClaudeConfig, "CLAUDE.md"), "# shared guidance\n", "utf8");
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip-home");
+    process.env.PAPERCLIP_HOME = path.join(root, "todero-home");
     process.env.PAPERCLIP_INSTANCE_ID = "test";
     process.env.CLAUDE_CONFIG_DIR = sharedClaudeConfig;
 
@@ -598,7 +598,7 @@ describe("claude_local ACP lane", () => {
         },
         context: {
           issueId: "issue-1",
-          paperclipWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
+          toderoWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
         },
         executionTarget: {
           kind: "remote",
@@ -619,7 +619,7 @@ describe("claude_local ACP lane", () => {
     // C2 — CLAUDE_CONFIG_DIR repointed onto an in-sandbox path, distinct from the
     // host shared config dir.
     expect(remappedConfigDir).not.toBe(sharedClaudeConfig);
-    expect(remappedConfigDir).toContain(".paperclip-runtime");
+    expect(remappedConfigDir).toContain(".todero-runtime");
     expect(remappedConfigDir.endsWith("/config")).toBe(true);
     // Seeded: settings.json was materialized into the in-sandbox config dir (the
     // local runner uses the host FS, so this is a real host path).
@@ -631,7 +631,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("test_claude_acp_seam_registers_workspace_sync_back", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-syncback-");
+    const root = await makeTempRoot("todero-claude-acp-syncback-");
     const localCwd = path.join(root, "worktree");
     const remoteCwd = path.join(root, "remote-workspace");
     const sharedClaudeConfig = path.join(root, "shared-claude-config");
@@ -645,7 +645,7 @@ describe("claude_local ACP lane", () => {
       "utf8",
     );
     await fs.writeFile(path.join(sharedClaudeConfig, "CLAUDE.md"), "# shared guidance\n", "utf8");
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip-home");
+    process.env.PAPERCLIP_HOME = path.join(root, "todero-home");
     process.env.PAPERCLIP_INSTANCE_ID = "test";
     process.env.CLAUDE_CONFIG_DIR = sharedClaudeConfig;
 
@@ -684,7 +684,7 @@ describe("claude_local ACP lane", () => {
         },
         context: {
           issueId: "issue-1",
-          paperclipWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
+          toderoWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
         },
         executionTarget: {
           kind: "remote",
@@ -709,13 +709,13 @@ describe("claude_local ACP lane", () => {
     // the caught error's own message there — that message can carry the host
     // workspace path. Force a real EACCES by making the workspace read-only,
     // and name it with a sentinel marker so any leak is easy to spot.
-    const root = await makeTempRoot("paperclip-claude-acp-restore-failure-");
+    const root = await makeTempRoot("todero-claude-acp-restore-failure-");
     const localCwd = path.join(root, "SENTINEL-HOST-PATH-marker", "worktree");
     const remoteCwd = path.join(root, "remote-workspace");
     await fs.mkdir(localCwd, { recursive: true });
     await fs.mkdir(remoteCwd, { recursive: true });
     await fs.writeFile(path.join(localCwd, "hello.txt"), "hi", "utf8");
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip-home");
+    process.env.PAPERCLIP_HOME = path.join(root, "todero-home");
     process.env.PAPERCLIP_INSTANCE_ID = "test";
 
     // The runtime writes a new file into the in-sandbox workspace during the
@@ -759,7 +759,7 @@ describe("claude_local ACP lane", () => {
           },
           context: {
             issueId: "issue-1",
-            paperclipWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
+            toderoWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
           },
           executionTarget: {
             kind: "remote",
@@ -790,7 +790,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("remaps a workspace-relative explicit CLAUDE_CONFIG_DIR onto the in-sandbox workspace path", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-explicit-inworkspace-");
+    const root = await makeTempRoot("todero-claude-acp-explicit-inworkspace-");
     const localCwd = path.join(root, "worktree");
     const remoteCwd = path.join(root, "remote-workspace");
     await fs.mkdir(localCwd, { recursive: true });
@@ -805,7 +805,7 @@ describe("claude_local ACP lane", () => {
       JSON.stringify({ permissions: { defaultMode: "acceptEdits" } }),
       "utf8",
     );
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip-home");
+    process.env.PAPERCLIP_HOME = path.join(root, "todero-home");
     process.env.PAPERCLIP_INSTANCE_ID = "test";
 
     const meta: AdapterInvocationMeta[] = [];
@@ -825,7 +825,7 @@ describe("claude_local ACP lane", () => {
         },
         context: {
           issueId: "issue-1",
-          paperclipWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
+          toderoWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
         },
         executionTarget: {
           kind: "remote",
@@ -849,14 +849,14 @@ describe("claude_local ACP lane", () => {
     expect(meta[0]?.env?.CLAUDE_CONFIG_DIR).toBe(path.posix.join(remoteCwd, ".claude-config"));
     expect(meta[0]?.env?.CLAUDE_CONFIG_DIR).not.toBe(operatorConfigDir);
     // No managed config seed is materialized — the operator dir is authoritative.
-    expect(String(meta[0]?.env?.CLAUDE_CONFIG_DIR ?? "")).not.toContain(".paperclip-runtime");
+    expect(String(meta[0]?.env?.CLAUDE_CONFIG_DIR ?? "")).not.toContain(".todero-runtime");
     expect(logs.join("")).toContain(
       `Remapped operator CLAUDE_CONFIG_DIR from host path ${operatorConfigDir}`,
     );
   });
 
   it("ignores a host-only explicit CLAUDE_CONFIG_DIR that cannot reach the sandbox and seeds the managed config instead", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-explicit-hostonly-");
+    const root = await makeTempRoot("todero-claude-acp-explicit-hostonly-");
     const localCwd = path.join(root, "worktree");
     const remoteCwd = path.join(root, "remote-workspace");
     const sharedClaudeConfig = path.join(root, "shared-claude-config");
@@ -873,7 +873,7 @@ describe("claude_local ACP lane", () => {
       "utf8",
     );
     await fs.writeFile(path.join(sharedClaudeConfig, "CLAUDE.md"), "# shared guidance\n", "utf8");
-    process.env.PAPERCLIP_HOME = path.join(root, "paperclip-home");
+    process.env.PAPERCLIP_HOME = path.join(root, "todero-home");
     process.env.PAPERCLIP_INSTANCE_ID = "test";
     process.env.CLAUDE_CONFIG_DIR = sharedClaudeConfig;
 
@@ -896,7 +896,7 @@ describe("claude_local ACP lane", () => {
         },
         context: {
           issueId: "issue-1",
-          paperclipWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
+          toderoWorkspace: { cwd: localCwd, source: "project_workspace", workspaceId: "workspace-1" },
         },
         executionTarget: {
           kind: "remote",
@@ -919,7 +919,7 @@ describe("claude_local ACP lane", () => {
     const remappedConfigDir = String(meta[0]?.env?.CLAUDE_CONFIG_DIR ?? "");
     // The un-portable host path is dropped; managed config is seeded in-sandbox.
     expect(remappedConfigDir).not.toBe(operatorConfigDir);
-    expect(remappedConfigDir).toContain(".paperclip-runtime");
+    expect(remappedConfigDir).toContain(".todero-runtime");
     expect(remappedConfigDir.endsWith("/config")).toBe(true);
     await expect(fs.readFile(path.join(remappedConfigDir, "settings.json"), "utf8")).resolves.toContain(
       "permissions",
@@ -950,7 +950,7 @@ describe("claude_local ACP lane", () => {
   });
 
   it("delivers the issue description exactly once per prompt and compacts non-assignment resume deltas", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-brief-");
+    const root = await makeTempRoot("todero-claude-acp-brief-");
     const runtimes: FakeRuntime[] = [];
     const execute = createClaudeAcpExecutor({
       createRuntime: (options: FakeRuntimeOptions) => {
@@ -962,7 +962,7 @@ describe("claude_local ACP lane", () => {
 
     const description = "Update launch-card.svg and change the CTA to Try Team free.";
     const fullTaskMarkdown = [
-      "Paperclip task context:",
+      "Todero task context:",
       "- Issue: \"PAP-15271\"",
       "- Title: \"Preserve the task brief\"",
       "",
@@ -972,15 +972,15 @@ describe("claude_local ACP lane", () => {
       "```",
     ].join("\n");
     const compactTaskMarkdown = [
-      "Paperclip task context:",
+      "Todero task context:",
       "- Issue: \"PAP-15271\"",
       "- Title: \"Preserve the task brief\"",
     ].join("\n");
     const wakeContext = (reason: string) => ({
       issueId: "issue-1",
-      paperclipTaskMarkdown: fullTaskMarkdown,
-      paperclipTaskMarkdownCompact: compactTaskMarkdown,
-      paperclipWake: {
+      toderoTaskMarkdown: fullTaskMarkdown,
+      toderoTaskMarkdownCompact: compactTaskMarkdown,
+      toderoWake: {
         reason,
         issue: {
           id: "issue-1",
@@ -994,7 +994,7 @@ describe("claude_local ACP lane", () => {
         comments: [],
         fallbackFetchNeeded: false,
       },
-      paperclipWorkspace: {
+      toderoWorkspace: {
         cwd: root,
         source: "project_workspace",
         workspaceId: "workspace-1",
@@ -1004,7 +1004,7 @@ describe("claude_local ACP lane", () => {
     const first = await execute(buildContext(root, { context: wakeContext("issue_assigned") }));
     const freshPrompt = runtimes[0]?.startInputs[0]?.text ?? "";
     expect(freshPrompt.split(description)).toHaveLength(2);
-    expect(freshPrompt).toContain("Paperclip task context:");
+    expect(freshPrompt).toContain("Todero task context:");
 
     const second = await execute(buildContext(root, {
       runtime: {
@@ -1018,14 +1018,14 @@ describe("claude_local ACP lane", () => {
     expect(second.exitCode).toBe(0);
     const resumePrompt = runtimes[1]?.startInputs[0]?.text ?? "";
     expect(resumePrompt).not.toContain(description);
-    expect(resumePrompt).toContain("Paperclip task context:");
+    expect(resumePrompt).toContain("Todero task context:");
     expect(resumePrompt).toContain(
       "- issue description: omitted from this resume delta; fetch the issue if you need the latest brief",
     );
   });
 
   it("resumes compatible ACP sessions on later Claude ACP runs", async () => {
-    const root = await makeTempRoot("paperclip-claude-acp-resume-");
+    const root = await makeTempRoot("todero-claude-acp-resume-");
     const runtimes: FakeRuntime[] = [];
     const execute = createClaudeAcpExecutor({
       createRuntime: (options: FakeRuntimeOptions) => {

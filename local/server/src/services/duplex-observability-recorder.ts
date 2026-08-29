@@ -6,7 +6,7 @@ import {
   type DuplexObservabilityEventRecord,
   type DuplexObservabilityRecorder,
   type DuplexObservabilitySpanRecord,
-} from "@paperclipai/adapter-utils/duplex-observability";
+} from "@todero/adapter-utils/duplex-observability";
 
 /**
  * The host binding for the fixed duplex telemetry surface. This module maps each

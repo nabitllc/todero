@@ -1,5 +1,5 @@
 import { Router, type Request } from "express";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   CONNECTION_REQUEST_TOOL_DESCRIPTION,
   CONNECTIONS_SEARCH_TOOL_DESCRIPTION,
@@ -7,7 +7,7 @@ import {
   connectionRequestInputSchema,
   connectionsSearchInputSchema,
   declineConnectionIntentSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { forbidden, unauthorized } from "../errors.js";
 import { verifyRuntimeToolsToken } from "../runtime-tools-token.js";
 import { connectionIntentService } from "../services/connection-intents.js";
@@ -63,7 +63,7 @@ export function runtimeConnectionIntentRoutes(db: Db) {
 
   router.get("/mcp/runtime-tools", async (req, res) => {
     await service.validate(runtimeClaims(req));
-    res.json({ name: "paperclip-runtime-tools", protocolVersion: "2025-03-26" });
+    res.json({ name: "todero-runtime-tools", protocolVersion: "2025-03-26" });
   });
 
   router.post("/mcp/runtime-tools", async (req, res) => {
@@ -81,7 +81,7 @@ export function runtimeConnectionIntentRoutes(db: Db) {
         result: {
           protocolVersion: "2025-03-26",
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "paperclip-runtime-tools", version: "1" },
+          serverInfo: { name: "todero-runtime-tools", version: "1" },
         },
       });
       return;

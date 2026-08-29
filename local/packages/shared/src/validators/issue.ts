@@ -890,21 +890,21 @@ export const askUserQuestionsQuestionSchema = z.object({
   options: z.array(askUserQuestionsQuestionOptionSchema).min(1).max(10),
 });
 
-const paperclipQuestionOptionSchema = z.object({
+const toderoQuestionOptionSchema = z.object({
   id: z.string().min(1).max(160),
   label: z.string().min(1).max(1000),
   description: z.string().max(4000).optional(),
   recommended: z.boolean().optional(),
 });
 
-const paperclipQuestionSchema = z.object({
+const toderoQuestionSchema = z.object({
   id: z.string().min(1).max(160),
   header: z.string().max(1000).optional(),
   prompt: z.string().min(1).max(4000),
   helpText: z.string().max(4000).optional(),
   required: z.boolean(),
   answerMode: z.enum(["single_select", "multi_select", "text"]),
-  options: z.array(paperclipQuestionOptionSchema).max(128).optional(),
+  options: z.array(toderoQuestionOptionSchema).max(128).optional(),
   customAnswer: z.object({
     enabled: z.literal(true),
     label: z.string().max(1000).optional(),
@@ -920,12 +920,12 @@ const paperclipQuestionSchema = z.object({
   }).optional(),
 });
 
-const paperclipQuestionSetSchema = z.object({
-  schema: z.literal("paperclip.question_set.v1"),
+const toderoQuestionSetSchema = z.object({
+  schema: z.literal("todero.question_set.v1"),
   title: z.string().max(1000).optional(),
   description: z.string().max(4000).optional(),
   submitLabel: z.string().max(200).optional(),
-  questions: z.array(paperclipQuestionSchema).min(1).max(64),
+  questions: z.array(toderoQuestionSchema).min(1).max(64),
 });
 
 export const askUserQuestionsPayloadSchema = z.object({
@@ -935,7 +935,7 @@ export const askUserQuestionsPayloadSchema = z.object({
   supersedeOnUserComment: z.boolean().optional(),
   questions: z.array(askUserQuestionsQuestionSchema).min(1).max(10),
   /** Exact canonical presentation retained for a recovered harness request. */
-  questionSet: paperclipQuestionSetSchema.optional(),
+  questionSet: toderoQuestionSetSchema.optional(),
   /** Stable correlation for draft handoff from a live runtime request. */
   runtimeRequestId: z.string().trim().min(1).max(255).nullable().optional(),
 }).superRefine((value, ctx) => {

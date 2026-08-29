@@ -17,7 +17,7 @@ const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
 async function createTempDatabase(): Promise<string> {
-  const db = await startEmbeddedPostgresTestDatabase("paperclip-db-client-");
+  const db = await startEmbeddedPostgresTestDatabase("todero-db-client-");
   cleanups.push(db.cleanup);
   return db.connectionString;
 }
@@ -1607,7 +1607,7 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
             risk, completion_authority, incomplete_criteria_policy, contract_json,
             canonical_sha256, created_by_actor_type, created_by_actor_id
           ) VALUES (
-            ${companyId}, ${otherIssueId}, 1, 'paperclip.completion-contract.v1',
+            ${companyId}, ${otherIssueId}, 1, 'todero.completion-contract.v1',
             'policy-v1', 'low', 'server', 'review', ${JSON.stringify({ criteria: [] })}::jsonb,
             'cross-company-contract-sha', 'system', 'migration-test'
           )
@@ -1619,7 +1619,7 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
             risk, completion_authority, incomplete_criteria_policy, contract_json,
             canonical_sha256, created_by_actor_type, created_by_actor_id
           ) VALUES (
-            ${contractId}, ${companyId}, ${issueId}, 1, 'paperclip.completion-contract.v1',
+            ${contractId}, ${companyId}, ${issueId}, 1, 'todero.completion-contract.v1',
             'policy-v1', 'low', 'server', 'review', ${JSON.stringify({ criteria: [] })}::jsonb,
             'contract-sha', 'system', 'migration-test'
           )
@@ -1631,7 +1631,7 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
             canonical_sha256, created_by_actor_type, created_by_actor_id
           ) VALUES (
             ${otherContractId}, ${otherCompanyId}, ${otherIssueId}, 1,
-            'paperclip.completion-contract.v1', 'policy-v1', 'low', 'server', 'review',
+            'todero.completion-contract.v1', 'policy-v1', 'low', 'server', 'review',
             ${JSON.stringify({ criteria: [] })}::jsonb, 'other-contract-sha',
             'system', 'migration-test'
           )

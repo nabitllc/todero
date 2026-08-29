@@ -23,7 +23,7 @@ import {
   toolGatewaySessions,
   toolInvocations,
   toolPolicies,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import type { VercelConnectClient } from "../services/vercel-connect.js";
 import { secretService } from "../services/secrets.js";
@@ -160,7 +160,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-tool-gateway-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-tool-gateway-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -933,7 +933,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => new Response(JSON.stringify({
       jsonrpc: "2.0",
-      id: "paperclip-tool-test",
+      id: "todero-tool-test",
       result: {
         _meta: {
           elicitation: {
@@ -1124,7 +1124,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
       externalCredential: {
         provider: "vercel_connect",
         connectorId: "scl_posthog",
-        connectorUid: "posthog-paperclip",
+        connectorUid: "posthog-todero",
         service: "posthog",
         connectorType: "api-key",
         principalMode: "app",
@@ -1150,7 +1150,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
       token: options?.forceRefresh ? "fresh-provider-bearer" : "stale-provider-bearer",
       tokenId: options?.forceRefresh ? "stk_fresh" : "stk_stale",
       expiresAt: Date.now() + 60_000,
-      connector: { id: "scl_posthog", uid: "posthog-paperclip", type: "api-key" },
+      connector: { id: "scl_posthog", uid: "posthog-todero", type: "api-key" },
     }));
     const evict = vi.fn<VercelConnectClient["evict"]>();
     const vercelConnectClient: VercelConnectClient = {
@@ -1328,7 +1328,7 @@ describeEmbeddedPostgres("tool gateway service", () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async () => new Response(JSON.stringify({
       jsonrpc: "2.0",
-      id: "paperclip-tool-test",
+      id: "todero-tool-test",
       result: { elicitation: { message: "Need input" }, content: [] },
     }), { status: 200, headers: { "content-type": "application/json" } });
     try {

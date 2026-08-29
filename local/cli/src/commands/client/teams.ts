@@ -8,7 +8,7 @@ import type {
   CatalogTeamImportOptions,
   CatalogTeamSourcePolicy,
   InstalledCatalogTeam,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   addCommonClientOptions,
   apiPath,
@@ -376,13 +376,13 @@ const INSTALL_APPROVAL_FALLBACK_MESSAGES = [
 const SECRET_VALUE_REDACTION = "[redacted]";
 
 function shouldRequestInstallApproval(error: unknown, opts: TeamInstallOptions): error is ApiRequestError {
-  if (!(opts.requestApprovalOnForbidden || isPaperclipTaskRun())) return false;
+  if (!(opts.requestApprovalOnForbidden || isToderoTaskRun())) return false;
   if (!(error instanceof ApiRequestError) || error.status !== 403) return false;
   const message = error.message.toLowerCase();
   return INSTALL_APPROVAL_FALLBACK_MESSAGES.some((expected) => message.includes(expected));
 }
 
-function isPaperclipTaskRun(): boolean {
+function isToderoTaskRun(): boolean {
   return Boolean(process.env.PAPERCLIP_TASK_ID?.trim());
 }
 
@@ -404,7 +404,7 @@ async function requestInstallApproval(
     payload: {
       title: `Approve catalog team install: ${trimmedRef}`,
       summary:
-        `A Paperclip CLI agent-run attempted to install catalog team "${trimmedRef}" into company "${ctx.companyId}", ` +
+        `A Todero CLI agent-run attempted to install catalog team "${trimmedRef}" into company "${ctx.companyId}", ` +
         `but the API denied the install with: ${error.message}.`,
       recommendedAction:
         "Approve the catalog team source and rerun the install with a board or agent-creator token, or grant agents:create to the requesting agent and rerun the same command.",

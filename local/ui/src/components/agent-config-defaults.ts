@@ -1,4 +1,4 @@
-import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import type { CreateConfigValues } from "@todero/adapter-utils";
 
 export const defaultCreateValues: CreateConfigValues = {
   adapterType: "claude_local",
@@ -40,7 +40,7 @@ export const defaultCreateValues: CreateConfigValues = {
   devicePrivateKeyPem: "",
   role: "",
   scopes: "",
-  paperclipApiUrl: "",
+  toderoApiUrl: "",
   headersJson: "",
   password: "",
 };

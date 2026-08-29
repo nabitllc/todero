@@ -1,6 +1,6 @@
-import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+import type { PaperclipPluginManifestV1 } from "@todero/plugin-sdk";
 
-const PLUGIN_ID = "paperclip.daytona-sandbox-provider";
+const PLUGIN_ID = "todero.daytona-sandbox-provider";
 // The bundled-plugin boot reconcile refreshes the persisted manifest for an
 // existing install only when PLUGIN_VERSION changes. A manifest change without a
 // version bump never reaches an existing install. The reconcile also reads the
@@ -19,8 +19,8 @@ const manifest: PaperclipPluginManifestV1 = {
   version: PLUGIN_VERSION,
   displayName: "Daytona Sandbox Provider",
   description:
-    "First-party sandbox provider plugin that provisions Daytona sandboxes as Paperclip execution environments.",
-  author: "Paperclip",
+    "First-party sandbox provider plugin that provisions Daytona sandboxes as Todero execution environments.",
+  author: "Todero",
   categories: ["automation"],
   capabilities: ["environment.drivers.register"],
   entrypoints: {
@@ -73,7 +73,7 @@ const manifest: PaperclipPluginManifestV1 = {
       // only bundled provider that implements the login pseudo-terminal methods,
       // so it advertises the capability. The session home helpers and the
       // credential reader run on node, and the sandbox already runs node for the
-      // Paperclip bridge. So the login has no extra runtime prerequisite, and the
+      // Todero bridge. So the login has no extra runtime prerequisite, and the
       // advertised capability matches the runtime contract for every configured
       // image or snapshot.
       supportsLoginPty: true,
@@ -84,7 +84,7 @@ const manifest: PaperclipPluginManifestV1 = {
             type: "string",
             format: "secret-ref",
             description:
-              "Environment-specific Daytona API key. Paste a key or an existing Paperclip secret reference; saved environments store pasted values as company secrets. Falls back to DAYTONA_API_KEY if omitted.",
+              "Environment-specific Daytona API key. Paste a key or an existing Todero secret reference; saved environments store pasted values as company secrets. Falls back to DAYTONA_API_KEY if omitted.",
           },
           apiUrl: {
             type: "string",

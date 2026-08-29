@@ -1,4 +1,4 @@
-import type { IssueRecoveryAction, IssueScheduledRetry } from "@paperclipai/shared";
+import type { IssueRecoveryAction, IssueScheduledRetry } from "@todero/shared";
 import { formatMonitorOffset } from "./issue-monitor";
 
 /**

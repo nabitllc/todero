@@ -14286,7 +14286,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"environments\".\"driver\" = 'sandbox' AND (\"environments\".\"metadata\" ->> 'managedByPaperclip')::boolean = true",
+          "where": "\"environments\".\"driver\" = 'sandbox' AND (\"environments\".\"metadata\" ->> 'managedByTodero')::boolean = true",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -15713,21 +15713,21 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'paperclip-feedback-envelope-v2'"
+          "default": "'todero-feedback-envelope-v2'"
         },
         "bundle_version": {
           "name": "bundle_version",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'paperclip-feedback-bundle-v2'"
+          "default": "'todero-feedback-bundle-v2'"
         },
         "payload_version": {
           "name": "payload_version",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'paperclip-feedback-v1'"
+          "default": "'todero-feedback-v1'"
         },
         "payload_digest": {
           "name": "payload_digest",

@@ -8,7 +8,7 @@ import {
   budgetPolicies,
   companies,
   createDb,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -34,7 +34,7 @@ describeEmbeddedPostgres("pending approval agent config integrity", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pending-agent-config-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-pending-agent-config-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -54,7 +54,7 @@ describeEmbeddedPostgres("pending approval agent config integrity", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: issuePrefix(companyId),
       requireBoardApprovalForNewAgents: true,
     });

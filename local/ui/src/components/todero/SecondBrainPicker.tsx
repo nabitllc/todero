@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toderoVaultApi, type VaultSource } from "@/api/vault";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "../lib/utils";
+import { cn } from "@/lib/utils";
 
 export type SecondBrainPickerProps = {
   mode: "onboarding" | "settings";

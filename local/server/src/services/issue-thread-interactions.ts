@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   agents,
   companySecretProposals,
@@ -14,8 +14,8 @@ import {
   issues,
   toolActionRequests,
   toolOauthStates,
-} from "@paperclipai/db";
-import { trackInteractionCreated, trackInteractionResolved } from "@paperclipai/shared/telemetry";
+} from "@todero/db";
+import { trackInteractionCreated, trackInteractionResolved } from "@todero/shared/telemetry";
 import type {
   AcceptIssueThreadInteraction,
   AskUserQuestionsAnswer,
@@ -43,7 +43,7 @@ import type {
   SuggestTasksResultCreatedTask,
   SubmitIssueThreadInteractionVerdicts,
   WithdrawIssueThreadInteraction,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   acceptIssueThreadInteractionSchema,
   askUserQuestionsPayloadSchema,
@@ -65,7 +65,7 @@ import {
   suggestTasksResultSchema,
   submitIssueThreadInteractionVerdictsSchema,
   withdrawIssueThreadInteractionSchema,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { z } from "zod";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { getTelemetryClient } from "../telemetry.js";
@@ -461,7 +461,7 @@ function parseStoredInteractionResult<S extends z.ZodTypeAny>(
   const parsed = schema.safeParse(raw);
   if (parsed.success) return parsed.data;
   console.warn(
-    `[paperclip] Dropping unparseable ${row.kind} interaction result for interaction ${row.id}`,
+    `[todero] Dropping unparseable ${row.kind} interaction result for interaction ${row.id}`,
     parsed.error.issues,
   );
   return null;
@@ -1027,7 +1027,7 @@ async function emitInteractionResolvedTelemetry(
       try {
         roleByAgentId = await fetchCreatorAgentRoleById(db, [interaction]);
       } catch (error) {
-        console.error("[paperclip] Failed to load interaction.resolved creator role", error);
+        console.error("[todero] Failed to load interaction.resolved creator role", error);
       }
     }
     const creatorAgentRole = interaction.createdByAgentId
@@ -1050,7 +1050,7 @@ async function emitInteractionResolvedTelemetry(
         interaction.resolverPolicyProvenance === "legacy_inherited_restriction",
     });
   } catch (error) {
-    console.error("[paperclip] Failed to emit interaction.resolved telemetry", error);
+    console.error("[todero] Failed to emit interaction.resolved telemetry", error);
   }
 }
 
@@ -1067,7 +1067,7 @@ function emitInteractionCreatedTelemetry(args: {
       interactionKind: args.interactionKind === "connection_intent" ? "other" : args.interactionKind,
     });
   } catch (error) {
-    console.error("[paperclip] Failed to emit interaction.created telemetry", error);
+    console.error("[todero] Failed to emit interaction.created telemetry", error);
   }
 }
 
@@ -1080,7 +1080,7 @@ async function emitResolvedInteractionsTelemetry(
   try {
     roleByAgentId = await fetchCreatorAgentRoleById(db, interactions);
   } catch (error) {
-    console.error("[paperclip] Failed to load interaction.resolved creator roles", error);
+    console.error("[todero] Failed to load interaction.resolved creator roles", error);
   }
   await Promise.all(interactions.map((interaction) =>
     emitInteractionResolvedTelemetry(db, interaction, { creatorRoleByAgentId: roleByAgentId })

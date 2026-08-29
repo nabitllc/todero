@@ -158,7 +158,7 @@ describe("paperclip-task-bridge helper", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('"identifier": "PAP-124"');
     const createRequest = requests.find((request) => request.method === "POST" && request.url.includes("/companies/"));
-    expect(createRequest?.headers["x-paperclip-run-id"]).toBe("66666666-6666-4666-8666-666666666666");
+    expect(createRequest?.headers["x-todero-run-id"]).toBe("66666666-6666-4666-8666-666666666666");
     expect(createRequest?.body).toMatchObject({
       title: "Bridge task",
       description: "Created from Hermes",

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Agent, AgentSkillSnapshot, CompanySkillListItem } from "@paperclipai/shared";
+import type { Agent, AgentSkillSnapshot, CompanySkillListItem } from "@todero/shared";
 import { AgentSkillsTab } from "@/pages/agent-skills/AgentSkillsTab";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,8 +61,8 @@ function libSkill(key: string, name: string, description: string): CompanySkillL
 }
 
 const library: CompanySkillListItem[] = [
-  libSkill("paperclip", "Paperclip", "Coordination skill: heartbeats, checkout, comments, and routine API patterns."),
-  libSkill("design-guide", "Design guide", "Paperclip UI design system reference: tokens, typography, status colors."),
+  libSkill("todero", "Todero", "Coordination skill: heartbeats, checkout, comments, and routine API patterns."),
+  libSkill("design-guide", "Design guide", "Todero UI design system reference: tokens, typography, status colors."),
 ];
 
 function buildAgent(agentId: string, desiredSkills: string[]): Agent {
@@ -82,7 +82,7 @@ function buildAgent(agentId: string, desiredSkills: string[]): Agent {
       agent: "claude",
       mode: "persistent",
       permissionMode: "approve-all",
-      paperclipSkillSync: { desiredSkills },
+      toderoSkillSync: { desiredSkills },
     },
     runtimeConfig: {},
     budgetMonthlyCents: 100_000,
@@ -103,19 +103,19 @@ function staleSnapshot(): AgentSkillSnapshot {
     adapterType: "acpx_local",
     supported: true,
     mode: "ephemeral",
-    desiredSkills: ["paperclip", "legacy-retired-skill"],
+    desiredSkills: ["todero", "legacy-retired-skill"],
     warnings: [],
     entries: [
       {
-        key: "paperclip",
-        runtimeName: "paperclip",
+        key: "todero",
+        runtimeName: "todero",
         desired: true,
         managed: true,
         state: "configured",
         origin: "company_managed",
-        originLabel: "Managed by Paperclip",
+        originLabel: "Managed by Todero",
         readOnly: false,
-        sourcePath: "skills/paperclip",
+        sourcePath: "skills/todero",
         targetPath: null,
         detail: "Will be mounted into the next ACPX Claude session.",
       },
@@ -130,19 +130,19 @@ function detectedSnapshot(): AgentSkillSnapshot {
     adapterType: "acpx_local",
     supported: true,
     mode: "ephemeral",
-    desiredSkills: ["paperclip"],
+    desiredSkills: ["todero"],
     warnings: [],
     entries: [
       {
-        key: "paperclip",
-        runtimeName: "paperclip",
+        key: "todero",
+        runtimeName: "todero",
         desired: true,
         managed: true,
         state: "configured",
         origin: "company_managed",
-        originLabel: "Managed by Paperclip",
+        originLabel: "Managed by Todero",
         readOnly: false,
-        sourcePath: "skills/paperclip",
+        sourcePath: "skills/todero",
         targetPath: null,
         detail: "Will be mounted into the next ACPX Claude session.",
       },
@@ -158,7 +158,7 @@ function detectedSnapshot(): AgentSkillSnapshot {
         readOnly: true,
         sourcePath: null,
         targetPath: null,
-        detail: "Detected in the adapter's skills directory; managed outside Paperclip.",
+        detail: "Detected in the adapter's skills directory; managed outside Todero.",
       },
     ] as AgentSkillSnapshot["entries"],
   };
@@ -204,7 +204,7 @@ export const StaleWarning: StoryObj = {
       title="Stale desired-skill warning"
       subtitle="An enabled skill key that no longer exists in the company library renders as a compact, removable warning row."
     >
-      <EdgeState agent={buildAgent("agent-stale", ["paperclip", "legacy-retired-skill"])} snapshot={staleSnapshot()} />
+      <EdgeState agent={buildAgent("agent-stale", ["todero", "legacy-retired-skill"])} snapshot={staleSnapshot()} />
     </StoryFrame>
   ),
 };
@@ -214,9 +214,9 @@ export const DetectedAdapter: StoryObj = {
   render: () => (
     <StoryFrame
       title="Detected on adapter (read-only)"
-      subtitle="A user-installed skill outside Paperclip's management shows in a collapsed, read-only section with a lock icon."
+      subtitle="A user-installed skill outside Todero's management shows in a collapsed, read-only section with a lock icon."
     >
-      <EdgeState agent={buildAgent("agent-detected", ["paperclip"])} snapshot={detectedSnapshot()} />
+      <EdgeState agent={buildAgent("agent-detected", ["todero"])} snapshot={detectedSnapshot()} />
     </StoryFrame>
   ),
 };

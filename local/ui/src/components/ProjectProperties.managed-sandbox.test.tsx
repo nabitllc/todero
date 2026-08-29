@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Project, ProjectCodebase } from "@paperclipai/shared";
+import type { Project, ProjectCodebase } from "@todero/shared";
 import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
@@ -33,16 +33,16 @@ vi.mock("../context/CompanyContext", () => ({
 vi.mock("./environment-variables-editor", () => ({ EnvironmentVariablesEditor: () => null }));
 vi.mock("./InlineEditor", () => ({ InlineEditor: ({ value }: { value?: ReactNode }) => <div>{value}</div> }));
 
-const LOCAL_FOLDER = "/Users/paperclip/projects/test-project";
-const MANAGED_FOLDER = "/var/paperclip/checkouts/test-project";
+const LOCAL_FOLDER = "/Users/todero/projects/test-project";
+const MANAGED_FOLDER = "/var/todero/checkouts/test-project";
 
 function makeCodebase(overrides: Partial<ProjectCodebase> = {}): ProjectCodebase {
   return {
     workspaceId: "workspace-1",
-    repoUrl: "https://github.com/paperclipai/paperclip",
+    repoUrl: "https://github.com/nabitllc/todero",
     repoRef: "master",
     defaultRef: "origin/master",
-    repoName: "paperclipai/paperclip",
+    repoName: "nabitllc/todero",
     localFolder: LOCAL_FOLDER,
     managedFolder: MANAGED_FOLDER,
     effectiveLocalFolder: LOCAL_FOLDER,
@@ -138,7 +138,7 @@ describe("ProjectProperties — local folder under the managed-sandbox-only poli
       { enableIsolatedWorkspaces: true, enableManagedSandboxOnly: true },
     );
 
-    expect(container.textContent).toContain("Paperclip-managed folder.");
+    expect(container.textContent).toContain("Todero-managed folder.");
     expect(container.textContent).not.toContain(MANAGED_FOLDER);
     expect(container.querySelector(".font-mono")?.textContent).not.toBe(MANAGED_FOLDER);
     expect(buttonLabels()).not.toContain("Set local folder");

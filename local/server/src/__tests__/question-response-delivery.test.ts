@@ -12,7 +12,7 @@ import {
   issueQuestionResponseDeliveries,
   issueThreadInteractions,
   issues,
-} from "@paperclipai/db";
+} from "@todero/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -51,7 +51,7 @@ describeEmbeddedPostgres("question response delivery", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-question-delivery-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-question-delivery-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -151,7 +151,7 @@ describeEmbeddedPostgres("question response delivery", () => {
             { id: "features", prompt: "Which features?", selectionMode: "multi", options: [{ id: "health", label: "Health check" }, { id: "logs", label: "Request logs" }] },
           ],
           questionSet: {
-            schema: "paperclip.question_set.v1",
+            schema: "todero.question_set.v1",
             title: "Server choices",
             questions: [
               { id: "purpose", header: "Purpose", prompt: "What is it for?", required: true, answerMode: "text" },
@@ -742,7 +742,7 @@ describeEmbeddedPostgres("question response delivery", () => {
     const seeded = await seed();
     const envelope = buildQuestionResponseDeliveryEnvelope(seeded.interaction);
     expect(envelope.response).toEqual({
-      schema: "paperclip.question_response.v1",
+      schema: "todero.question_response.v1",
       answers: {
         purpose: { text: "Internal API" },
         runtime: { selectedOptionIds: ["node"] },

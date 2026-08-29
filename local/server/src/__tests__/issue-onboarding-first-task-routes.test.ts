@@ -15,8 +15,8 @@ import {
   heartbeatRuns,
   issueComments,
   issues,
-} from "@paperclipai/db";
-import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@paperclipai/shared";
+} from "@todero/db";
+import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -72,7 +72,7 @@ describeEmbeddedPostgres("issue create onboarding first-task routes", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-onboarding-first-task-routes-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-issue-onboarding-first-task-routes-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -117,7 +117,7 @@ describeEmbeddedPostgres("issue create onboarding first-task routes", () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "Todero",
       issuePrefix: `D${companyId.replace(/-/g, "").slice(0, 5).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });

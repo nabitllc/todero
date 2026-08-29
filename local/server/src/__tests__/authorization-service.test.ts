@@ -13,8 +13,8 @@ import {
   principalPermissionGrants,
   projects,
   userInboxAgentPolicies,
-} from "@paperclipai/db";
-import { LOW_TRUST_REVIEW_PRESET, type PermissionKey } from "@paperclipai/shared";
+} from "@todero/db";
+import { LOW_TRUST_REVIEW_PRESET, type PermissionKey } from "@todero/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -168,7 +168,7 @@ describeEmbeddedPostgres("authorization service", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-authorization-service-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-authorization-service-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 

@@ -91,18 +91,18 @@ afterEach(async () => {
 
 describe("managed worktree seed source through the server spawn path", () => {
   it("re-derives an ambient-instance manifest written before provisioning", async () => {
-    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-server-seed-source-"));
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "todero-server-seed-source-"));
     cleanup.push(tempRoot);
     const repoRoot = path.join(tempRoot, "repo");
     const hooksDir = path.join(tempRoot, "hooks");
     const ambientConfigPath = path.join(tempRoot, "ambient", "config.json");
-    const registeredConfigPath = path.join(repoRoot, ".paperclip", "config.json");
+    const registeredConfigPath = path.join(repoRoot, ".todero", "config.json");
     const worktreeHome = path.join(tempRoot, "worktree-home");
 
     await fs.mkdir(repoRoot, { recursive: true });
     await runGit(repoRoot, ["init", "-q"]);
-    await runGit(repoRoot, ["config", "user.email", "paperclip@example.com"]);
-    await runGit(repoRoot, ["config", "user.name", "Paperclip Test"]);
+    await runGit(repoRoot, ["config", "user.email", "todero@example.com"]);
+    await runGit(repoRoot, ["config", "user.name", "Todero Test"]);
     await fs.mkdir(path.join(repoRoot, "scripts"), { recursive: true });
     await fs.writeFile(path.join(repoRoot, "README.md"), "server spawn regression\n", "utf8");
     await fs.copyFile(
@@ -129,7 +129,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const cwd = process.cwd();
 if (cwd === ${JSON.stringify(repoRoot)}) process.exit(0);
-const stateDir = path.join(cwd, ".paperclip");
+const stateDir = path.join(cwd, ".todero");
 const normalized = path.basename(cwd).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/-+/g, "-").replace(/^[-_]+|[-_]+$/g, "");
 const instanceId = \`${"${(normalized || \"worktree\").slice(0, 48)}"}-\${crypto.createHash("sha256").update(path.resolve(cwd)).digest("hex").slice(0, 12)}\`;
 const targetConfigPath = path.join(stateDir, "config.json");
@@ -206,13 +206,13 @@ fs.writeFileSync(path.join(stateDir, "seed-manifest.json"), JSON.stringify({
       agent: { id: "agent-1", name: "Coder", companyId: "company-1" },
     });
 
-    expect(readWorktreeSeedManifest(path.join(workspace.cwd, ".paperclip", "config.json"))).toMatchObject({
+    expect(readWorktreeSeedManifest(path.join(workspace.cwd, ".todero", "config.json"))).toMatchObject({
       source: { instanceId: "ambient-instance", configPath: ambientConfigPath },
       state: "pending",
     });
 
     await expect(ensureWorktreeSeeded({
-      config: path.join(workspace.cwd, ".paperclip", "config.json"),
+      config: path.join(workspace.cwd, ".todero", "config.json"),
       registeredBaseWorkspaceCwd: repoRoot,
       registeredProjectWorkspaceId: "project-workspace-1",
       expectedCompanyId: "company-1",
@@ -220,7 +220,7 @@ fs.writeFileSync(path.join(stateDir, "seed-manifest.json"), JSON.stringify({
       seedDatabase: async () => verifiedSeedResult(),
     })).resolves.toMatchObject({ seeded: true, reason: "seeded" });
 
-    expect(readWorktreeSeedManifest(path.join(workspace.cwd, ".paperclip", "config.json"))).toMatchObject({
+    expect(readWorktreeSeedManifest(path.join(workspace.cwd, ".todero", "config.json"))).toMatchObject({
       source: { instanceId: "registered-source", configPath: registeredConfigPath },
       state: "verified",
       phase: "complete",

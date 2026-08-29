@@ -18,7 +18,7 @@
   "docsUrl": "https://developers.google.com/workspace/docs/api/reference/mcp",
   "setupPrerequisite": {
     "title": "Google Developer Preview access required",
-    "description": "Google must register both the Workspace email used to authorize Paperclip and the Google Cloud project that owns the OAuth client. Registration is limited to those emails and projects; it does not enable unrelated Paperclip customers.",
+    "description": "Google must register both the Workspace email used to authorize Todero and the Google Cloud project that owns the OAuth client. Registration is limited to those emails and projects; it does not enable unrelated Todero customers.",
     "steps": [
       "Apply with the Workspace email that will sign in and the Google Cloud project that owns the OAuth client.",
       "Wait for the Google Group notification and then Google's final project-registration email, usually within a couple of days.",
@@ -30,8 +30,8 @@
   "redirectConstraints": "https-or-loopback-http",
   "methods": [
     {
-      "key": "paperclip-read",
-      "label": "Connect with Paperclip",
+      "key": "todero-read",
+      "label": "Connect with Todero",
       "transport": "mcp_remote",
       "auth": "oauth",
       "oauthStrategy": "paperclip_id_connector",
@@ -47,7 +47,7 @@
       "ownershipModes": [
         "platform_shared"
       ],
-      "whenToUse": "Use Paperclip-managed OAuth for read-only Docs access.",
+      "whenToUse": "Use Todero-managed OAuth for read-only Docs access.",
       "defaults": {
         "serverUrl": "https://docsmcp.googleapis.com/mcp/v1",
         "scopesHint": [
@@ -92,7 +92,7 @@
           "prompt": "consent"
         }
       },
-      "guidanceMd": "Enable the Drive, Docs, and Docs MCP APIs, then register Paperclip's callback URI.",
+      "guidanceMd": "Enable the Drive, Docs, and Docs MCP APIs, then register Todero's callback URI.",
       "consoleLinks": {
         "register": "https://console.cloud.google.com/auth/clients",
         "docs": "https://developers.google.com/workspace/guides/configure-mcp-servers"
@@ -103,8 +103,8 @@
       "riskTier": "S3"
     },
     {
-      "key": "paperclip-write",
-      "label": "Connect with Paperclip",
+      "key": "todero-write",
+      "label": "Connect with Todero",
       "transport": "mcp_remote",
       "auth": "oauth",
       "oauthStrategy": "paperclip_id_connector",
@@ -120,7 +120,7 @@
       "ownershipModes": [
         "platform_shared"
       ],
-      "whenToUse": "Use Paperclip-managed OAuth to read and update Docs.",
+      "whenToUse": "Use Todero-managed OAuth to read and update Docs.",
       "defaults": {
         "serverUrl": "https://docsmcp.googleapis.com/mcp/v1",
         "scopesHint": [
@@ -168,7 +168,7 @@
           "prompt": "consent"
         }
       },
-      "guidanceMd": "Enable the Drive, Docs, and Docs MCP APIs, then register Paperclip's callback URI.",
+      "guidanceMd": "Enable the Drive, Docs, and Docs MCP APIs, then register Todero's callback URI.",
       "consoleLinks": {
         "register": "https://console.cloud.google.com/auth/clients",
         "docs": "https://developers.google.com/workspace/guides/configure-mcp-servers"

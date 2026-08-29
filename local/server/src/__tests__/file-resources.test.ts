@@ -7,7 +7,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { activityLog, agents, companies, createDb, executionWorkspaces, goals, issues, projects, projectWorkspaces, type Db } from "@paperclipai/db";
+import { activityLog, agents, companies, createDb, executionWorkspaces, goals, issues, projects, projectWorkspaces, type Db } from "@todero/db";
 import { eq } from "drizzle-orm";
 import { errorHandler } from "../middleware/index.js";
 import {
@@ -48,7 +48,7 @@ type TestGraph = {
 };
 
 async function makeWorkspace() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-file-resources-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "todero-file-resources-"));
   const projectRoot = path.join(root, "project");
   const targetProjectRoot = path.join(root, "target-project");
   const executionRoot = path.join(root, "execution");
@@ -200,7 +200,7 @@ describeEmbeddedPostgres("workspace file resources", () => {
   let db: Db;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-file-resources-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-file-resources-");
     db = createDb(tempDb.connectionString);
   }, 60_000);
 
@@ -1641,7 +1641,7 @@ describeEmbeddedPostgres("file resource route guards", () => {
   let db: Db;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-file-resource-guards-");
+    tempDb = await startEmbeddedPostgresTestDatabase("todero-file-resource-guards-");
     db = createDb(tempDb.connectionString);
   }, 60_000);
 

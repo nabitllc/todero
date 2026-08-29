@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
-import type { Db } from "@paperclipai/db";
+import type { Db } from "@todero/db";
 import {
   activityLog,
   agentWakeupRequests,
@@ -35,7 +35,7 @@ import {
   projectWorkspaces,
   projects,
   workspaceOperations,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type {
   AcceptedPlanDecomposition,
   IssueComment,
@@ -54,7 +54,7 @@ import type {
   IssueWatchdogSummary,
   LowTrustBoundary,
   SuccessfulRunHandoffState,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import {
   clampIssueRequestDepth,
   extractAgentMentionIds,
@@ -64,7 +64,7 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
-} from "@paperclipai/shared";
+} from "@todero/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
 import { logger } from "../middleware/logger.js";
@@ -1648,9 +1648,9 @@ function inboxVisibleForUserCondition(companyId: string, userId: string) {
 }
 
 const LEGACY_PLUGIN_OPERATION_ORIGIN_KINDS = [
-  "plugin:paperclipai.content-machine:case",
-  "plugin:paperclipai.content-machine:evaluation",
-  "plugin:paperclipai.content-machine:source-sync",
+  "plugin:todero.content-machine:case",
+  "plugin:todero.content-machine:evaluation",
+  "plugin:todero.content-machine:source-sync",
 ] as const;
 
 function nonPluginOperationIssueCondition() {
@@ -7170,8 +7170,8 @@ export function issueService(db: Db) {
             issueData.projectId = workspaceSource.projectId;
           }
           // Workspace linkage is only inheritable inside the source project. A
-          // cross-project child (for example, a Paperclip ID issue created from
-          // a Paperclip App parent) must fall through to its own project's
+          // cross-project child (for example, a Todero ID issue created from
+          // a Todero App parent) must fall through to its own project's
           // default workspaces, otherwise the inherited ids fail the
           // project-match assertions below and the create is impossible without
           // the caller naming the target workspaces explicitly.

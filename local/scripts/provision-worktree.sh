@@ -3,9 +3,9 @@ set -euo pipefail
 
 base_cwd="${PAPERCLIP_WORKSPACE_BASE_CWD:?PAPERCLIP_WORKSPACE_BASE_CWD is required}"
 worktree_cwd="${PAPERCLIP_WORKSPACE_CWD:?PAPERCLIP_WORKSPACE_CWD is required}"
-paperclip_home="${PAPERCLIP_HOME:-$HOME/.paperclip}"
+paperclip_home="${PAPERCLIP_HOME:-$HOME/.todero}"
 paperclip_instance_id="${PAPERCLIP_INSTANCE_ID:-default}"
-paperclip_dir="$worktree_cwd/.paperclip"
+paperclip_dir="$worktree_cwd/.todero"
 worktree_config_path="$paperclip_dir/config.json"
 worktree_env_path="$paperclip_dir/.env"
 seed_manifest_path="$paperclip_dir/seed-manifest.json"
@@ -41,13 +41,13 @@ if [[ ! -d "$worktree_cwd" ]]; then
 fi
 
 canonical_base_cwd="$(cd "$base_cwd" && pwd -P)"
-if [[ -L "$canonical_base_cwd/.paperclip" && ! -d "$canonical_base_cwd/.paperclip" ]]; then
+if [[ -L "$canonical_base_cwd/.todero" && ! -d "$canonical_base_cwd/.todero" ]]; then
   # A broken link hides whatever it points at, so the config below would read as absent
   # on a workspace that is malformed rather than plain. Refuse instead of falling back.
-  echo "Registered base project workspace .paperclip is a broken symlink: $canonical_base_cwd/.paperclip" >&2
+  echo "Registered base project workspace .todero is a broken symlink: $canonical_base_cwd/.todero" >&2
   exit 1
 fi
-source_config_path="$canonical_base_cwd/.paperclip/config.json"
+source_config_path="$canonical_base_cwd/.todero/config.json"
 if [[ ! -e "$source_config_path" && ! -L "$source_config_path" ]]; then
   # A base workspace that is a plain checkout carries no instance config of its own.
   # Fall back to the control plane's own registered instance config, which is process
@@ -55,12 +55,12 @@ if [[ ! -e "$source_config_path" && ! -L "$source_config_path" ]]; then
   source_config_path="${PAPERCLIP_CONFIG:-$paperclip_home/instances/$paperclip_instance_id/config.json}"
 fi
 if [[ ! -f "$source_config_path" || -L "$source_config_path" ]]; then
-  echo "Registered Paperclip seed source config is missing or is not a canonical file: $source_config_path" >&2
+  echo "Registered Todero seed source config is missing or is not a canonical file: $source_config_path" >&2
   exit 1
 fi
 canonical_source_dir="$(cd "$(dirname "$source_config_path")" && pwd -P)"
 if [[ "$canonical_source_dir/config.json" != "$source_config_path" ]]; then
-  echo "Registered Paperclip seed source config uses a symlink alias: $source_config_path" >&2
+  echo "Registered Todero seed source config uses a symlink alias: $source_config_path" >&2
   exit 1
 fi
 source_env_path="$(dirname "$source_config_path")/.env"
@@ -111,7 +111,7 @@ repair_base_workspace_install() {
     # process that queued behind a peer's repair can skip its own reinstall.
     (
       cd "$base_cwd" || exit 1
-      exec 9>"$repair_lock_dir/paperclip-provision-repair.lock"
+      exec 9>"$repair_lock_dir/todero-provision-repair.lock"
       flock 9
       if base_cli_healthy; then
         echo "Base workspace CLI became healthy while waiting for the repair lock; skipping reinstall." >&2
@@ -140,18 +140,18 @@ run_isolated_worktree_init() {
     return
   fi
 
-  if command -v pnpm >/dev/null 2>&1 && pnpm paperclipai --help >/dev/null 2>&1; then
+  if command -v pnpm >/dev/null 2>&1 && pnpm todero --help >/dev/null 2>&1; then
     (
       cd "$worktree_cwd" &&
-        pnpm paperclipai worktree init --force --no-seed --seed-mode minimal --name "$worktree_name" --instance "$worktree_instance_id" --from-config "$source_config_path"
+        pnpm todero worktree init --force --no-seed --seed-mode minimal --name "$worktree_name" --instance "$worktree_instance_id" --from-config "$source_config_path"
     )
     return
   fi
 
-  if command -v paperclipai >/dev/null 2>&1; then
+  if command -v todero >/dev/null 2>&1; then
     (
       cd "$worktree_cwd" &&
-        paperclipai worktree init --force --no-seed --seed-mode minimal --name "$worktree_name" --instance "$worktree_instance_id" --from-config "$source_config_path"
+        todero worktree init --force --no-seed --seed-mode minimal --name "$worktree_name" --instance "$worktree_instance_id" --from-config "$source_config_path"
     )
     return
   fi
@@ -159,8 +159,8 @@ run_isolated_worktree_init() {
   return 127
 }
 
-paperclipai_command_available() {
-  if command -v pnpm >/dev/null 2>&1 && pnpm paperclipai --help >/dev/null 2>&1; then
+todero_command_available() {
+  if command -v pnpm >/dev/null 2>&1 && pnpm todero --help >/dev/null 2>&1; then
     return 0
   fi
 
@@ -168,7 +168,7 @@ paperclipai_command_available() {
     return 0
   fi
 
-  if command -v paperclipai >/dev/null 2>&1; then
+  if command -v todero >/dev/null 2>&1; then
     return 0
   fi
 
@@ -299,7 +299,7 @@ try {
 } finally {
   fs.rmSync(temporaryPath, { force: true });
 }
-console.error(`Reconciled isolated Paperclip worktree deployment mode from ${sourceConfigPath}: ${deploymentMode}/${exposure}`);
+console.error(`Reconciled isolated Todero worktree deployment mode from ${sourceConfigPath}: ${deploymentMode}/${exposure}`);
 EOF
 }
 
@@ -463,7 +463,7 @@ async function main() {
   const paperclipDir = process.env.PAPERCLIP_DIR;
   const sourceConfigPath = process.env.SOURCE_CONFIG_PATH;
   const sourceEnvPath = process.env.SOURCE_ENV_PATH;
-  const worktreeHome = path.resolve(expandHomePrefix(nonEmpty(process.env.PAPERCLIP_WORKTREES_DIR) ?? "~/.paperclip-worktrees"));
+  const worktreeHome = path.resolve(expandHomePrefix(nonEmpty(process.env.PAPERCLIP_WORKTREES_DIR) ?? "~/.todero-worktrees"));
   const instanceId = process.env.WORKTREE_INSTANCE_ID;
   if (!/^[A-Za-z0-9_-]+$/.test(instanceId ?? "")) {
     throw new Error("WORKTREE_INSTANCE_ID is missing or unsafe");
@@ -535,7 +535,7 @@ async function main() {
         baseDir: path.resolve(instanceRoot, "data", "storage"),
       },
       s3: {
-        bucket: sourceConfig?.storage?.s3?.bucket ?? "paperclip",
+        bucket: sourceConfig?.storage?.s3?.bucket ?? "todero",
         region: sourceConfig?.storage?.s3?.region ?? "us-east-1",
         endpoint: sourceConfig?.storage?.s3?.endpoint,
         prefix: sourceConfig?.storage?.s3?.prefix ?? "",
@@ -611,12 +611,12 @@ EOF
 }
 
 if [[ -e "$worktree_config_path" && -e "$worktree_env_path" ]] && existing_worktree_config_is_usable; then
-  echo "Reusing existing isolated Paperclip worktree config at $worktree_config_path" >&2
+  echo "Reusing existing isolated Todero worktree config at $worktree_config_path" >&2
 else
   if [[ -e "$worktree_config_path" || -e "$worktree_env_path" ]]; then
-    echo "Existing isolated Paperclip worktree config is stale for this host; regenerating." >&2
+    echo "Existing isolated Todero worktree config is stale for this host; regenerating." >&2
   fi
-  if paperclipai_command_available; then
+  if todero_command_available; then
     if run_isolated_worktree_init; then
       :
     else
@@ -624,17 +624,17 @@ else
       if [[ "$init_exit_code" -eq 127 ]]; then
         # Every CLI candidate was unusable (e.g. an unhealthy base install that
         # the repair could not fix); degrade instead of stranding the run.
-        echo "No usable paperclipai CLI found; writing isolated fallback config without DB seeding." >&2
+        echo "No usable todero CLI found; writing isolated fallback config without DB seeding." >&2
         write_fallback_worktree_config
       else
         # A CLI that ran and failed signals a real problem; do not paper over
         # it with an unseeded fallback config.
-        echo "paperclipai worktree init failed (exit $init_exit_code); failing provisioning instead of writing an unseeded fallback config." >&2
+        echo "todero worktree init failed (exit $init_exit_code); failing provisioning instead of writing an unseeded fallback config." >&2
         exit "$init_exit_code"
       fi
     fi
   else
-    echo "paperclipai worktree init unavailable; writing isolated fallback config without DB seeding." >&2
+    echo "todero worktree init unavailable; writing isolated fallback config without DB seeding." >&2
     write_fallback_worktree_config
   fi
   created_worktree_config=1
@@ -658,7 +658,7 @@ list_base_node_modules_paths() {
       -type d \
       -name node_modules \
       ! -path './.git/*' \
-      ! -path './.paperclip/*' \
+      ! -path './.todero/*' \
       | sed 's#^\./##'
 }
 
@@ -669,7 +669,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = process.env.WORKTREE_CWD;
-const ignoredDirs = new Set([".git", ".paperclip", "node_modules", "dist", "storybook-static"]);
+const ignoredDirs = new Set([".git", ".todero", "node_modules", "dist", "storybook-static"]);
 const files = [];
 
 function walk(dir) {
@@ -731,7 +731,7 @@ if [[ -f "$worktree_cwd/package.json" && -f "$worktree_cwd/pnpm-lock.yaml" ]]; t
   fi
 
   if [[ "$needs_install" -eq 1 ]]; then
-    backup_suffix=".paperclip-backup-${BASHPID:-$$}"
+    backup_suffix=".todero-backup-${BASHPID:-$$}"
     moved_symlink_paths=()
 
     while IFS= read -r relative_path; do

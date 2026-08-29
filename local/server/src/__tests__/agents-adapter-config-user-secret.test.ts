@@ -16,7 +16,7 @@ import {
   secretAccessEvents,
   userSecretDeclarations,
   userSecretDefinitions,
-} from "@paperclipai/db";
+} from "@todero/db";
 import type { ServerAdapterModule } from "../adapters/index.js";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 
@@ -95,8 +95,8 @@ vi.mock("../services/instance-settings.js", () => ({
   instanceSettingsService: () => mockInstanceSettingsService,
 }));
 
-vi.mock("@paperclipai/adapter-claude-local/server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@paperclipai/adapter-claude-local/server")>();
+vi.mock("@todero/adapter-claude-local/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@todero/adapter-claude-local/server")>();
   return {
     ...actual,
     runClaudeLogin: mockRunClaudeLogin,
@@ -134,7 +134,7 @@ describeEmbeddedPostgres("agents adapter-config user-secret resolution routes", 
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
   const previousKeyFile = process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
-  const secretsTmpDir = path.join(os.tmpdir(), `paperclip-adapter-user-secret-${randomUUID()}`);
+  const secretsTmpDir = path.join(os.tmpdir(), `todero-adapter-user-secret-${randomUUID()}`);
 
   beforeAll(async () => {
     mkdirSync(secretsTmpDir, { recursive: true });

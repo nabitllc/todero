@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { PaperclipPluginManifestV1 } from "@todero/shared";
 
 /**
  * Bundled plugin auto-provisioning.
@@ -63,38 +63,38 @@ export interface BundledPluginCatalogEntry {
 export const BUNDLED_PLUGIN_CATALOG: readonly BundledPluginCatalogEntry[] = [
   {
     key: "cloudflare",
-    pluginKey: "paperclip.cloudflare-sandbox-provider",
+    pluginKey: "todero.cloudflare-sandbox-provider",
     relativePath: "sandbox-providers/cloudflare",
   },
   {
     key: "daytona",
-    pluginKey: "paperclip.daytona-sandbox-provider",
+    pluginKey: "todero.daytona-sandbox-provider",
     relativePath: "sandbox-providers/daytona",
   },
   {
     key: "e2b",
-    pluginKey: "paperclip.e2b-sandbox-provider",
+    pluginKey: "todero.e2b-sandbox-provider",
     relativePath: "sandbox-providers/e2b",
   },
   {
     key: "exe-dev",
-    pluginKey: "paperclip.exe-dev-sandbox-provider",
+    pluginKey: "todero.exe-dev-sandbox-provider",
     relativePath: "sandbox-providers/exe-dev",
   },
   {
     key: "kubernetes",
-    pluginKey: "paperclip.kubernetes-sandbox-provider",
+    pluginKey: "todero.kubernetes-sandbox-provider",
     relativePath: "sandbox-providers/kubernetes",
     pathOverrideEnvVar: "PAPERCLIP_KUBERNETES_PLUGIN_PATH",
   },
   {
     key: "modal",
-    pluginKey: "paperclip.modal-sandbox-provider",
+    pluginKey: "todero.modal-sandbox-provider",
     relativePath: "sandbox-providers/modal",
   },
   {
     key: "novita",
-    pluginKey: "paperclip.novita-sandbox-provider",
+    pluginKey: "todero.novita-sandbox-provider",
     relativePath: "sandbox-providers/novita",
   },
 ];

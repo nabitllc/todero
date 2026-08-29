@@ -5,7 +5,7 @@ import {
   type PluginContext,
   type PluginManagedRoutineDeclaration,
   type PluginManagedRoutineResolution,
-} from "@paperclipai/plugin-sdk";
+} from "@todero/plugin-sdk";
 import {
   PAPERCLIP_DISTILL_SKILL_KEY,
   WIKI_MAINTENANCE_ROUTINE_KEYS,
@@ -14,25 +14,25 @@ import {
 import {
   bootstrapWikiRoot,
   bootstrapSpace,
-  assemblePaperclipSourceBundle,
+  assembleToderoSourceBundle,
   archiveSpace,
   captureWikiSource,
   createSpace,
-  createPaperclipDistillationRun,
-  createPaperclipDistillationWorkItem,
+  createToderoDistillationRun,
+  createToderoDistillationWorkItem,
   createOperationIssue,
-  distillPaperclipProjectPage,
+  distillToderoProjectPage,
   enableActiveProjectDistillation,
   fileQueryAnswerAsPage,
   getDistillationOverview,
   getDistillationPageProvenance,
   getDistillationAutoApplyRestriction,
   getEventIngestionSettings,
-  listPaperclipIngestionCandidates,
-  getPaperclipIngestionProfile,
+  listToderoIngestionCandidates,
+  getToderoIngestionProfile,
   getOverview,
   listSpaces,
-  handlePaperclipEventIngestion,
+  handleToderoEventIngestion,
   listWikiAgentOptions,
   listWikiProjectOptions,
   listOperations,
@@ -41,7 +41,7 @@ import {
   readCompanyIdFromParams,
   readTemplate,
   readWikiPage,
-  recordPaperclipDistillationOutcome,
+  recordToderoDistillationOutcome,
   reconcileWikiAgentResource,
   reconcileWikiProjectResource,
   reconcileWikiRoutineResources,
@@ -55,7 +55,7 @@ import {
   startWikiQuerySession,
   spaceFolderStatus,
   updateEventIngestionSettings,
-  updatePaperclipIngestionProfile,
+  updateToderoIngestionProfile,
   updateSpace,
   writeTemplate,
   writeWikiPage,
@@ -126,7 +126,7 @@ function buildManualDistillPrompt(input: { companyId: string; projectId?: string
   return [
     "Manual LLM Wiki distillation requested outside recurring cadence.",
     "",
-    "Prompt source: LLM Wiki plugin action `distill-paperclip-now` (`packages/plugins/plugin-llm-wiki/src/worker.ts`).",
+    "Prompt source: LLM Wiki plugin action `distill-todero-now` (`packages/plugins/plugin-llm-wiki/src/worker.ts`).",
     `Required skill: use the installed \`${PAPERCLIP_DISTILL_SKILL_KEY}\` skill before changing wiki files.`,
     "",
     "Scope:",
@@ -135,13 +135,13 @@ function buildManualDistillPrompt(input: { companyId: string; projectId?: string
     input.projectId ? `- Source project ID: ${input.projectId}` : null,
     input.rootIssueId ? `- Source root issue ID: ${input.rootIssueId}` : null,
     !input.projectId && !input.rootIssueId
-      ? "- Do not hardcode a single project. Find non-plugin Paperclip issues/comments/documents that changed in any project after the last processed cursor and are old enough for the stale/debounce threshold."
+      ? "- Do not hardcode a single project. Find non-plugin Todero issues/comments/documents that changed in any project after the last processed cursor and are old enough for the stale/debounce threshold."
       : null,
     "",
     "Process:",
     "1. Read the wiki root AGENTS.md, wiki/index.md, and recent wiki/log.md entries.",
-    "2. Assemble bounded Paperclip source bundles for every eligible project or root issue, excluding LLM Wiki plugin-operation issues.",
-    "3. Turn durable signal into project standups, wiki-insightful project pages, decisions, history, index, and log updates per the paperclip-distill skill.",
+    "2. Assemble bounded Todero source bundles for every eligible project or root issue, excluding LLM Wiki plugin-operation issues.",
+    "3. Turn durable signal into project standups, wiki-insightful project pages, decisions, history, index, and log updates per the todero-distill skill.",
     "4. Surface clipped, low-signal, stale-hash, or source-window warnings instead of hiding them.",
   ].filter((line): line is string => line !== null).join("\n");
 }
@@ -190,9 +190,9 @@ const plugin = definePlugin({
 
     for (const eventName of PAPERCLIP_EVENT_INGESTION_EVENTS) {
       ctx.events.on(eventName, async (event) => {
-        const result = await handlePaperclipEventIngestion(ctx, event);
+        const result = await handleToderoEventIngestion(ctx, event);
         if (result.status === "recorded") {
-          ctx.logger.info("LLM Wiki recorded Paperclip event for cursor discovery", {
+          ctx.logger.info("LLM Wiki recorded Todero event for cursor discovery", {
             eventType: event.eventType,
             companyId: event.companyId,
             sourceKind: result.sourceKind,
@@ -371,16 +371,16 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.data.register("paperclip-ingestion-profile", async (params) => {
-      return getPaperclipIngestionProfile(ctx, {
+    ctx.data.register("todero-ingestion-profile", async (params) => {
+      return getToderoIngestionProfile(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
       });
     });
 
-    ctx.data.register("paperclip-ingestion-candidates", async (params) => {
-      return listPaperclipIngestionCandidates(ctx, {
+    ctx.data.register("todero-ingestion-candidates", async (params) => {
+      return listToderoIngestionCandidates(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -388,8 +388,8 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("update-paperclip-ingestion-profile", async (params) => {
-      return updatePaperclipIngestionProfile(ctx, {
+    ctx.actions.register("update-todero-ingestion-profile", async (params) => {
+      return updateToderoIngestionProfile(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -397,7 +397,7 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("queue-paperclip-ingestion-backfill", async (params) => {
+    ctx.actions.register("queue-todero-ingestion-backfill", async (params) => {
       const companyId = readCompanyIdFromParams(params);
       const sourceScope = typeof params.sourceScope === "object" && params.sourceScope != null && !Array.isArray(params.sourceScope)
         ? params.sourceScope as Record<string, unknown>
@@ -427,7 +427,7 @@ const plugin = definePlugin({
       const queued: Array<{ workItemId: string; issueId: string; projectId: string | null; rootIssueId: string | null }> = [];
       for (const scope of scopes) {
         const idempotencyScope = scope.rootIssueId ? `root:${scope.rootIssueId}` : `project:${scope.projectId}`;
-        const workItem = await createPaperclipDistillationWorkItem(ctx, {
+        const workItem = await createToderoDistillationWorkItem(ctx, {
           companyId,
           wikiId,
           spaceSlug,
@@ -439,17 +439,17 @@ const plugin = definePlugin({
           idempotencyKey: idempotencyKey && scopes.length === 1
             ? idempotencyKey
             : `${idempotencyKey ?? "profile-backfill"}:${idempotencyScope}:${backfillStartAt ?? "begin"}:${backfillEndAt ?? "now"}`,
-          metadata: { backfillStartAt, backfillEndAt, requestedFrom: "queue-paperclip-ingestion-backfill" },
+          metadata: { backfillStartAt, backfillEndAt, requestedFrom: "queue-todero-ingestion-backfill" },
         });
         const operation = await createOperationIssue(ctx, {
           companyId,
           wikiId,
           spaceSlug,
           operationType: "backfill",
-          title: scope.rootIssueId ? "Backfill Paperclip root issue wiki history" : "Backfill Paperclip project wiki history",
+          title: scope.rootIssueId ? "Backfill Todero root issue wiki history" : "Backfill Todero project wiki history",
           useCheapModelProfile: params.useCheapModelProfile === true,
           prompt: [
-            "Backfill LLM Wiki distillation was queued from a per-space Paperclip ingestion profile.",
+            "Backfill LLM Wiki distillation was queued from a per-space Todero ingestion profile.",
             scope.projectId ? `Project ID: ${scope.projectId}` : null,
             scope.rootIssueId ? `Root issue ID: ${scope.rootIssueId}` : null,
             backfillStartAt ? `Start: ${backfillStartAt}` : null,
@@ -510,8 +510,8 @@ const plugin = definePlugin({
       return { status: "ok", source: captured, operation: op };
     });
 
-    ctx.actions.register("assemble-paperclip-source-bundle", async (params) => {
-      return assemblePaperclipSourceBundle(ctx, {
+    ctx.actions.register("assemble-todero-source-bundle", async (params) => {
+      return assembleToderoSourceBundle(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -527,8 +527,8 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("create-paperclip-distillation-run", async (params) => {
-      return createPaperclipDistillationRun(ctx, {
+    ctx.actions.register("create-todero-distillation-run", async (params) => {
+      return createToderoDistillationRun(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -546,14 +546,14 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("record-paperclip-distillation-outcome", async (params) => {
+    ctx.actions.register("record-todero-distillation-outcome", async (params) => {
       const status = stringField(params.status);
       if (status !== "succeeded" && status !== "failed" && status !== "review_required") {
         throw new Error("status must be succeeded, failed, or review_required");
       }
       const runId = stringField(params.runId);
       if (!runId) throw new Error("runId is required");
-      return recordPaperclipDistillationOutcome(ctx, {
+      return recordToderoDistillationOutcome(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -568,8 +568,8 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("distill-paperclip-project-page", async (params) => {
-      return distillPaperclipProjectPage(ctx, {
+    ctx.actions.register("distill-todero-project-page", async (params) => {
+      return distillToderoProjectPage(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),
@@ -590,13 +590,13 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("distill-paperclip-now", async (params) => {
+    ctx.actions.register("distill-todero-now", async (params) => {
       const companyId = readCompanyIdFromParams(params);
       const spaceSlug = stringField(params.spaceSlug);
       const projectId = stringField(params.projectId);
       const rootIssueId = stringField(params.rootIssueId);
       const idempotencyScope = rootIssueId ? `root:${rootIssueId}` : projectId ? `project:${projectId}` : "company";
-      const workItem = await createPaperclipDistillationWorkItem(ctx, {
+      const workItem = await createToderoDistillationWorkItem(ctx, {
         companyId,
         wikiId: stringField(params.wikiId),
         spaceSlug,
@@ -606,7 +606,7 @@ const plugin = definePlugin({
         requestedByIssueId: stringField(params.requestedByIssueId),
         priority: "medium",
         idempotencyKey: stringField(params.idempotencyKey) ?? `manual:${idempotencyScope}`,
-        metadata: { requestedFrom: "distill-paperclip-now" },
+        metadata: { requestedFrom: "distill-todero-now" },
       });
       const operation = await createOperationIssue(ctx, {
         companyId,
@@ -614,17 +614,17 @@ const plugin = definePlugin({
         spaceSlug,
         operationType: "distill",
         title: rootIssueId
-          ? "Distill Paperclip root issue into wiki"
+          ? "Distill Todero root issue into wiki"
           : projectId
-            ? "Distill Paperclip project into wiki"
-            : "Distill Paperclip changes into wiki",
+            ? "Distill Todero project into wiki"
+            : "Distill Todero changes into wiki",
         useCheapModelProfile: params.useCheapModelProfile === true,
         prompt: buildManualDistillPrompt({ companyId, projectId, rootIssueId }),
       });
       return { status: "queued", workItem, operation };
     });
 
-    ctx.actions.register("enable-paperclip-distillation-active-projects", async (params) => {
+    ctx.actions.register("enable-todero-distillation-active-projects", async (params) => {
       return enableActiveProjectDistillation(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
@@ -633,7 +633,7 @@ const plugin = definePlugin({
       });
     });
 
-    ctx.actions.register("backfill-paperclip-distillation", async (params) => {
+    ctx.actions.register("backfill-todero-distillation", async (params) => {
       const companyId = readCompanyIdFromParams(params);
       const spaceSlug = stringField(params.spaceSlug);
       const projectId = stringField(params.projectId);
@@ -642,7 +642,7 @@ const plugin = definePlugin({
       const backfillStartAt = stringField(params.backfillStartAt);
       const backfillEndAt = stringField(params.backfillEndAt);
       const idempotencyScope = rootIssueId ? `root:${rootIssueId}` : `project:${projectId}`;
-      const workItem = await createPaperclipDistillationWorkItem(ctx, {
+      const workItem = await createToderoDistillationWorkItem(ctx, {
         companyId,
         wikiId: stringField(params.wikiId),
         spaceSlug,
@@ -652,17 +652,17 @@ const plugin = definePlugin({
         requestedByIssueId: stringField(params.requestedByIssueId),
         priority: "low",
         idempotencyKey: stringField(params.idempotencyKey) ?? `backfill:${idempotencyScope}:${backfillStartAt ?? "begin"}:${backfillEndAt ?? "now"}`,
-        metadata: { backfillStartAt, backfillEndAt, requestedFrom: "backfill-paperclip-distillation" },
+        metadata: { backfillStartAt, backfillEndAt, requestedFrom: "backfill-todero-distillation" },
       });
       const operation = await createOperationIssue(ctx, {
         companyId,
         wikiId: stringField(params.wikiId),
         spaceSlug,
         operationType: "backfill",
-        title: rootIssueId ? "Backfill Paperclip root issue wiki history" : "Backfill Paperclip project wiki history",
+        title: rootIssueId ? "Backfill Todero root issue wiki history" : "Backfill Todero project wiki history",
         useCheapModelProfile: params.useCheapModelProfile === true,
         prompt: [
-          "Backfill LLM Wiki distillation requested for a bounded Paperclip source window.",
+          "Backfill LLM Wiki distillation requested for a bounded Todero source window.",
           projectId ? `Project ID: ${projectId}` : null,
           rootIssueId ? `Root issue ID: ${rootIssueId}` : null,
           backfillStartAt ? `Start: ${backfillStartAt}` : null,
@@ -670,7 +670,7 @@ const plugin = definePlugin({
           "Do not process whole-company history; stay within the selected project/root issue and date window.",
         ].filter(Boolean).join("\n"),
       });
-      const result = await distillPaperclipProjectPage(ctx, {
+      const result = await distillToderoProjectPage(ctx, {
         companyId,
         wikiId: stringField(params.wikiId),
         spaceSlug,
@@ -692,7 +692,7 @@ const plugin = definePlugin({
       return { ...result, workItem, operation };
     });
 
-    ctx.actions.register("create-paperclip-distillation-work-item", async (params) => {
+    ctx.actions.register("create-todero-distillation-work-item", async (params) => {
       const kind = stringField(params.kind);
       if (
         kind !== "manual" &&
@@ -707,7 +707,7 @@ const plugin = definePlugin({
       if (priority && priority !== "critical" && priority !== "high" && priority !== "medium" && priority !== "low") {
         throw new Error("priority must be critical, high, medium, or low");
       }
-      return createPaperclipDistillationWorkItem(ctx, {
+      return createToderoDistillationWorkItem(ctx, {
         companyId: readCompanyIdFromParams(params),
         wikiId: stringField(params.wikiId),
         spaceSlug: stringField(params.spaceSlug),

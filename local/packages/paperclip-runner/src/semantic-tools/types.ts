@@ -1,14 +1,14 @@
 import type {
-  PaperclipJsonSchema,
-  PaperclipJsonValue,
-  PaperclipSemanticActionDescriptor,
-  PaperclipSemanticActionEffect,
-  PaperclipSemanticActionId,
-  PaperclipSemanticActionMode,
+  ToderoJsonSchema,
+  ToderoJsonValue,
+  ToderoSemanticActionDescriptor,
+  ToderoSemanticActionEffect,
+  ToderoSemanticActionId,
+  ToderoSemanticActionMode,
 } from "../catalog/semantic-action-types.js";
 import type { PrpSemanticToolEnvelope } from "../protocol/replay-contract.js";
 
-export interface PaperclipSemanticRunContext {
+export interface ToderoSemanticRunContext {
   readonly runId: string;
   readonly companyId: string;
   readonly actor: {
@@ -24,45 +24,45 @@ export interface PaperclipSemanticRunContext {
     readonly assigneeActorId: string | null;
     readonly executionRunId: string | null;
     readonly status: string;
-    readonly workMode: PaperclipSemanticActionMode;
+    readonly workMode: ToderoSemanticActionMode;
   };
   /** Claims explicitly delegated to this run. Actor claims can only narrow them. */
   readonly delegatedClaims: readonly string[];
   readonly policy?: {
-    readonly deniedOperationIds?: readonly PaperclipSemanticActionId[];
+    readonly deniedOperationIds?: readonly ToderoSemanticActionId[];
     readonly allowedInteractionKinds?: readonly string[];
   };
 }
 
-export type PaperclipSemanticContextProvider = (
+export type ToderoSemanticContextProvider = (
   runId: string,
-) => PaperclipSemanticRunContext | Promise<PaperclipSemanticRunContext>;
+) => ToderoSemanticRunContext | Promise<ToderoSemanticRunContext>;
 
-export interface PaperclipSemanticToolDefinition {
-  readonly name: PaperclipSemanticActionId;
+export interface ToderoSemanticToolDefinition {
+  readonly name: ToderoSemanticActionId;
   readonly description: string;
-  readonly inputSchema: PaperclipJsonSchema;
-  readonly outputSchema: PaperclipJsonSchema;
+  readonly inputSchema: ToderoJsonSchema;
+  readonly outputSchema: ToderoJsonSchema;
   readonly annotations: {
-    readonly semanticContract: "paperclip.semantic-action.v1";
+    readonly semanticContract: "todero.semantic-action.v1";
     readonly version: 1;
-    readonly placement: PaperclipSemanticActionDescriptor["placement"];
-    readonly effect: PaperclipSemanticActionEffect;
+    readonly placement: ToderoSemanticActionDescriptor["placement"];
+    readonly effect: ToderoSemanticActionEffect;
     readonly requiredClaims: readonly string[];
   };
 }
 
-export interface PaperclipSemanticDiscoveryResult {
-  readonly schema: "paperclip.semantic-discovery.v1";
+export interface ToderoSemanticDiscoveryResult {
+  readonly schema: "todero.semantic-discovery.v1";
   readonly query: string;
   readonly namespace: string | null;
-  readonly operations: readonly PaperclipSemanticToolDefinition[];
+  readonly operations: readonly ToderoSemanticToolDefinition[];
   readonly truncated: boolean;
 }
 
-export type PaperclipSemanticAuthorizationPhase = "exposure" | "invocation";
+export type ToderoSemanticAuthorizationPhase = "exposure" | "invocation";
 
-export type PaperclipSemanticDenialCode =
+export type ToderoSemanticDenialCode =
   | "operation_absent"
   | "authority_context_invalid"
   | "run_mismatch"
@@ -85,17 +85,17 @@ export type PaperclipSemanticDenialCode =
   | "binding_failed"
   | "binding_output_invalid";
 
-export interface PaperclipSemanticAuthorizationDecision {
+export interface ToderoSemanticAuthorizationDecision {
   readonly allowed: boolean;
-  readonly phase: PaperclipSemanticAuthorizationPhase;
-  readonly operationId: PaperclipSemanticActionId;
-  readonly code: "allowed" | PaperclipSemanticDenialCode;
+  readonly phase: ToderoSemanticAuthorizationPhase;
+  readonly operationId: ToderoSemanticActionId;
+  readonly code: "allowed" | ToderoSemanticDenialCode;
   readonly reason: string;
   readonly effectiveClaims: readonly string[];
 }
 
-export interface PaperclipSemanticAuthorizationRecord extends PaperclipSemanticAuthorizationDecision {
-  readonly schema: "paperclip.semantic-authorization-record.v1";
+export interface ToderoSemanticAuthorizationRecord extends ToderoSemanticAuthorizationDecision {
+  readonly schema: "todero.semantic-authorization-record.v1";
   readonly id: string;
   readonly runId: string;
   readonly companyId: string;
@@ -106,7 +106,7 @@ export interface PaperclipSemanticAuthorizationRecord extends PaperclipSemanticA
   readonly operationReceiptId: string | null;
 }
 
-export interface PaperclipSemanticSafeReference {
+export interface ToderoSemanticSafeReference {
   readonly kind:
     | "task"
     | "document_revision"
@@ -122,32 +122,32 @@ export interface PaperclipSemanticSafeReference {
   readonly id: string;
 }
 
-export interface PaperclipSemanticBindingResult {
-  readonly value: PaperclipJsonValue;
+export interface ToderoSemanticBindingResult {
+  readonly value: ToderoJsonValue;
   readonly code?: string;
   readonly stateRevision?: number;
-  readonly references?: readonly PaperclipSemanticSafeReference[];
+  readonly references?: readonly ToderoSemanticSafeReference[];
   readonly auditReceiptId?: string;
 }
 
-export interface PaperclipAuthorizedSemanticInvocation {
+export interface ToderoAuthorizedSemanticInvocation {
   readonly runId: string;
   readonly companyId: string;
   readonly actorId: string;
   readonly taskId: string;
   readonly callId: string;
-  readonly operationId: PaperclipSemanticActionId;
-  readonly input: Readonly<Record<string, PaperclipJsonValue>>;
+  readonly operationId: ToderoSemanticActionId;
+  readonly input: Readonly<Record<string, ToderoJsonValue>>;
 }
 
-export interface PaperclipSemanticActionBinding {
-  readonly operationId: PaperclipSemanticActionId;
+export interface ToderoSemanticActionBinding {
+  readonly operationId: ToderoSemanticActionId;
   execute(
-    invocation: PaperclipAuthorizedSemanticInvocation,
-  ): PaperclipSemanticBindingResult | Promise<PaperclipSemanticBindingResult>;
+    invocation: ToderoAuthorizedSemanticInvocation,
+  ): ToderoSemanticBindingResult | Promise<ToderoSemanticBindingResult>;
 }
 
-export interface PaperclipSemanticCorrelation {
+export interface ToderoSemanticCorrelation {
   readonly runId: string;
   readonly normalizedSessionId: string;
   readonly turnId: string;
@@ -155,30 +155,30 @@ export interface PaperclipSemanticCorrelation {
   readonly requestId?: string;
 }
 
-export interface PaperclipSemanticToolCall {
+export interface ToderoSemanticToolCall {
   readonly runId: string;
   readonly callId: string;
   readonly operationId: string;
-  readonly correlation: PaperclipSemanticCorrelation;
+  readonly correlation: ToderoSemanticCorrelation;
   readonly input: unknown;
 }
 
-export interface PaperclipSemanticStoredOutcome {
-  readonly operationId: PaperclipSemanticActionId;
+export interface ToderoSemanticStoredOutcome {
+  readonly operationId: ToderoSemanticActionId;
   readonly inputDigest: string;
   readonly operationReceiptId: string;
-  readonly value: PaperclipJsonValue;
+  readonly value: ToderoJsonValue;
   readonly code: string;
   readonly stateRevision?: number;
-  readonly references: readonly PaperclipSemanticSafeReference[];
+  readonly references: readonly ToderoSemanticSafeReference[];
   readonly auditReceiptId?: string;
 }
 
-export type PaperclipSemanticIdempotencyClaim =
+export type ToderoSemanticIdempotencyClaim =
   | { readonly kind: "claimed"; readonly token: string }
   | {
       readonly kind: "duplicate";
-      readonly outcome: PaperclipSemanticStoredOutcome;
+      readonly outcome: ToderoSemanticStoredOutcome;
     }
   | { readonly kind: "conflict" }
   | { readonly kind: "in_progress" };
@@ -191,30 +191,30 @@ export type PaperclipSemanticIdempotencyClaim =
  * transient failure. A store without an independent recovery path cannot be
  * used to expose mutation actions.
  */
-export interface PaperclipSemanticIdempotencyStore {
+export interface ToderoSemanticIdempotencyStore {
   claim(input: {
     readonly scope: string;
-    readonly operationId: PaperclipSemanticActionId;
+    readonly operationId: ToderoSemanticActionId;
     readonly inputDigest: string;
   }):
-    | PaperclipSemanticIdempotencyClaim
-    | Promise<PaperclipSemanticIdempotencyClaim>;
+    | ToderoSemanticIdempotencyClaim
+    | Promise<ToderoSemanticIdempotencyClaim>;
   complete(
     token: string,
-    outcome: PaperclipSemanticStoredOutcome,
+    outcome: ToderoSemanticStoredOutcome,
   ): void | Promise<void>;
   recover(
     token: string,
-    outcome: PaperclipSemanticStoredOutcome,
+    outcome: ToderoSemanticStoredOutcome,
   ): void | Promise<void>;
   release(token: string): void | Promise<void>;
 }
 
-export interface PaperclipSemanticToolSuccess {
+export interface ToderoSemanticToolSuccess {
   readonly ok: true;
-  readonly operationId: PaperclipSemanticActionId;
+  readonly operationId: ToderoSemanticActionId;
   readonly callId: string;
-  readonly value: PaperclipJsonValue;
+  readonly value: ToderoJsonValue;
   readonly code: string;
   readonly duplicate: boolean;
   readonly stateRevision?: number;
@@ -222,12 +222,12 @@ export interface PaperclipSemanticToolSuccess {
   readonly resultReceipt: PrpSemanticToolEnvelope;
 }
 
-export interface PaperclipSemanticToolDenial {
+export interface ToderoSemanticToolDenial {
   readonly ok: false;
   readonly operationId: string;
   readonly callId: string;
   readonly error: {
-    readonly code: PaperclipSemanticDenialCode;
+    readonly code: ToderoSemanticDenialCode;
     readonly message: string;
     readonly retryable: boolean;
   };
@@ -235,5 +235,5 @@ export interface PaperclipSemanticToolDenial {
   readonly resultReceipt: PrpSemanticToolEnvelope | null;
 }
 
-export type PaperclipSemanticToolResult =
-  PaperclipSemanticToolSuccess | PaperclipSemanticToolDenial;
+export type ToderoSemanticToolResult =
+  ToderoSemanticToolSuccess | ToderoSemanticToolDenial;

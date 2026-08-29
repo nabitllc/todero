@@ -6,11 +6,11 @@ Status: ready for CTO review. Final voice/copy pass pending sign-off.
 
 ## TL;DR
 
-Paperclip now governs every MCP tool call an agent makes. Operators install managed connections, define profiles and policies, approve high-risk actions, and read an append-only audit log. Default-deny on unknown tools; quarantine on schema drift; approval required by default for writes; trust rules to lift human-in-the-loop on safe repeats.
+Todero now governs every MCP tool call an agent makes. Operators install managed connections, define profiles and policies, approve high-risk actions, and read an append-only audit log. Default-deny on unknown tools; quarantine on schema drift; approval required by default for writes; trust rules to lift human-in-the-loop on safe repeats.
 
 ## Why this exists
 
-Agents that can call arbitrary MCP tools can also leak data, modify accounts, or run destructive operations the operator never approved. Previous Paperclip releases relied on the agent's runtime trusting whatever MCP server it was pointed at. That is the wrong default for production. MCP Access Governance moves the trust boundary to Paperclip itself: every call is selected, evaluated, audited, and (when needed) gated on a human.
+Agents that can call arbitrary MCP tools can also leak data, modify accounts, or run destructive operations the operator never approved. Previous Todero releases relied on the agent's runtime trusting whatever MCP server it was pointed at. That is the wrong default for production. MCP Access Governance moves the trust boundary to Todero itself: every call is selected, evaluated, audited, and (when needed) gated on a human.
 
 ## What's new for operators
 
@@ -27,7 +27,7 @@ Agents that can call arbitrary MCP tools can also leak data, modify accounts, or
 
 ## What's new for agents
 
-- Agents speak MCP only to the Paperclip gateway. The gateway returns the agent's effective tool list, validates each call against profile + policies, and records the result.
+- Agents speak MCP only to the Todero gateway. The gateway returns the agent's effective tool list, validates each call against profile + policies, and records the result.
 - When a call resolves to `require_approval`, the agent's call blocks until a human decides. The agent does not see *why* a call was denied — that detail is in the audit log for the operator. This is deliberate: agents must not learn to route around denials.
 - Tool call arguments and results are subject to a redaction plan recorded on each call event.
 
@@ -46,7 +46,7 @@ This release introduces new tables (`tool_applications`, `tool_connections`, `to
 
 Upgrade steps for existing deployments:
 
-1. Apply DB migrations as usual (`pnpm paperclipai migrate`).
+1. Apply DB migrations as usual (`pnpm todero migrate`).
 2. Confirm the Tools & Access tab appears in the UI for board users.
 3. From **Examples**, install `safe-read-only-todo-kv` and run the bundled smoke. Expect `ok: true` across all three checks (`allow_read_tool`, `deny_write_tool`, `audit_written`).
 4. For each existing agent runtime that previously called MCP servers directly: replace direct MCP wiring with a managed connection. Until you do, those agents have no governed tool access on this release.
@@ -64,7 +64,7 @@ There is no downgrade path that preserves audit history. If you must roll back, 
 - Trust rules match exact argument shapes only. Pattern-based trust rules are post-v1.
 - Rate limits are per-policy, not cross-policy aggregates.
 - Action request expiry is fixed by policy; approvers cannot extend from the UI.
-- Endpoint mode (Paperclip's own `/mcp` surface) is not subject to the profile/policy stack.
+- Endpoint mode (Todero's own `/mcp` surface) is not subject to the profile/policy stack.
 - Local stdio runtime slots do not migrate across workers; capacity is per-worker, not per-cluster.
 
 ## Verification commands
