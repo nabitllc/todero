@@ -4,7 +4,14 @@ import path from "node:path";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
-export const DEFAULT_RECOMMENDED_VAULT_PATH = "/workspace/Mich-Brain2";
+export const WINDOWS_RECOMMENDED_VAULT_PATH = "C:\\Development\\Todero Brain";
+export const POSIX_RECOMMENDED_VAULT_PATH = "/workspace/Mich-Brain2";
+
+export function defaultRecommendedVaultPath(platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? WINDOWS_RECOMMENDED_VAULT_PATH : POSIX_RECOMMENDED_VAULT_PATH;
+}
+
+export const DEFAULT_RECOMMENDED_VAULT_PATH = defaultRecommendedVaultPath();
 
 export type VaultSource = "recommended" | "personal" | "none";
 
@@ -28,9 +35,9 @@ function sqlitePath(): string {
   return path.join(settingsDir(), "vault-settings.sqlite");
 }
 
-export function resolveRecommendedVaultPath(env: NodeJS.ProcessEnv = process.env): string {
+export function resolveRecommendedVaultPath(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string {
   const fromEnv = env.TODERO_VAULT_DIR?.trim();
-  return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_RECOMMENDED_VAULT_PATH;
+  return fromEnv && fromEnv.length > 0 ? fromEnv : defaultRecommendedVaultPath(platform);
 }
 
 function ensureSettingsDir(): void {
