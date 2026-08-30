@@ -94,6 +94,9 @@ const mockVaultApi = vi.hoisted(() => ({
     readPathExists: false,
     readOnly: true as const,
   })),
+  ensureRecommended: vi.fn(async () => {
+    throw new Error("Failed to clone Recommended Second Brain: git unavailable");
+  }),
 }));
 const mockLocalLlmApi = vi.hoisted(() => ({
   detect: vi.fn(async () => ({ runtimes: [] as Array<Record<string, unknown>> })),

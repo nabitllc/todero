@@ -3,6 +3,7 @@ import {
   applyVaultReadEnv,
   getVaultReadPath,
   getVaultSettings,
+  RECOMMENDED_VAULT_REPO_PAGE_URL,
   resolveRecommendedVaultPath,
   saveVaultSettings,
   vaultPathExists,
@@ -11,22 +12,40 @@ import {
 
 const SOURCES = new Set<VaultSource>(["recommended", "personal", "none"]);
 
+function vaultPayload() {
+  const settings = getVaultSettings();
+  const recommendedPath = resolveRecommendedVaultPath();
+  const readPath = getVaultReadPath();
+  return {
+    settings,
+    recommendedPath,
+    recommendedRepoUrl: RECOMMENDED_VAULT_REPO_PAGE_URL,
+    recommendedExists: vaultPathExists(recommendedPath),
+    recommendedFromEnv: Boolean(process.env.TODERO_VAULT_DIR?.trim()),
+    readPath,
+    readPathExists: vaultPathExists(readPath),
+    readOnly: true as const,
+  };
+}
+
 export function toderoVaultRoutes() {
   const router = Router();
 
   router.get("/todero/vault", (_req, res) => {
-    const settings = getVaultSettings();
-    const recommendedPath = resolveRecommendedVaultPath();
-    const readPath = getVaultReadPath();
-    res.json({
-      settings,
-      recommendedPath,
-      recommendedExists: vaultPathExists(recommendedPath),
-      recommendedFromEnv: Boolean(process.env.TODERO_VAULT_DIR?.trim()),
-      readPath,
-      readPathExists: vaultPathExists(readPath),
-      readOnly: true,
-    });
+    res.json(vaultPayload());
+  });
+
+  router.post("/todero/vault/recommended/ensure", (_req, res) => {
+    try {
+      saveVaultSettings({ source: "recommended" });
+      res.json(vaultPayload());
+    } catch (err) {
+      res.status(400).json({
+        error: err instanceof Error ? err.message : String(err),
+        ...vaultPayload(),
+        recommendedExists: false,
+      });
+    }
   });
 
   router.put("/todero/vault", (req, res) => {

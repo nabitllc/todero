@@ -1,8 +1,9 @@
-# Pull Todero + public Todero Brain, install if needed, start (or open) localhost:3100.
+# Pull Todero + public Todero Brain (app-owned clone), install if needed, start (or open) localhost:3100.
 $ErrorActionPreference = "Stop"
 
 $Todero = "C:\Development\Todero"
-$Brain = "C:\Development\Todero Brain"
+$Brain = Join-Path $env:USERPROFILE ".todero\todero-brain"
+$BrainRepo = "https://github.com/nabitllc/todero-brain.git"
 $Local = Join-Path $Todero "local"
 $Url = "http://localhost:3100"
 $Port = 3100
@@ -34,16 +35,33 @@ if (-not (Test-OnPath "node")) { Fail "node is not installed or not on PATH." }
 if (-not (Test-OnPath "pnpm")) { Fail "pnpm is not installed or not on PATH." }
 
 if (-not (Test-Path -LiteralPath $Todero)) { Fail "Todero checkout not found: $Todero" }
-if (-not (Test-Path -LiteralPath $Brain)) { Fail "Todero Brain checkout not found: $Brain" }
 if (-not (Test-Path -LiteralPath $Local)) { Fail "Todero local/ not found: $Local" }
 
 Write-Host "Updating Todero..."
 git -C $Todero pull
 if ($LASTEXITCODE -ne 0) { Fail "git pull failed in $Todero" }
 
-Write-Host "Updating Todero Brain..."
-git -C $Brain pull
-if ($LASTEXITCODE -ne 0) { Fail "git pull failed in $Brain" }
+$brainParent = Split-Path -Parent $Brain
+try {
+    if (-not (Test-Path -LiteralPath $Brain)) {
+        Write-Host "Cloning Todero Brain into $Brain ..."
+        if (-not (Test-Path -LiteralPath $brainParent)) {
+            New-Item -ItemType Directory -Force -Path $brainParent | Out-Null
+        }
+        git clone $BrainRepo $Brain
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Skipping Todero Brain update: git clone failed for $Brain"
+        }
+    } else {
+        Write-Host "Updating Todero Brain..."
+        git -C $Brain pull
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Skipping Todero Brain update: git pull failed in $Brain"
+        }
+    }
+} catch {
+    Write-Host "Skipping Todero Brain update: $($_.Exception.Message)"
+}
 
 if (Test-Listening) {
     Write-Host "Already listening on $Port. Opening $Url"
