@@ -1,5 +1,81 @@
 export type CompanySelectionSource = "manual" | "route_sync" | "bootstrap";
 
+export const SELECTED_COMPANY_STORAGE_KEY = "todero.selectedCompanyId";
+
+/** Active orgs are everything that is not archived (paused still counts). */
+export function isActiveCompany(company: { status: string }): boolean {
+  return company.status !== "archived";
+}
+
+export function activeCompanies<T extends { status: string }>(companies: readonly T[]): T[] {
+  return companies.filter(isActiveCompany);
+}
+
+export type ColdOpenCompany = {
+  id: string;
+  issuePrefix: string;
+  status: string;
+  createdAt: Date | string;
+};
+
+function createdAtMs(createdAt: Date | string): number {
+  if (createdAt instanceof Date) return createdAt.getTime();
+  const ms = Date.parse(String(createdAt));
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+/**
+ * Last-viewed org for a cold open: an in-memory selection if one exists,
+ * otherwise `todero.selectedCompanyId` in localStorage. CompanyRootRedirect
+ * can render before the bootstrap effect hydrates selection from storage,
+ * so the redirect must read the store itself rather than waiting on
+ * `selectedCompany`.
+ */
+export function resolveLastViewedCompanyId(
+  selectedCompanyId: string | null | undefined,
+): string | null {
+  if (selectedCompanyId) return selectedCompanyId;
+  try {
+    return localStorage.getItem(SELECTED_COMPANY_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which company a cold open of Todero (`/` or Desktop start) should land on.
+ *
+ * Zero active orgs — including archived-only — returns null so the caller
+ * can open the onboarding wizard instead of dumping the user into an
+ * archive or a launcher card. A last-viewed id wins only when that org is
+ * still active. Otherwise the earliest-created active org (by `createdAt`,
+ * not array order) is used.
+ */
+export function pickColdOpenCompany<T extends ColdOpenCompany>(
+  companies: readonly T[],
+  lastViewedId: string | null | undefined,
+): T | null {
+  const active = activeCompanies(companies);
+  if (active.length === 0) return null;
+  if (lastViewedId) {
+    const lastViewed = active.find((company) => company.id === lastViewedId);
+    if (lastViewed) return lastViewed;
+  }
+  return active.reduce((earliest, company) =>
+    createdAtMs(company.createdAt) < createdAtMs(earliest.createdAt) ? company : earliest,
+  );
+}
+
+export function resolveColdOpenPath(params: {
+  companies: readonly ColdOpenCompany[];
+  lastViewedId: string | null | undefined;
+}): "/onboarding" | `/${string}/dashboard` {
+  const company = pickColdOpenCompany(params.companies, params.lastViewedId);
+  if (!company) return "/onboarding";
+  return `/${company.issuePrefix}/dashboard`;
+}
+
+
 interface BounceCandidateCompany {
   id: string;
   name: string;

@@ -98,6 +98,7 @@ import {
   onboardingStepForCompany,
   shouldRedirectCompanylessRouteToOnboarding,
 } from "./lib/onboarding-route";
+import { resolveColdOpenPath, resolveLastViewedCompanyId } from "./lib/company-selection";
 import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
 import { useCloudInstance } from "./hooks/useCloudInstance";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
@@ -539,16 +540,20 @@ export function OnboardingRoutePage() {
   );
 }
 
-function CompanyRootRedirect() {
-  const { companies, selectedCompany, loading } = useCompany();
+export function CompanyRootRedirect() {
+  const { companies, selectedCompanyId, loading } = useCompany();
   const location = useLocation();
 
   if (loading) {
     return <ToderoLoading />;
   }
 
-  const targetCompany = selectedCompany ?? companies[0] ?? null;
-  if (!targetCompany) {
+  // Cold open must not wait on bootstrap: selectedCompany is still null on
+  // the first loaded render, and companies[0] may be archived or merely
+  // first in array order rather than first created.
+  const lastViewedId = resolveLastViewedCompanyId(selectedCompanyId);
+  const target = resolveColdOpenPath({ companies, lastViewedId });
+  if (target === "/onboarding") {
     if (
       shouldRedirectCompanylessRouteToOnboarding({
         pathname: location.pathname,
@@ -560,7 +565,7 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  return <Navigate to={target} replace />;
 }
 
 function StatusCardsLegacyRedirect() {
