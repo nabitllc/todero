@@ -34,5 +34,5 @@ export function localLlmSelectionIsConnected(params: {
 }
 
 export const toderoLocalLlmApi = {
-  detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>("/todero/local-llm"),
+  detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>("/todero/local-llm/detect"),
 };
