@@ -1,3 +1,4 @@
+import { readOperatorEnv } from "../operator-env.js";
 import type { TelemetryBackoffConfig, TelemetryConfig } from "./types.js";
 
 const CI_ENV_VARS = ["CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI"];
@@ -68,7 +69,7 @@ export function resolveTelemetryConfig(
 ): TelemetryConfig {
   const caps = resolveCaps(fileConfig);
 
-  if (process.env.PAPERCLIP_TELEMETRY_DISABLED === "1") {
+  if (readOperatorEnv("TELEMETRY_DISABLED") === "1") {
     return { enabled: false, ...caps };
   }
   if (process.env.DO_NOT_TRACK === "1") {
@@ -81,6 +82,6 @@ export function resolveTelemetryConfig(
     return { enabled: false, ...caps };
   }
 
-  const endpoint = process.env.PAPERCLIP_TELEMETRY_ENDPOINT || undefined;
+  const endpoint = readOperatorEnv("TELEMETRY_ENDPOINT") || undefined;
   return { enabled: true, endpoint, ...caps };
 }

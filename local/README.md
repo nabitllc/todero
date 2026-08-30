@@ -298,74 +298,16 @@ Todero is a full control plane, not a wrapper. Before you build any of this your
 
 ## Quickstart
 
-Open source. Self-hosted. No Todero account required.
+Open source. Self-hosted.
 
 ```bash
-curl -fsSLO https://todero.vercel.app/install.sh
-curl -fsSLO https://todero.vercel.app/install.sh.sha256
-if command -v sha256sum >/dev/null 2>&1; then
-  sha256sum -c install.sh.sha256
-else
-  shasum -a 256 -c install.sh.sha256
-fi
-bash install.sh
+cd local
+pnpm install
+pnpm todero onboard --yes
 ```
-
-The installer ensures Node.js 24.11 or newer is available, installs a managed
-Todero CLI under `~/.todero/cli`, and starts interactive onboarding. It
-can also install Todero as a background service on supported Linux and
-macOS systems. The checksum detects transfer or publishing mistakes, but it is
-served from the same origin as the script; use a release-tag or commit-pinned
-GitHub copy when you need an independently hosted source.
-
-For a non-interactive managed install:
-
-```bash
-curl -fsSL https://todero.vercel.app/install.sh | bash -s -- --no-prompt --no-onboard
-todero onboard --yes
-```
-
-The piped form requires supported Node.js, npm, and npx to already be present.
-If Node.js bootstrap is required, download and review `install.sh` before
-running it so no privileged dependency-install command is accepted through a
-pipe.
-
-To try Todero without installing anything permanently:
-
-```bash
-npx --registry https://registry.npmjs.org todero onboard --yes
-```
-
-> **Troubleshooting: private npm registry `.npmrc`**
->
-> If this fails with an `E404` for `todero` (or similar) and you use a private npm registry (for example GitHub Packages) via a global `~/.npmrc`, `npx` may be resolving `todero` against that private registry instead of the public npm registry.
->
-> Diagnostic:
->
-> ```bash
-> npm config get registry
-> ```
->
-> Workaround (cross-platform; force the public npm registry for this command):
->
-> ```bash
-> npx --registry https://registry.npmjs.org todero onboard --yes
-> ```
-
-That quickstart path now defaults to trusted local loopback mode for the fastest first run. To start in authenticated/private mode instead, choose a bind preset explicitly:
-
-```bash
-todero onboard --yes --bind lan
-# or:
-todero onboard --yes --bind tailnet
-```
-
-If you already have Todero configured, rerunning `onboard` keeps the existing config in place. Use `todero configure` to edit settings.
-
-See [`doc/INSTALLING.md`](doc/INSTALLING.md) for pinned versions, canary and
-git-ref installs, updates, rollback, service management, and uninstalling.
 
 Or manually:
+
 
 ```bash
 git clone https://github.com/nabitllc/todero.git
@@ -482,7 +424,7 @@ Telemetry is **enabled by default** and can be disabled with any of the followin
 
 | Method               | How                                                     |
 | -------------------- | ------------------------------------------------------- |
-| Environment variable | `PAPERCLIP_TELEMETRY_DISABLED=1`                        |
+| Environment variable | `TODERO_TELEMETRY_DISABLED=1`                        |
 | Standard convention  | `DO_NOT_TRACK=1`                                        |
 | CI environments      | Automatically disabled when `CI=true`                   |
 | Config file          | Set `telemetry.enabled: false` in your Todero config |
@@ -508,7 +450,7 @@ MIT &copy; 2026 [Todero Labs, Inc](https://todero.vercel.app)
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=todero%2Fpaperclip&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=nabitllc%2Ftodero&type=date&legend=top-left">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=nabitllc/todero&type=date&theme=dark&legend=top-left&sealed_token=hFjuwFq41bQD5cevvXVv5cTru2swWRZujwJYKlHhtBh6n0H5-VvJZW2SAlcQKB8u4KxhyEB9JqFg1yccJ8WLv9wPBcoWpWcak4gx0MYTWu_pOs2jKOaDluH7KsLeTKt6DHGkHiN3LsqV9s--MTDQcC6Xl7zV51W0-YezQXo-pVPgoFDFAGf2CY5fiP5Q" />
     <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=nabitllc/todero&type=date&legend=top-left&sealed_token=hFjuwFq41bQD5cevvXVv5cTru2swWRZujwJYKlHhtBh6n0H5-VvJZW2SAlcQKB8u4KxhyEB9JqFg1yccJ8WLv9wPBcoWpWcak4gx0MYTWu_pOs2jKOaDluH7KsLeTKt6DHGkHiN3LsqV9s--MTDQcC6Xl7zV51W0-YezQXo-pVPgoFDFAGf2CY5fiP5Q" />

@@ -9,18 +9,18 @@ import {
 
 const TEMPLATE = `<!doctype html>
 <head>
-    <!-- PAPERCLIP_RUNTIME_BRANDING_START -->
-    <!-- PAPERCLIP_RUNTIME_BRANDING_END -->
-    <!-- PAPERCLIP_FAVICON_START -->
+    <!-- TODERO_RUNTIME_BRANDING_START -->
+    <!-- TODERO_RUNTIME_BRANDING_END -->
+    <!-- TODERO_FAVICON_START -->
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <!-- PAPERCLIP_FAVICON_END -->
+    <!-- TODERO_FAVICON_END -->
 </head>`;
 
 describe("ui branding", () => {
-  it("detects worktree mode from PAPERCLIP_IN_WORKTREE", () => {
+  it("detects worktree mode from TODERO_IN_WORKTREE", () => {
     expect(isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "true" })).toBe(true);
     expect(isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "1" })).toBe(true);
     expect(isWorktreeUiBrandingEnabled({ PAPERCLIP_IN_WORKTREE: "false" })).toBe(false);

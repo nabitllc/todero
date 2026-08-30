@@ -21,7 +21,9 @@ afterEach(() => {
 describe("home path resolution", () => {
   it("resolves config and runtime data directly under the instance root", () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "todero-home-paths-"));
-    process.env.PAPERCLIP_HOME = home;
+    process.env.TODERO_HOME = home;
+    delete process.env.TODERO_INSTANCE_ID;
+    delete process.env.PAPERCLIP_HOME;
     delete process.env.PAPERCLIP_INSTANCE_ID;
 
     const instanceRoot = path.join(home, "instances", "default");
@@ -32,5 +34,15 @@ describe("home path resolution", () => {
     expect(resolveDefaultLogsDir()).toBe(path.join(instanceRoot, "logs"));
     expect(resolveDefaultStorageDir()).toBe(path.join(instanceRoot, "data", "storage"));
     expect(resolveDefaultSecretsKeyFilePath()).toBe(path.join(instanceRoot, "secrets", "master.key"));
+  });
+
+  it("still boots from PAPERCLIP_HOME when TODERO_HOME is unset", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "todero-home-legacy-"));
+    process.env.PAPERCLIP_HOME = home;
+    delete process.env.TODERO_HOME;
+    delete process.env.PAPERCLIP_INSTANCE_ID;
+    delete process.env.TODERO_INSTANCE_ID;
+
+    expect(resolveToderoInstanceRoot()).toBe(path.join(home, "instances", "default"));
   });
 });

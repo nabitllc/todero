@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { readOperatorEnv } from "./operator-env.js";
 
 export const DEFAULT_PAPERCLIP_INSTANCE_ID = "default";
 export const PAPERCLIP_CONFIG_BASENAME = "config.json";
@@ -14,15 +15,15 @@ export function expandHomePrefix(value: string): string {
 }
 
 export function resolveToderoHomeDir(homeOverride?: string): string {
-  const raw = homeOverride?.trim() || process.env.PAPERCLIP_HOME?.trim();
+  const raw = homeOverride?.trim() || readOperatorEnv("HOME")?.trim();
   if (raw) return path.resolve(expandHomePrefix(raw));
   return path.resolve(os.homedir(), ".todero");
 }
 
 export function resolveToderoInstanceId(instanceIdOverride?: string): string {
-  const raw = instanceIdOverride?.trim() || process.env.PAPERCLIP_INSTANCE_ID?.trim() || DEFAULT_PAPERCLIP_INSTANCE_ID;
+  const raw = instanceIdOverride?.trim() || readOperatorEnv("INSTANCE_ID")?.trim() || DEFAULT_PAPERCLIP_INSTANCE_ID;
   if (!PATH_SEGMENT_RE.test(raw)) {
-    throw new Error(`Invalid PAPERCLIP_INSTANCE_ID '${raw}'.`);
+    throw new Error(`Invalid TODERO_INSTANCE_ID '${raw}'.`);
   }
   return raw;
 }

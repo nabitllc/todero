@@ -3,10 +3,15 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { config as loadDotenv, parse as parseEnvFileContents } from "dotenv";
 import { updateEnvFileContents, writeEnvFileAtomicallyIfChanged } from "@todero/shared/env-file";
+import {
+  aliasToderoEnvOntoLegacy,
+  isOperatorOwnedEnvKey,
+  operatorEnvKey,
+  readOperatorEnv,
+} from "@todero/shared/operator-env";
 import { resolveConfigPath } from "./store.js";
 
-const JWT_SECRET_ENV_KEY = "PAPERCLIP_AGENT_JWT_SECRET";
-const PAPERCLIP_OWNED_ENV_KEY_PATTERN = /^PAPERCLIP_[A-Z0-9_]+$/;
+const JWT_SECRET_ENV_KEY = operatorEnvKey("AGENT_JWT_SECRET");
 function resolveEnvFilePath(configPath?: string) {
   return path.resolve(path.dirname(resolveConfigPath(configPath)), ".env");
 }
@@ -35,9 +40,14 @@ function emptyEnvFileContents() {
 function toderoOwnedEntries(entries: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(entries).filter(
-      ([key, value]) => PAPERCLIP_OWNED_ENV_KEY_PATTERN.test(key) && value.trim().length > 0,
+      ([key, value]) => isOperatorOwnedEnvKey(key) && value.trim().length > 0,
     ),
   );
+}
+
+function readJwtFromRecord(values: NodeJS.ProcessEnv | Record<string, string>): string | null {
+  const raw = readOperatorEnv("AGENT_JWT_SECRET", values as NodeJS.ProcessEnv);
+  return isNonEmpty(raw) ? raw.trim() : null;
 }
 
 export function resolveToderoEnvFile(configPath?: string): string {
@@ -58,12 +68,12 @@ export function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()): void {
   if (!fs.existsSync(filePath)) return;
   loadedEnvFiles.add(filePath);
   loadDotenv({ path: filePath, override: false, quiet: true });
+  aliasToderoEnvOntoLegacy();
 }
 
 export function readAgentJwtSecretFromEnv(configPath?: string): string | null {
   loadAgentJwtEnvFile(resolveEnvFilePath(configPath));
-  const raw = process.env[JWT_SECRET_ENV_KEY];
-  return isNonEmpty(raw) ? raw!.trim() : null;
+  return readJwtFromRecord(process.env);
 }
 
 export function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()): string | null {
@@ -71,8 +81,7 @@ export function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()): 
 
   const raw = fs.readFileSync(filePath, "utf-8");
   const values = parseEnvFile(raw);
-  const value = values[JWT_SECRET_ENV_KEY];
-  return isNonEmpty(value) ? value!.trim() : null;
+  return readJwtFromRecord(values);
 }
 
 export function ensureAgentJwtSecret(configPath?: string): { secret: string; created: boolean } {

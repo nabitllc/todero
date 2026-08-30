@@ -12,6 +12,10 @@ describe("applyDataDirOverride", () => {
     delete process.env.PAPERCLIP_CONFIG;
     delete process.env.PAPERCLIP_CONTEXT;
     delete process.env.PAPERCLIP_INSTANCE_ID;
+    delete process.env.TODERO_HOME;
+    delete process.env.TODERO_CONFIG;
+    delete process.env.TODERO_CONTEXT;
+    delete process.env.TODERO_INSTANCE_ID;
   });
 
   afterEach(() => {
