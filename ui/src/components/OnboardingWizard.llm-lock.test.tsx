@@ -366,4 +366,38 @@ describe("OnboardingWizard first-run LLM lock", () => {
 
     await act(async () => root.unmount());
   });
+
+  it("(e) missing Recommended cannot continue as attached", async () => {
+    mockAgentsApi.testEnvironment.mockResolvedValue({
+      adapterType: "claude_local",
+      status: "pass",
+      checks: [],
+      testedAt: new Date().toISOString(),
+    });
+    window.localStorage.setItem(
+      ONBOARDING_STORAGE_KEY,
+      JSON.stringify({
+        step: 5,
+        onboardingPath: "create",
+        companyName: "Initech",
+        agentName: "Ada",
+        createdCompanyId: "company-1",
+        createdAgentId: "agent-1",
+        adapterType: "claude_local",
+        llmConnected: true,
+      }),
+    );
+    const { root } = await mount();
+    await flushReact();
+    await flushReact();
+
+    expect(document.body.textContent).toMatch(/missing/i);
+    const continueBtn = buttonByText((t) => t === "Continue");
+    expect(continueBtn).not.toBeNull();
+    expect(continueBtn!.disabled).toBe(true);
+    expect(mockVaultApi.save).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+  });
+
 });

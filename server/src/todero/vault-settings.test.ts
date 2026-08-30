@@ -37,10 +37,17 @@ describe("resolveRecommendedVaultPath", () => {
     );
   });
 
-  it("keeps a posix default so non-Windows callers are not hard-broken", () => {
+  it("does not fall back to Mich-Brain2 on non-win32", () => {
     const recommendedPath = resolveRecommendedVaultPath(envWithoutVaultDir(), "linux");
-    expect(recommendedPath).toBe("/workspace/Mich-Brain2");
-    expect(defaultRecommendedVaultPath("linux")).toBe("/workspace/Mich-Brain2");
+    expect(recommendedPath).not.toBe("/workspace/Mich-Brain2");
+    expect(defaultRecommendedVaultPath("linux")).not.toBe("/workspace/Mich-Brain2");
+    expect(defaultRecommendedVaultPath("linux")).toBe("/Development/Todero Brain");
+    expect(recommendedPath).toBe("/Development/Todero Brain");
+  });
+
+  it("does not treat a missing recommended folder as attached", () => {
+    expect(vaultPathExists("C:\\Development\\Todero Brain Missing")).toBe(false);
+    expect(vaultPathExists("")).toBe(false);
   });
 
   it("reports recommendedExists true when the recommended folder is present", () => {
