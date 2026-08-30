@@ -144,7 +144,6 @@ import {
   ExternalLink,
   FlaskConical,
   MoreHorizontal,
-  Paperclip,
   Pause,
   Pencil,
   Pin,
@@ -164,6 +163,7 @@ import {
   XOctagon,
 } from "lucide-react";
 import { GithubIcon } from "../components/icons/github-icon";
+import { OctopusIcon } from "../components/icons/octopus-icon";
 import type { FolderListItem, FolderListResult } from "@todero/shared";
 
 type SkillTreeNode = {
@@ -271,7 +271,7 @@ function sourceMeta(sourceBadge: CompanySkillSourceBadge, sourceLabel: string | 
     case "local":
       return { icon: Folder, label: sourceLabel ?? "Folder", managedLabel: "Folder managed" };
     case "todero":
-      return { icon: Paperclip, label: sourceLabel ?? "Todero", managedLabel: "Todero managed" };
+      return { icon: OctopusIcon, label: sourceLabel ?? "Todero", managedLabel: "Todero managed" };
     default:
       return { icon: Boxes, label: sourceLabel ?? "Catalog", managedLabel: "Catalog managed" };
   }
