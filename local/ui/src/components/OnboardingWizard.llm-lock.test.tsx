@@ -124,8 +124,14 @@ vi.mock("../api/environments", () => ({ environmentsApi: mockEnvironmentsApi }))
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
 vi.mock("../api/vault", () => ({ toderoVaultApi: mockVaultApi }));
 vi.mock("@/api/vault", () => ({ toderoVaultApi: mockVaultApi }));
-vi.mock("../api/local-llm", () => ({ toderoLocalLlmApi: mockLocalLlmApi, localLlmSelectionIsConnected: () => false }));
-vi.mock("@/api/local-llm", () => ({ toderoLocalLlmApi: mockLocalLlmApi, localLlmSelectionIsConnected: () => false }));
+vi.mock("../api/local-llm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/local-llm")>();
+  return { ...actual, toderoLocalLlmApi: mockLocalLlmApi };
+});
+vi.mock("@/api/local-llm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/local-llm")>();
+  return { ...actual, toderoLocalLlmApi: mockLocalLlmApi };
+});
 vi.mock("../adapters", () => ({
   listUIAdapters: () => mockAdapterRegistry.list,
   getUIAdapter: () => ({ buildAdapterConfig: mockAdapterBuild.buildAdapterConfig }),
@@ -396,6 +402,111 @@ describe("OnboardingWizard first-run LLM lock", () => {
     expect(continueBtn).not.toBeNull();
     expect(continueBtn!.disabled).toBe(true);
     expect(mockVaultApi.save).not.toHaveBeenCalled();
+
+    await act(async () => root.unmount());
+  });
+
+  const leftoverPick = {
+    runtimeId: "ollama:127.0.0.1:11434",
+    runtimeLabel: "Ollama",
+    baseUrl: "http://127.0.0.1:11434",
+    modelId: "llama3.2:latest",
+  };
+
+  async function openLocalLlmConnectStep(selection = leftoverPick) {
+    window.localStorage.setItem(
+      ONBOARDING_STORAGE_KEY,
+      JSON.stringify({
+        step: 4,
+        onboardingPath: "create",
+        companyName: "Initech",
+        agentName: "Ada",
+        createdCompanyId: "company-1",
+        adapterType: "claude_local",
+        connectKind: "local_llm",
+        localLlmSelection: selection,
+      }),
+    );
+    return mount();
+  }
+
+  function connectButton() {
+    return (
+      buttonByText((t) => t.trim() === "Connect") ??
+      buttonByText((t) => t.replace(/\s+/g, " ").trim() === "Connect")
+    );
+  }
+
+  it("empty detect clears a leftover pick and keeps Connect disabled", async () => {
+    mockLocalLlmApi.detect.mockResolvedValue({ runtimes: [] });
+    const { root } = await openLocalLlmConnectStep();
+    for (let i = 0; i < 8; i++) {
+      await flushReact();
+      if (/No local LLM is running/i.test(document.body.textContent ?? "")) break;
+    }
+
+    expect(document.body.textContent).toMatch(/No local LLM is running/i);
+    const connect = connectButton();
+    expect(connect).not.toBeNull();
+    expect(connect!.disabled).toBe(true);
+
+    const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY) ?? "{}");
+    expect(stored.localLlmSelection).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it("Connect stays disabled when leftover pick is not in the live detect list", async () => {
+    mockLocalLlmApi.detect.mockResolvedValue({
+      runtimes: [
+        {
+          id: "lmstudio",
+          kind: "lmstudio",
+          label: "LM Studio",
+          baseUrl: "http://127.0.0.1:1234",
+          models: [{ id: "local-qwen", label: "local-qwen" }],
+        },
+      ],
+    });
+    const { root } = await openLocalLlmConnectStep();
+    for (let i = 0; i < 8; i++) {
+      await flushReact();
+      if ((document.body.textContent ?? "").includes("LM Studio")) break;
+    }
+
+    const connect = connectButton();
+    expect(connect).not.toBeNull();
+    expect(connect!.disabled).toBe(true);
+    const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY) ?? "{}");
+    expect(stored.localLlmSelection).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it("Connect enables only when live detect currently contains the leftover runtime+model", async () => {
+    mockLocalLlmApi.detect.mockResolvedValue({
+      runtimes: [
+        {
+          id: leftoverPick.runtimeId,
+          kind: "ollama",
+          label: leftoverPick.runtimeLabel,
+          baseUrl: leftoverPick.baseUrl,
+          models: [{ id: leftoverPick.modelId, label: leftoverPick.modelId }],
+        },
+      ],
+    });
+    const { root } = await openLocalLlmConnectStep();
+    for (let i = 0; i < 8; i++) {
+      await flushReact();
+      const connect = connectButton();
+      if (connect && !connect.disabled) break;
+    }
+
+    const connect = connectButton();
+    expect(connect).not.toBeNull();
+    expect(connect!.disabled).toBe(false);
+    const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY) ?? "{}");
+    expect(stored.localLlmSelection).toEqual(leftoverPick);
 
     await act(async () => root.unmount());
   });

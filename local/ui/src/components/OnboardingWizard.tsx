@@ -84,7 +84,7 @@ import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
 import { SecondBrainPicker } from "./todero/SecondBrainPicker";
 import { LocalLlmPicker, type LocalLlmSelection } from "./todero/LocalLlmPicker";
-import { toderoLocalLlmApi, localLlmSelectionIsConnected } from "../api/local-llm";
+import { toderoLocalLlmApi, localLlmSelectionIsConnected, type LocalLlmRuntime } from "../api/local-llm";
 import { PillGuy } from "./onboarding/PillGuy";
 import { AGENT_ARC_WIZARD_STEPS, Stepper, agentArcStepFor } from "./onboarding/Stepper";
 import { AgentPreview } from "./onboarding/AgentPreview";
@@ -496,6 +496,7 @@ function OnboardingWizardInner({
       ? (saved.localLlmSelection as LocalLlmSelection)
       : null,
   );
+  const [localLlmLiveRuntimes, setLocalLlmLiveRuntimes] = useState<LocalLlmRuntime[] | null>(null);
   const [llmConnected, setLlmConnected] = useState(Boolean(saved?.llmConnected));
   const [cwd, setCwd] = useState((saved?.cwd as string) ?? "");
   const [model, setModel] = useState((saved?.model as string) ?? "");
@@ -1758,7 +1759,7 @@ function OnboardingWizardInner({
       }
       else if (step === 2 && companyName.trim() && companyGoal.trim()) handleConfirmMission();
       else if (step === 3 && agentName.trim()) setStep(4);
-      else if (step === 4 && agentName.trim() && !missionUnresolvedForHire && (connectKind !== "local_llm" || localLlmSelection))
+      else if (step === 4 && agentName.trim() && !missionUnresolvedForHire && (connectKind !== "local_llm" || localLlmPickIsLive))
         handleGiveHeartbeat();
       else if (step === 6 && llmConnected) handleLaunchToDashboard();
     }
@@ -1786,6 +1787,12 @@ function OnboardingWizardInner({
     if (current === 3 && skipsMissionStep && entryStep !== 2) return 1;
     return (current - 1) as Step;
   }
+
+  const localLlmPickIsLive = localLlmSelectionIsConnected({
+    runtimes: localLlmLiveRuntimes ?? [],
+    runtimeId: localLlmSelection?.runtimeId,
+    modelId: localLlmSelection?.modelId,
+  });
 
   const isAgentArcStep = agentArcStepFor(step) !== null;
   const showsAgentArcStepper = isAgentArcStep && entryStep >= 3;
@@ -2338,6 +2345,7 @@ function OnboardingWizardInner({
                             setConnectKind("adapter");
                             setLlmConnected(false);
                             setLocalLlmSelection(null);
+                            setLocalLlmLiveRuntimes(null);
                             setAdapterType(nextType);
                             if (nextType === "codex_local") {
                               return;
@@ -2370,6 +2378,7 @@ function OnboardingWizardInner({
                         onClick={() => {
                           setConnectKind("local_llm");
                           setLlmConnected(false);
+                          setLocalLlmLiveRuntimes(null);
                         }}
                       >
                         <Cpu className="h-4 w-4" />
@@ -2413,6 +2422,7 @@ function OnboardingWizardInner({
                               setConnectKind("adapter");
                               setLlmConnected(false);
                               setLocalLlmSelection(null);
+                              setLocalLlmLiveRuntimes(null);
                               setAdapterType(nextType);
                               if (nextType === "gemini_local" && !model) {
                                 setModel(DEFAULT_GEMINI_LOCAL_MODEL);
@@ -2459,6 +2469,7 @@ function OnboardingWizardInner({
                         setLocalLlmSelection(next);
                         setLlmConnected(false);
                       }}
+                      onRuntimesDetected={setLocalLlmLiveRuntimes}
                     />
                   )}
 
@@ -2680,7 +2691,7 @@ function OnboardingWizardInner({
                     step === 3
                       ? !agentName.trim()
                       : step === 4
-                        ? loading || adapterEnvLoading || missionUnresolvedForHire || (connectKind === "local_llm" && !localLlmSelection)
+                        ? loading || adapterEnvLoading || missionUnresolvedForHire || (connectKind === "local_llm" && !localLlmPickIsLive)
                         : loading || launchStateIncomplete || !llmConnected
                   }
                   onPrimary={() => {
@@ -2756,7 +2767,7 @@ function OnboardingWizardInner({
                         loading ||
                         adapterEnvLoading ||
                         missionUnresolvedForHire ||
-                        (connectKind === "local_llm" && !localLlmSelection)
+                        (connectKind === "local_llm" && !localLlmPickIsLive)
                       }
                       onClick={handleGiveHeartbeat}
                     >
