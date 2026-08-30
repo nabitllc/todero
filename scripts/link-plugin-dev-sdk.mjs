@@ -8,7 +8,7 @@
 // plugin's own package.json so the published tarballs cannot carry a lifecycle
 // script that escapes their package directory at install time.
 
-import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, symlinkSync, unlinkSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -78,11 +78,12 @@ export function linkSdkInto(packageDir) {
   try {
     const stat = lstatSync(linkTarget);
     if (stat.isSymbolicLink()) {
-      if (readlinkSync(linkTarget) === relativeSdkDir) {
+      const current = readlinkSync(linkTarget);
+      if (current === relativeSdkDir || resolve(scopeDir, current) === sdkDir) {
         // Already linked to the in-repo SDK; nothing to do.
         return false;
       }
-      rmSync(linkTarget, { force: true });
+      unlinkSync(linkTarget);
     } else {
       // A real install has already populated @todero/plugin-sdk (e.g. the
       // plugin host did `npm install` of the published tarball). Leave it.
@@ -93,6 +94,33 @@ export function linkSdkInto(packageDir) {
     if (error?.code !== "ENOENT") throw error;
   }
 
-  symlinkSync(relativeSdkDir, linkTarget, "dir");
+  createSdkDirectoryLink(relativeSdkDir, linkTarget);
   return true;
+}
+
+// Windows: use a junction so postinstall works without Developer Mode
+// (junctions do not need SeCreateSymbolicLinkPrivilege). If that fails,
+// fall back to a dir symlink, then a recursive copy.
+export function createSdkDirectoryLink(relativeSdkDir, linkTarget, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const symlink = options.symlink ?? symlinkSync;
+  const copy = options.copy ?? cpSync;
+
+  if (platform !== "win32") {
+    symlink(relativeSdkDir, linkTarget, "dir");
+    return "symlink";
+  }
+
+  try {
+    symlink(relativeSdkDir, linkTarget, "junction");
+    return "junction";
+  } catch {
+    try {
+      symlink(relativeSdkDir, linkTarget, "dir");
+      return "dir";
+    } catch {
+      copy(resolve(dirname(linkTarget), relativeSdkDir), linkTarget, { recursive: true });
+      return "copy";
+    }
+  }
 }
