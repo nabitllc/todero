@@ -126,6 +126,25 @@ vi.mock("../api/issues", () => ({ issuesApi: mockIssuesApi }));
 vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
 vi.mock("../api/environments", () => ({ environmentsApi: mockEnvironmentsApi }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
+vi.mock("../api/vault", () => ({
+  toderoVaultApi: {
+    get: async () => ({
+      settings: null,
+      recommendedPath: "C:\\Development\\Todero Brain",
+      recommendedExists: false,
+      recommendedFromEnv: false,
+      readPath: null,
+      readPathExists: false,
+      readOnly: true as const,
+    }),
+    save: async (input: { source: string; path?: string | null }) => ({
+      settings: { id: 1 as const, source: input.source, path: input.path ?? null, updatedAt: new Date().toISOString() },
+      readPath: null,
+      readPathExists: false,
+      readOnly: true as const,
+    }),
+  },
+}));
 vi.mock("../adapters", () => ({
   listUIAdapters: () => mockAdapterRegistry.list,
   getUIAdapter: () => ({ buildAdapterConfig: mockAdapterBuild.buildAdapterConfig }),
@@ -422,6 +441,13 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       // the checklist that actually renders it — stopping at the model step
       // would let a Mission regression pass unseen.
       await clickByText((t) => t.startsWith("Connect"));
+      for (let i = 0; i < 12; i++) {
+        await flushReact();
+        if ((document.body.textContent ?? "").includes("Second Brain")) break;
+      }
+      expect(document.body.textContent).toContain("Second Brain");
+      await clickByText((t) => t === "None");
+      await flushReact();
       // The review step is the heading and the woken agent, nothing else: the
       // checklist that restated the walk in three rows is gone, and with it
       // the Mission row that could only render unchecked.
@@ -1132,7 +1158,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
     // controls both announcing "Step 1" would mean different things.
     const currentStep = document.body.querySelector('[aria-current="step"]');
     expect(currentStep?.getAttribute("aria-label")).toBe("Create your first agent");
-    expect(document.body.textContent).toContain("Step 1 of 3");
+    expect(document.body.textContent).toContain("Step 1 of 4");
 
     await act(async () => {
       root.unmount();
