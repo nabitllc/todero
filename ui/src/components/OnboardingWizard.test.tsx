@@ -143,6 +143,9 @@ vi.mock("../api/vault", () => ({
       readPathExists: false,
       readOnly: true as const,
     }),
+    ensureRecommended: async () => {
+      throw new Error("Failed to clone Recommended Second Brain: git unavailable");
+    },
   },
 }));
 vi.mock("../adapters", () => ({

@@ -1,15 +1,36 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
-export const WINDOWS_RECOMMENDED_VAULT_PATH = "C:\\Development\\Todero Brain";
-/** Public Todero Brain only. Never fall back to a personal Mich-Brain2 path. */
-export const POSIX_RECOMMENDED_VAULT_PATH = "/Development/Todero Brain";
+/** Public Todero Brain repo. Recommended clones this into an app-owned folder. */
+export const RECOMMENDED_VAULT_REPO_URL = "https://github.com/nabitllc/todero-brain.git";
+/** Card label (no .git). Never a magic C:\Development\Todero Brain path. */
+export const RECOMMENDED_VAULT_REPO_PAGE_URL = "https://github.com/nabitllc/todero-brain";
 
-export function defaultRecommendedVaultPath(platform: NodeJS.Platform = process.platform): string {
-  return platform === "win32" ? WINDOWS_RECOMMENDED_VAULT_PATH : POSIX_RECOMMENDED_VAULT_PATH;
+/** Legacy operator checkouts. Never the Recommended default. */
+export const MAGIC_WINDOWS_RECOMMENDED_VAULT_PATH = "C:\\Development\\Todero Brain";
+export const MAGIC_POSIX_RECOMMENDED_VAULT_PATH = "/Development/Todero Brain";
+
+export type RecommendedVaultGitExec = (args: readonly string[]) => void;
+
+function settingsDirFromEnv(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.TODERO_SETTINGS_DIR?.trim();
+  return override && override.length > 0 ? override : path.join(os.homedir(), ".todero");
+}
+
+function settingsDir(): string {
+  return settingsDirFromEnv(process.env);
+}
+
+/** App-owned clone path: ~/.todero/todero-brain, or TODERO_SETTINGS_DIR/todero-brain. */
+export function defaultRecommendedVaultPath(
+  _platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return path.join(settingsDirFromEnv(env), "todero-brain");
 }
 
 export const DEFAULT_RECOMMENDED_VAULT_PATH = defaultRecommendedVaultPath();
@@ -23,11 +44,6 @@ export type VaultSettingsRow = {
   updatedAt: string;
 };
 
-function settingsDir(): string {
-  const override = process.env.TODERO_SETTINGS_DIR?.trim();
-  return override && override.length > 0 ? override : path.join(os.homedir(), ".todero");
-}
-
 function jsonPath(): string {
   return path.join(settingsDir(), "vault-settings.json");
 }
@@ -38,12 +54,56 @@ function sqlitePath(): string {
 
 export function resolveRecommendedVaultPath(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform): string {
   const fromEnv = env.TODERO_VAULT_DIR?.trim();
-  return fromEnv && fromEnv.length > 0 ? fromEnv : defaultRecommendedVaultPath(platform);
+  return fromEnv && fromEnv.length > 0 ? fromEnv : defaultRecommendedVaultPath(platform, env);
 }
 
 function ensureSettingsDir(): void {
   // Settings dir only — never the vault.
   fs.mkdirSync(settingsDir(), { recursive: true });
+}
+
+export function runRecommendedVaultGit(args: readonly string[]): void {
+  try {
+    execFileSync("git", [...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err) {
+    const e = err as { stderr?: Buffer | string; message?: string };
+    const stderr =
+      typeof e.stderr === "string" ? e.stderr : Buffer.isBuffer(e.stderr) ? e.stderr.toString("utf8") : "";
+    const detail = stderr.trim() || e.message || String(err);
+    throw new Error(detail);
+  }
+}
+
+/**
+ * Clone nabitllc/todero-brain if missing, otherwise git pull.
+ * Does not attach. Throws if git fails or the folder is still missing.
+ */
+export function ensureRecommendedVault(options?: { gitExec?: RecommendedVaultGitExec }): string {
+  const dest = resolveRecommendedVaultPath();
+  const git = options?.gitExec ?? runRecommendedVaultGit;
+  const present = fs.existsSync(dest);
+  try {
+    if (present) {
+      git(["-C", dest, "pull"]);
+    } else {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      git(["clone", RECOMMENDED_VAULT_REPO_URL, dest]);
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      present
+        ? `Failed to update Recommended Second Brain: ${detail}`
+        : `Failed to clone Recommended Second Brain: ${detail}`,
+    );
+  }
+  if (!vaultPathExists(dest)) {
+    throw new Error("Recommended Second Brain folder is missing after git clone/pull.");
+  }
+  return dest;
 }
 
 function openSqlite(): { exec: (sql: string) => void; prepare: (sql: string) => { get: (...args: unknown[]) => unknown; run: (...args: unknown[]) => void } } | null {
@@ -99,12 +159,15 @@ export function getVaultSettings(): VaultSettingsRow | null {
   }
 }
 
-export function saveVaultSettings(input: { source: VaultSource; path?: string | null }): VaultSettingsRow {
+export function saveVaultSettings(
+  input: { source: VaultSource; path?: string | null },
+  options?: { gitExec?: RecommendedVaultGitExec },
+): VaultSettingsRow {
   let storedPath: string | null = null;
   if (input.source === "recommended") {
-    storedPath = resolveRecommendedVaultPath();
+    storedPath = ensureRecommendedVault(options);
     if (!vaultPathExists(storedPath)) {
-      throw new Error("Recommended Second Brain folder is missing. Choose Personal or None.");
+      throw new Error("Recommended Second Brain folder is missing after git clone/pull.");
     }
   } else if (input.source === "personal") {
     const p = input.path?.trim() ?? "";
