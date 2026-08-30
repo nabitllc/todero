@@ -1090,6 +1090,37 @@ describe.sequential("agent skill routes", () => {
     );
   });
 
+  it("overlays hire AGENTS.md on the default CEO bundle so a mission reaches the heartbeat", async () => {
+    const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
+      .post("/api/companies/company-1/agents")
+      .send({
+        name: "Ada",
+        role: "ceo",
+        adapterType: "claude_local",
+        adapterConfig: {},
+        instructionsBundle: {
+          files: {
+            "AGENTS.md": "**Mission:** Ship the marketplace\n",
+          },
+        },
+      }));
+
+    expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
+    expect(mockAgentInstructionsService.materializeManagedBundle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "ceo",
+        adapterType: "claude_local",
+      }),
+      expect.objectContaining({
+        "AGENTS.md": expect.stringContaining("**Mission:** Ship the marketplace"),
+        "HEARTBEAT.md": expect.stringContaining("CEO Heartbeat Checklist"),
+        "SOUL.md": expect.stringContaining("CEO Persona"),
+        "TOOLS.md": expect.stringContaining("# Tools"),
+      }),
+      { entryFile: "AGENTS.md", replaceExisting: false },
+    );
+  });
+
   it("materializes the bundled default instruction set for non-CEO agents with no prompt template", async () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .post("/api/companies/company-1/agents")
