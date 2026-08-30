@@ -462,13 +462,11 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
     });
 
-    it("shows no environment-check card on the model step, and no Mission row on review", async () => {
+    it("shows no environment-check card on the model step, and pins the Mission on review", async () => {
       // Round-3 walk feedback: the adapter environment check still runs —
       // Connect probes before hiring and blocks on a fail — but its idle card
-      // (explainer plus "Test now") is gone. And the review checklist lost its
-      // "Mission" row: onboarding stopped asking, so the row could only ever
-      // render unchecked. Both asserted against positive anchors so an
-      // unrendered step cannot pass as an absence.
+      // (explainer plus "Test now") is gone. The three-row audit checklist is
+      // still gone; Review now pins the mission the hire and first task carry.
       mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
       const { root } = await openStepOne("create");
       await clickByText((t) => t.startsWith("Continue"));
@@ -502,14 +500,14 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await flushReact();
       await clickByText((t) => t.startsWith("Continue"));
       await flushReact();
-      // The review step is the heading and the woken agent, nothing else: the
-      // checklist that restated the walk in three rows is gone, and with it
-      // the Mission row that could only render unchecked.
+      // The old three-row checklist is still gone. Review pins the mission
+      // the operator typed, which is what the hire payload and first task use.
       expect(document.body.textContent).toContain("Let's get started...");
       expect(document.body.textContent).toContain("Ada is ready to work!");
       expect(document.body.textContent).not.toContain("Organization name");
       expect(document.body.textContent).not.toContain("Model connected");
-      expect(document.body.textContent).not.toContain("Mission");
+      expect(document.body.textContent).toContain("Mission");
+      expect(document.body.textContent).toContain("Ship the marketplace");
 
       await act(async () => root.unmount());
     });
@@ -890,6 +888,26 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       expect(document.body.textContent).toContain(
         "No stored Claude login was found for this agent.",
       );
+
+      await act(async () => root.unmount());
+    });
+
+    it("puts the typed mission on the hire payload the heartbeat materializes", async () => {
+      // Create asked for a mission and saved it. If hire omits
+      // instructionsBundle.files["AGENTS.md"], the first heartbeat runs on
+      // adapter defaults and asks what the company is for.
+      const { root, clickByText } = await openConnectStep();
+
+      await clickByText((t) => t.startsWith("Connect"));
+
+      expect(mockAgentsApi.hire).toHaveBeenCalled();
+      const hireArgs = mockAgentsApi.hire.mock.calls.at(-1) as unknown[];
+      const hireBody = hireArgs[1] as {
+        instructionsBundle?: { files?: Record<string, string> };
+      };
+      const agentsMd = hireBody.instructionsBundle?.files?.["AGENTS.md"] ?? "";
+      expect(agentsMd).toContain("**Mission:** Ship the marketplace");
+      expect(mockAgentsApi.saveInstructionsFile).not.toHaveBeenCalled();
 
       await act(async () => root.unmount());
     });
@@ -1883,6 +1901,62 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       const { root } = await openStep4({ adapterType: "claude_local" });
       expect(document.body.textContent).not.toContain("Sign in to the environment");
       expect(mockAgentsApi.getAdapterAuthSignal).not.toHaveBeenCalled();
+      await act(async () => root.unmount());
+    });
+  });
+
+  describe("Get started first task", () => {
+    it("includes the typed mission and does not tell the agent to ask for a goal", async () => {
+      mockCompany.companies = [{ id: "company-new", name: "Initech", issuePrefix: "INI" }];
+      mockCompany.loading = false;
+      mockCompaniesApi.list.mockResolvedValue(mockCompany.companies);
+      mockProjectsApi.list.mockResolvedValue([]);
+      mockProjectsApi.create.mockResolvedValue({ id: "project-1" });
+      mockIssuesApi.create.mockResolvedValue({ id: "issue-1", identifier: "INI-1" });
+      window.localStorage.setItem(
+        ONBOARDING_STORAGE_KEY,
+        JSON.stringify({
+          step: 6,
+          onboardingPath: "create",
+          companyName: "Initech",
+          companyGoal: "Ship the marketplace",
+          agentName: "Ada",
+          createdCompanyId: "company-new",
+          createdCompanyPrefix: "INI",
+          createdAgentId: "agent-1",
+          createdCompanyGoalId: "goal-1",
+          adapterType: "claude_local",
+          llmConnected: true,
+        }),
+      );
+      mockDialog.onboardingOptions = {};
+      const { root, queryClient } = render();
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <OnboardingWizard />
+          </QueryClientProvider>,
+        );
+      });
+      for (let i = 0; i < 8; i++) await flushReact();
+
+      expect(document.body.textContent).toContain("Let's get started...");
+      expect(document.body.textContent).toContain("Mission");
+      expect(document.body.textContent).toContain("Ship the marketplace");
+
+      await clickByText((t) => t === "Get started" || t.startsWith("Get started"));
+      for (let i = 0; i < 8; i++) {
+        await flushReact();
+        if (mockIssuesApi.create.mock.calls.length > 0) break;
+      }
+
+      expect(mockIssuesApi.create).toHaveBeenCalled();
+      const issueArgs = mockIssuesApi.create.mock.calls.at(-1) as unknown[];
+      const issueBody = issueArgs[1] as { description?: string };
+      expect(issueBody.description).toContain("Ship the marketplace");
+      expect(issueBody.description).not.toMatch(/Don't guess; ask/);
+      expect(issueBody.description).not.toMatch(/settle on one concrete goal/);
+
       await act(async () => root.unmount());
     });
   });

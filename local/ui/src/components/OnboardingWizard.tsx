@@ -55,13 +55,14 @@ import { buildFixedClaudeOAuthBinding } from "./environment-variables-editor/mod
 import { defaultCreateValues } from "./agent-config-defaults";
 import { parseOnboardingGoalInput } from "../lib/onboarding-goal";
 import { restoreOnboardingState } from "../lib/onboarding-state";
-import { composeCeoInstructions } from "../lib/ceo-instructions";
+import { buildLeadHireInstructionsBundle } from "../lib/ceo-instructions";
 import {
   buildOnboardingIssuePayload,
   buildOnboardingProjectPayload,
   selectDefaultCompanyGoalId,
   selectReusableOnboardingProject,
 } from "../lib/onboarding-launch";
+import { DEFAULT_TASK_TITLE, buildOnboardingFirstTaskDescription } from "../lib/onboarding-first-task";
 import { buildNewAgentRuntimeConfig } from "../lib/new-agent-runtime-config";
 import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@todero/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@todero/adapter-cursor-local";
@@ -170,34 +171,6 @@ function adapterConfigHasAnthropicApiKey(config: Record<string, unknown>): boole
 // Exported so tests write/read the exact key the component uses, instead of
 // duplicating the literal and silently drifting from it if it's ever renamed.
 export const ONBOARDING_STORAGE_KEY = "todero-onboarding-state";
-const DEFAULT_TASK_TITLE = "Todero onboarding";
-const DEFAULT_TASK_DESCRIPTION = `You are the Todero agent. This is your first task. Your job here is to
-understand what the user wants and turn it into a concrete plan — not to
-start building yet.
-
-A greeting has already been posted to the user on your behalf, so don't
-re-introduce yourself — go straight to the questions.
-
-This is a user-facing chat. Everything you post here is read by the user, so
-keep your messages terse and written for them. Only surface things meant for
-the user: the questions, the plan, the team, next-step options, and short
-status ("Got your answers — here's the plan."). Never narrate how you work.
-Don't post your internal steps or thinking into the chat — no "let me probe
-the schema", "schema learned", "building the questions payload", "orienting
-myself with the API", or similar play-by-play of your API/tool calls. Do that
-work silently and post only the result.
-
-Work in this order:
-
-1. Ask a few focused, clarifying questions. Use an ask_user_questions interaction to settle on one concrete goal to tackle first— scope, priorities, constraints, and what "done" looks like. Don't guess; ask.
-
-2. Propose one plan. Once you understand the goal, write a short approach plan to the \`plan\` document. At the bottom, list the agents you'd hire (with their roles) and any follow-up tasks you'd create. Then present the whole thing as a SINGLE request_checkbox_confirmation that targets the \`plan\` document, with each proposed hire and follow-up task as its own checkable option, checked by default. Give each option a stable id you can act on later. Do NOT use suggest_tasks or a separate request_confirmation — one checkbox card is the plan and its approval. In the card's message keep the summary to a line or two and point the user to the full write-up in the plan on the right sidebar (it opens to the Plan there automatically) — don't paste the whole plan into the card, and never say the write-up is "above" or "in the plan doc above"; it lives in the right sidebar.
-
-3. Wait for approval. Don't hire anyone or create work until the user approves the plan. They can uncheck anything they don't want before approving, and unchecking simply drops it. If they ask for changes, revise the plan document and re-confirm.
-
-4. On approval, execute only what they kept. Create exactly the checked options — hire the checked agents and create + delegate the checked follow-up tasks, each in its own task. Skip anything the user unchecked.
-
-Propose, don't decide. Keep it conversational.`;
 /**
  * The onboarding draft in `localStorage`, via a browser that is allowed to say
  * no.
@@ -577,10 +550,10 @@ function OnboardingWizardInner({
   //
   // A company that already has its mission opens on the agent step, so steps 1
   // and 2 never run and `companyGoal` stays empty. It is not only a display
-  // field: the Review checklist reads it, and `composeCeoInstructions` seeds
-  // the lead agent's instructions from it. Left empty, the agent is hired
-  // knowing nothing of the mission the customer gave at signup - which is the
-  // answer this whole flow exists to carry forward.
+  // field: Review pins it, the hire payload's AGENTS.md carries it (what the
+  // heartbeat actually reads), and Get started's first task includes it. Left
+  // empty, the agent is hired knowing nothing of the mission the customer gave
+  // at signup - which is the answer this whole flow exists to carry forward.
   //
   // Only when the field is empty, so a customer editing their mission is never
   // overwritten by the stored copy.
@@ -1137,7 +1110,7 @@ function OnboardingWizardInner({
           createdCompanyId,
           buildOnboardingIssuePayload({
             title: DEFAULT_TASK_TITLE,
-            description: DEFAULT_TASK_DESCRIPTION,
+            description: buildOnboardingFirstTaskDescription(companyGoal),
             assigneeAgentId: createdAgentId,
             projectId,
             goalId
@@ -1627,6 +1600,16 @@ function OnboardingWizardInner({
       // path that clears the role must not reach a hire that silently no-ops.
       if (!agentRole) return;
 
+      const ceoInstructionsInput = {
+        companyName,
+        companyGoal,
+        growPath: onboardingPath === "grow",
+        growWorkflows,
+        growPainPoints,
+        growAutomate,
+        q1, q2, q3, q4,
+      };
+      const hireInstructionsBundle = buildLeadHireInstructionsBundle(ceoInstructionsInput);
       const hire = await agentsApi.hire(createdCompanyId, {
         // The name is optional; an agent that reaches here without one is
         // named for the job it was hired to do rather than left blank.
@@ -1635,7 +1618,10 @@ function OnboardingWizardInner({
         adapterType: connectKind === "local_llm" ? "http" : adapterType,
         adapterConfig: hireAdapterConfig,
         ...(shouldApplyStoredClaudeLogin ? { applyStoredClaudeLogin: true } : {}),
-        runtimeConfig: buildNewAgentRuntimeConfig()
+        runtimeConfig: buildNewAgentRuntimeConfig(),
+        // The heartbeat reads the managed AGENTS.md materialized from this
+        // bundle. A later overwrite is not the first work the lead sees.
+        instructionsBundle: hireInstructionsBundle,
       });
       if (hire.approval) {
         await approvalsApi.approve(
@@ -1650,36 +1636,6 @@ function OnboardingWizardInner({
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.list(createdCompanyId)
       });
-      // Seed the CEO's agent instructions file so the agent always has
-      // company context + a hiring-plan output format rule. Non-fatal on
-      // failure — the agent can still function with adapter defaults.
-      //
-      // Before the ownership check below on purpose. This agent exists now,
-      // and it needs its instructions whatever this wizard goes on to show.
-      // Guarding server work rather than attribution would leave a hired agent
-      // with adapter defaults because the customer changed pages.
-      try {
-        const bundle = await agentsApi.instructionsBundle(agent.id, createdCompanyId);
-        await agentsApi.saveInstructionsFile(
-          agent.id,
-          {
-            path: bundle.entryFile,
-            content: composeCeoInstructions({
-              companyName,
-              companyGoal,
-              growPath: onboardingPath === "grow",
-              growWorkflows,
-              growPainPoints,
-              growAutomate,
-              q1, q2, q3, q4,
-            }),
-          },
-          createdCompanyId,
-        );
-      } catch (err) {
-        console.warn("Failed to seed CEO instructions:", err);
-      }
-
       if (!stillTheSameCompany(createdCompanyId)) return;
       setCreatedAgentId(agent.id);
       // Advance to the Review step — the lead is now online. The user drives
@@ -2654,12 +2610,17 @@ function OnboardingWizardInner({
                 </div>
               )}
 
-              {/* Step 6: Review — lead is online (shared capsule above) */}
-
-              {/* Step 5: nothing. The heading names the agent and says it is
-                  ready, and the pill above has just woken to show it — a
-                  checklist restating those in three rows only asked the
-                  customer to audit work they watched happen. */}
+              {/* Step 6: Review — lead is online (shared capsule above). Pin
+                  the mission the hire and first task already carry, so the
+                  operator can see what the agent will start from. The old
+                  three-row checklist (Organization name / Model connected /
+                  Mission-unchecked) is still gone. */}
+              {step === 6 && companyGoal.trim() && (
+                <div className="mx-auto mb-6 w-full max-w-md space-y-1 text-center">
+                  <p className="text-xs text-muted-foreground">Mission</p>
+                  <p className="text-sm whitespace-pre-wrap">{companyGoal.trim()}</p>
+                </div>
+              )}
 
               {/* Error */}
               {visibleError && (
