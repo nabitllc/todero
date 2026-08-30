@@ -125,8 +125,14 @@ vi.mock("../api/issues", () => ({ issuesApi: { create: vi.fn() } }));
 vi.mock("../api/projects", () => ({ projectsApi: { create: vi.fn(), list: vi.fn(async () => []) } }));
 vi.mock("../api/environments", () => ({ environmentsApi: mockEnvironmentsApi }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
-vi.mock("../api/vault", () => ({ toderoVaultApi: mockVaultApi }));
-vi.mock("@/api/vault", () => ({ toderoVaultApi: mockVaultApi }));
+vi.mock("../api/vault", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/vault")>();
+  return { ...actual, toderoVaultApi: mockVaultApi };
+});
+vi.mock("@/api/vault", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/api/vault")>();
+  return { ...actual, toderoVaultApi: mockVaultApi };
+});
 vi.mock("../api/local-llm", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/local-llm")>();
   return { ...actual, toderoLocalLlmApi: mockLocalLlmApi };
@@ -357,17 +363,20 @@ describe("OnboardingWizard first-run LLM lock", () => {
     await clickByText((t) => t.startsWith("Connect"));
     for (let i = 0; i < 12; i++) {
       await flushReact();
-      if (buttonByText((t) => t === "None")) break;
+      if (buttonByText((t) => t.includes("No Second Brain attached"))) break;
     }
 
     expect(document.body.textContent).toContain("Second Brain");
-    const none = buttonByText((t) => t === "None");
+    const none = buttonByText((t) => t.includes("No Second Brain attached"));
     expect(none).not.toBeNull();
     expect(buttonByText((t) => t === "Skip")).toBeNull();
+    expect(buttonByText((t) => t.trim() === "None")).toBeNull();
     const back = buttonByText((t) => t === "Back" || t.includes("Back"));
     expect(back).not.toBeNull();
 
-    await clickByText((t) => t === "None");
+    await clickByText((t) => t.includes("No Second Brain attached"));
+    await flushReact();
+    await clickByText((t) => t === "Continue" || t.startsWith("Continue"));
     await flushReact();
     expect(mockVaultApi.save).toHaveBeenCalledWith(
       expect.objectContaining({ source: "none" }),
@@ -397,8 +406,10 @@ describe("OnboardingWizard first-run LLM lock", () => {
       }),
     );
     const { root } = await mount();
-    await flushReact();
-    await flushReact();
+    for (let i = 0; i < 12; i++) {
+      await flushReact();
+      if (/missing/i.test(document.body.textContent ?? "") && buttonByText((t) => t === "Continue")) break;
+    }
 
     expect(document.body.textContent).toMatch(/missing/i);
     const continueBtn = buttonByText((t) => t === "Continue");

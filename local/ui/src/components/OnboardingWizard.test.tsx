@@ -126,28 +126,33 @@ vi.mock("../api/issues", () => ({ issuesApi: mockIssuesApi }));
 vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
 vi.mock("../api/environments", () => ({ environmentsApi: mockEnvironmentsApi }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
-vi.mock("../api/vault", () => ({
-  toderoVaultApi: {
-    get: async () => ({
-      settings: null,
-      recommendedPath: "C:\\Development\\Todero Brain",
-      recommendedExists: false,
-      recommendedFromEnv: false,
-      readPath: null,
-      readPathExists: false,
-      readOnly: true as const,
-    }),
-    save: async (input: { source: string; path?: string | null }) => ({
-      settings: { id: 1 as const, source: input.source, path: input.path ?? null, updatedAt: new Date().toISOString() },
-      readPath: null,
-      readPathExists: false,
-      readOnly: true as const,
-    }),
-    ensureRecommended: async () => {
-      throw new Error("Failed to clone Recommended Second Brain: git unavailable");
+vi.mock("../api/vault", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/vault")>();
+  return {
+    ...actual,
+    toderoVaultApi: {
+      get: async () => ({
+        settings: null,
+        recommendedPath: "/home/user/.todero/todero-brain",
+        recommendedRepoUrl: actual.RECOMMENDED_VAULT_REPO_PAGE_URL,
+        recommendedExists: false,
+        recommendedFromEnv: false,
+        readPath: null,
+        readPathExists: false,
+        readOnly: true as const,
+      }),
+      save: async (input: { source: string; path?: string | null }) => ({
+        settings: { id: 1 as const, source: input.source, path: input.path ?? null, updatedAt: new Date().toISOString() },
+        readPath: null,
+        readPathExists: false,
+        readOnly: true as const,
+      }),
+      ensureRecommended: async () => {
+        throw new Error("Failed to clone Recommended Second Brain: git unavailable");
+      },
     },
-  },
-}));
+  };
+});
 vi.mock("../adapters", () => ({
   listUIAdapters: () => mockAdapterRegistry.list,
   getUIAdapter: () => ({ buildAdapterConfig: mockAdapterBuild.buildAdapterConfig }),
@@ -449,7 +454,9 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         if ((document.body.textContent ?? "").includes("Second Brain")) break;
       }
       expect(document.body.textContent).toContain("Second Brain");
-      await clickByText((t) => t === "None");
+      await clickByText((t) => t.includes("No Second Brain attached"));
+      await flushReact();
+      await clickByText((t) => t.startsWith("Continue"));
       await flushReact();
       // The review step is the heading and the woken agent, nothing else: the
       // checklist that restated the walk in three rows is gone, and with it
