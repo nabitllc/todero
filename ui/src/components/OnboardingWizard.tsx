@@ -1864,8 +1864,7 @@ function OnboardingWizardInner({
                   progress bars on the same screen. A run that started at step 1
                   keeps this one throughout, so its count never restarts.
 
-                  Step 2 is the mission (create) or the grow questionnaire.
-*/}
+                  Step 2 is the mission (create) or the grow questionnaire. */}
               {!showsAgentArcStepper && (
               <div className="flex items-center gap-1.5 mb-8">
                 {([1, 2, 3, 4, 5] as const).map((s) => {
