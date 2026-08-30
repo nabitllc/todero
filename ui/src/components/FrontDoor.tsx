@@ -32,7 +32,7 @@ export function FrontDoor({ onChoose }: FrontDoorProps) {
           <div>
             <h3 className="font-semibold text-sm">Build a new organization</h3>
             <p className="text-xs text-muted-foreground mt-1">
-              Name your organization, bring on a lead agent, and grow a team of agents to do the work.
+              Begin with a mission, bring on a lead agent, and grow a team of agents to do the work.
             </p>
           </div>
         </button>

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseOnboardingGoalInput } from "./onboarding-goal";
 import {
   isExistingCompanyMissionUnresolved,
+  isOnboardingMissionPresent,
   selectExistingCompanyMission,
 } from "./onboarding-mission";
 
@@ -128,5 +129,17 @@ describe("isExistingCompanyMissionUnresolved", () => {
     expect(
       isExistingCompanyMissionUnresolved({ existingCompanyId: null, goalsLoaded: false }),
     ).toBe(false);
+  });
+});
+
+
+describe("isOnboardingMissionPresent", () => {
+  it("is true once the customer typed a mission", () => {
+    expect(isOnboardingMissionPresent("Ship the product")).toBe(true);
+  });
+
+  it("is false for blank or whitespace", () => {
+    expect(isOnboardingMissionPresent("")).toBe(false);
+    expect(isOnboardingMissionPresent("   \n")).toBe(false);
   });
 });

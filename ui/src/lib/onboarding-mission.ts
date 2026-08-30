@@ -104,3 +104,14 @@ export function planMissionPersistence(params: {
     },
   };
 }
+
+
+/**
+ * Whether the wizard holds a mission the lead agent can start from.
+ *
+ * Hire seeds the agent's instructions from this field. An empty answer is not
+ * a mission — the same honesty as refusing to start without a connected model.
+ */
+export function isOnboardingMissionPresent(goalInput: string): boolean {
+  return Boolean(parseOnboardingGoalInput(goalInput).title);
+}
