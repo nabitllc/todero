@@ -29,7 +29,7 @@ export function SecondBrainPicker({ mode, onSaved, onBack }: SecondBrainPickerPr
         setRecommendedPath(res.recommendedPath);
         setRecommendedExists(res.recommendedExists);
         if (res.settings) {
-          setSource(res.settings.source === "none" && mode === "onboarding" ? "recommended" : res.settings.source);
+          setSource(res.settings.source);
           if (res.settings.source === "personal" && res.settings.path) {
             setPersonalPath(res.settings.path);
           }
@@ -46,7 +46,17 @@ export function SecondBrainPicker({ mode, onSaved, onBack }: SecondBrainPickerPr
     };
   }, [mode]);
 
+  const recommendedMissing = recommendedExists === false;
+  const continueBlocked =
+    saving ||
+    (source === "personal" && !personalPath.trim()) ||
+    (source === "recommended" && recommendedMissing);
+
   async function persist(next: VaultSource) {
+    if (next === "recommended" && recommendedMissing) {
+      setError("Recommended Second Brain folder is missing. Choose Personal or None.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -86,8 +96,8 @@ export function SecondBrainPicker({ mode, onSaved, onBack }: SecondBrainPickerPr
         >
           <div className="font-medium">Recommended</div>
           <div className="text-xs text-muted-foreground mt-1 break-all">
-            {recommendedPath || "TODERO_VAULT_DIR or recommended default"}
-            {recommendedExists === false ? " — folder not found (still allowed)" : null}
+            {recommendedPath || "TODERO_VAULT_DIR or public Todero Brain"}
+            {recommendedMissing ? " -- missing" : null}
           </div>
         </button>
         <button
@@ -101,28 +111,32 @@ export function SecondBrainPicker({ mode, onSaved, onBack }: SecondBrainPickerPr
           <div className="font-medium">Personal</div>
           <div className="text-xs text-muted-foreground mt-1">Use a folder you already have.</div>
         </button>
-        {mode === "settings" ? (
-          <button
-            type="button"
-            className={cn(
-              "rounded-md border p-3 text-left text-sm transition-colors",
-              source === "none" ? "border-foreground bg-accent" : "border-border hover:bg-accent/50",
-            )}
-            onClick={() => setSource("none")}
-          >
-            <div className="font-medium">None</div>
-            <div className="text-xs text-muted-foreground mt-1">No Second Brain attached.</div>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className={cn(
+            "rounded-md border p-3 text-left text-sm transition-colors",
+            source === "none" ? "border-foreground bg-accent" : "border-border hover:bg-accent/50",
+          )}
+          onClick={() => setSource("none")}
+        >
+          <div className="font-medium">None</div>
+          <div className="text-xs text-muted-foreground mt-1">No Second Brain attached.</div>
+        </button>
       </div>
 
       {source === "personal" ? (
         <Input
           value={personalPath}
           onChange={(e) => setPersonalPath(e.target.value)}
-          placeholder="/absolute/path/to/your/vault"
+          placeholder="Path to a personal vault folder"
           autoFocus
         />
+      ) : null}
+
+      {source === "recommended" && recommendedMissing ? (
+        <p className="text-xs text-destructive">
+          Recommended folder is missing. It is not attached. Choose Personal or None.
+        </p>
       ) : null}
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
@@ -144,7 +158,7 @@ export function SecondBrainPicker({ mode, onSaved, onBack }: SecondBrainPickerPr
           ) : null}
           <Button
             size="sm"
-            disabled={saving || (source === "personal" && !personalPath.trim())}
+            disabled={continueBlocked}
             onClick={() => void persist(source)}
           >
             {saving ? "Saving..." : mode === "onboarding" ? "Continue" : "Save"}

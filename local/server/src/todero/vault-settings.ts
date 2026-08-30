@@ -5,7 +5,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 export const WINDOWS_RECOMMENDED_VAULT_PATH = "C:\\Development\\Todero Brain";
-export const POSIX_RECOMMENDED_VAULT_PATH = "/workspace/Mich-Brain2";
+/** Public Todero Brain only. Never fall back to a personal Mich-Brain2 path. */
+export const POSIX_RECOMMENDED_VAULT_PATH = "/Development/Todero Brain";
 
 export function defaultRecommendedVaultPath(platform: NodeJS.Platform = process.platform): string {
   return platform === "win32" ? WINDOWS_RECOMMENDED_VAULT_PATH : POSIX_RECOMMENDED_VAULT_PATH;
@@ -102,6 +103,9 @@ export function saveVaultSettings(input: { source: VaultSource; path?: string | 
   let storedPath: string | null = null;
   if (input.source === "recommended") {
     storedPath = resolveRecommendedVaultPath();
+    if (!vaultPathExists(storedPath)) {
+      throw new Error("Recommended Second Brain folder is missing. Choose Personal or None.");
+    }
   } else if (input.source === "personal") {
     const p = input.path?.trim() ?? "";
     if (!p) {
@@ -141,6 +145,8 @@ export function saveVaultSettings(input: { source: VaultSource; path?: string | 
 export function getVaultReadPath(): string | null {
   const row = getVaultSettings();
   if (!row || row.source === "none") return null;
+  if (!row.path) return null;
+  if (row.source === "recommended" && !vaultPathExists(row.path)) return null;
   return row.path;
 }
 
@@ -171,8 +177,9 @@ export function readVaultFile(relativePath: string): string {
 export function applyVaultReadEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const row = getVaultSettings();
   const next = { ...base };
-  if (row && row.source !== "none" && row.path) {
-    next.TODERO_VAULT_DIR = row.path;
+  const attachedPath = getVaultReadPath();
+  if (row && row.source !== "none" && attachedPath) {
+    next.TODERO_VAULT_DIR = attachedPath;
     next.TODERO_VAULT_SOURCE = row.source;
     next.TODERO_VAULT_READONLY = "1";
   } else {
