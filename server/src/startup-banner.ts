@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolveToderoConfigPath, resolveToderoEnvPath } from "./paths.js";
+import { readOperatorEnv } from "@todero/shared/operator-env";
 import type { BindMode, DeploymentExposure, DeploymentMode } from "@todero/shared";
 
 import { parse as parseEnvFileContents } from "dotenv";
@@ -72,7 +73,7 @@ function resolveAgentJwtSecretStatus(
   status: "pass" | "warn";
   message: string;
 } {
-  const envValue = process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
+  const envValue = readOperatorEnv("AGENT_JWT_SECRET")?.trim();
   if (envValue) {
     return {
       status: "pass",
@@ -82,7 +83,7 @@ function resolveAgentJwtSecretStatus(
 
   if (existsSync(envFilePath)) {
     const parsed = parseEnvFileContents(readFileSync(envFilePath, "utf-8"));
-    const fileValue = typeof parsed.PAPERCLIP_AGENT_JWT_SECRET === "string" ? parsed.PAPERCLIP_AGENT_JWT_SECRET.trim() : "";
+    const fileValue = (readOperatorEnv("AGENT_JWT_SECRET", parsed as NodeJS.ProcessEnv) ?? "").trim();
     if (fileValue) {
       return {
         status: "warn",
@@ -93,7 +94,7 @@ function resolveAgentJwtSecretStatus(
 
   return {
     status: "warn",
-    message: "missing (run `npx todero onboard`)",
+    message: "missing (run `pnpm todero onboard`)",
   };
 }
 
@@ -135,12 +136,12 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     : color("disabled", "yellow");
 
   const art = [
-    color("██████╗  █████╗ ██████╗ ███████╗██████╗  ██████╗██╗     ██╗██████╗ ", "cyan"),
-    color("██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔════╝██║     ██║██╔══██╗", "cyan"),
-    color("██████╔╝███████║██████╔╝█████╗  ██████╔╝██║     ██║     ██║██████╔╝", "cyan"),
-    color("██╔═══╝ ██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗██║     ██║     ██║██╔═══╝ ", "cyan"),
-    color("██║     ██║  ██║██║     ███████╗██║  ██║╚██████╗███████╗██║██║     ", "cyan"),
-    color("╚═╝     ╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝╚═╝     ", "cyan"),
+    color("████████╗ ██████╗ ██████╗ ███████╗██████╗  ██████╗", "cyan"),
+    color("╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗██╔═══██╗", "cyan"),
+    color("   ██║   ██║   ██║██║  ██║█████╗  ██████╔╝██║   ██║", "cyan"),
+    color("   ██║   ██║   ██║██║  ██║██╔══╝  ██╔══██╗██║   ██║", "cyan"),
+    color("   ██║   ╚██████╔╝██████╔╝███████╗██║  ██║╚██████╔╝", "cyan"),
+    color("   ╚═╝    ╚═════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝", "cyan"),
   ];
 
   const lines = [

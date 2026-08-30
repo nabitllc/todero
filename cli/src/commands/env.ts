@@ -119,6 +119,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
   const databaseMode = config?.database?.mode ?? "embedded-postgres";
   const dbUrlSource: EnvSource = process.env.DATABASE_URL ? "env" : config?.database?.connectionString ? "config" : "missing";
   const publicUrl =
+    process.env.TODERO_PUBLIC_URL ??
     process.env.PAPERCLIP_PUBLIC_URL ??
     process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ??
     process.env.BETTER_AUTH_URL ??
@@ -126,7 +127,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
     config?.auth?.publicBaseUrl ??
     "";
   const publicUrlSource: EnvSource =
-    process.env.PAPERCLIP_PUBLIC_URL
+    process.env.TODERO_PUBLIC_URL || process.env.PAPERCLIP_PUBLIC_URL
       ? "env"
       : process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL || process.env.BETTER_AUTH_BASE_URL
         ? "env"
@@ -185,7 +186,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
 
   const rows: EnvVarRow[] = [
     {
-      key: "PAPERCLIP_AGENT_JWT_SECRET",
+      key: "TODERO_AGENT_JWT_SECRET",
       value: jwtEnv ?? jwtFile ?? "",
       source: jwtSource,
       required: true,
@@ -216,7 +217,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "HTTP listen port",
     },
     {
-      key: "PAPERCLIP_PUBLIC_URL",
+      key: "TODERO_PUBLIC_URL",
       value: publicUrl,
       source: publicUrlSource,
       required: false,
@@ -231,24 +232,24 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
           ? "default"
           : "missing",
       required: false,
-      note: "Comma-separated auth origin allowlist (auto-derived from PAPERCLIP_PUBLIC_URL when possible)",
+      note: "Comma-separated auth origin allowlist (auto-derived from TODERO_PUBLIC_URL when possible)",
     },
     {
-      key: "PAPERCLIP_AGENT_JWT_TTL_SECONDS",
+      key: "TODERO_AGENT_JWT_TTL_SECONDS",
       value: process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS ?? DEFAULT_AGENT_JWT_TTL_SECONDS,
       source: process.env.PAPERCLIP_AGENT_JWT_TTL_SECONDS ? "env" : "default",
       required: false,
       note: "JWT lifetime in seconds",
     },
     {
-      key: "PAPERCLIP_AGENT_JWT_ISSUER",
+      key: "TODERO_AGENT_JWT_ISSUER",
       value: process.env.PAPERCLIP_AGENT_JWT_ISSUER ?? DEFAULT_AGENT_JWT_ISSUER,
       source: process.env.PAPERCLIP_AGENT_JWT_ISSUER ? "env" : "default",
       required: false,
       note: "JWT issuer",
     },
     {
-      key: "PAPERCLIP_AGENT_JWT_AUDIENCE",
+      key: "TODERO_AGENT_JWT_AUDIENCE",
       value: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ?? DEFAULT_AGENT_JWT_AUDIENCE,
       source: process.env.PAPERCLIP_AGENT_JWT_AUDIENCE ? "env" : "default",
       required: false,
@@ -269,7 +270,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Set to `false` to disable timer scheduling",
     },
     {
-      key: "PAPERCLIP_SECRETS_PROVIDER",
+      key: "TODERO_SECRETS_PROVIDER",
       value: secretsProvider,
       source: process.env.PAPERCLIP_SECRETS_PROVIDER
         ? "env"
@@ -280,7 +281,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Default provider for new secrets",
     },
     {
-      key: "PAPERCLIP_SECRETS_STRICT_MODE",
+      key: "TODERO_SECRETS_STRICT_MODE",
       value: secretsStrictMode,
       source: process.env.PAPERCLIP_SECRETS_STRICT_MODE
         ? "env"
@@ -291,7 +292,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Require secret refs for sensitive env keys",
     },
     {
-      key: "PAPERCLIP_SECRETS_MASTER_KEY_FILE",
+      key: "TODERO_SECRETS_MASTER_KEY_FILE",
       value: secretsKeyFilePath,
       source: process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE
         ? "env"
@@ -302,7 +303,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Path to local encrypted secrets key file",
     },
     {
-      key: "PAPERCLIP_STORAGE_PROVIDER",
+      key: "TODERO_STORAGE_PROVIDER",
       value: storageProvider,
       source: process.env.PAPERCLIP_STORAGE_PROVIDER
         ? "env"
@@ -313,7 +314,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Storage provider (local_disk or s3)",
     },
     {
-      key: "PAPERCLIP_STORAGE_LOCAL_DIR",
+      key: "TODERO_STORAGE_LOCAL_DIR",
       value: storageLocalDir,
       source: process.env.PAPERCLIP_STORAGE_LOCAL_DIR
         ? "env"
@@ -324,7 +325,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Local storage base directory for local_disk provider",
     },
     {
-      key: "PAPERCLIP_STORAGE_S3_BUCKET",
+      key: "TODERO_STORAGE_S3_BUCKET",
       value: storageS3Bucket,
       source: process.env.PAPERCLIP_STORAGE_S3_BUCKET
         ? "env"
@@ -335,7 +336,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "S3 bucket name for s3 provider",
     },
     {
-      key: "PAPERCLIP_STORAGE_S3_REGION",
+      key: "TODERO_STORAGE_S3_REGION",
       value: storageS3Region,
       source: process.env.PAPERCLIP_STORAGE_S3_REGION
         ? "env"
@@ -346,7 +347,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "S3 region for s3 provider",
     },
     {
-      key: "PAPERCLIP_STORAGE_S3_ENDPOINT",
+      key: "TODERO_STORAGE_S3_ENDPOINT",
       value: storageS3Endpoint,
       source: process.env.PAPERCLIP_STORAGE_S3_ENDPOINT
         ? "env"
@@ -357,7 +358,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Optional custom endpoint for S3-compatible providers",
     },
     {
-      key: "PAPERCLIP_STORAGE_S3_PREFIX",
+      key: "TODERO_STORAGE_S3_PREFIX",
       value: storageS3Prefix,
       source: process.env.PAPERCLIP_STORAGE_S3_PREFIX
         ? "env"
@@ -368,7 +369,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
       note: "Optional object key prefix",
     },
     {
-      key: "PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE",
+      key: "TODERO_STORAGE_S3_FORCE_PATH_STYLE",
       value: storageS3ForcePathStyle,
       source: process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE
         ? "env"
@@ -383,7 +384,7 @@ function collectDeploymentEnvRows(config: ToderoConfig | null, configPath: strin
   const defaultConfigPath = resolveConfigPath();
   if (process.env.PAPERCLIP_CONFIG || configPath !== defaultConfigPath) {
     rows.push({
-      key: "PAPERCLIP_CONFIG",
+      key: "TODERO_CONFIG",
       value: process.env.PAPERCLIP_CONFIG ?? configPath,
       source: process.env.PAPERCLIP_CONFIG ? "env" : "default",
       required: false,

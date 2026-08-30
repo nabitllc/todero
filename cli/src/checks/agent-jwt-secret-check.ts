@@ -6,12 +6,14 @@ import {
 } from "../config/env.js";
 import type { CheckResult } from "./index.js";
 
+const JWT_KEY = "TODERO_AGENT_JWT_SECRET";
+
 export function agentJwtSecretCheck(configPath?: string): CheckResult {
   if (readAgentJwtSecretFromEnv(configPath)) {
     return {
       name: "Agent JWT secret",
       status: "pass",
-      message: "PAPERCLIP_AGENT_JWT_SECRET is set in environment",
+      message: `${JWT_KEY} is set in environment`,
     };
   }
 
@@ -22,7 +24,7 @@ export function agentJwtSecretCheck(configPath?: string): CheckResult {
     return {
       name: "Agent JWT secret",
       status: "warn",
-      message: `PAPERCLIP_AGENT_JWT_SECRET is present in ${envPath} but not loaded into environment`,
+      message: `${JWT_KEY} is present in ${envPath} but not loaded into environment`,
       repairHint: `Set the value from ${envPath} in your shell before starting the Todero server`,
     };
   }
@@ -30,11 +32,11 @@ export function agentJwtSecretCheck(configPath?: string): CheckResult {
   return {
     name: "Agent JWT secret",
     status: "fail",
-    message: `PAPERCLIP_AGENT_JWT_SECRET missing from environment and ${envPath}`,
+    message: `${JWT_KEY} missing from environment and ${envPath}`,
     canRepair: true,
     repair: () => {
       ensureAgentJwtSecret(configPath);
     },
-    repairHint: `Run with --repair to create ${envPath} containing PAPERCLIP_AGENT_JWT_SECRET`,
+    repairHint: `Run with --repair to create ${envPath} containing ${JWT_KEY}`,
   };
 }

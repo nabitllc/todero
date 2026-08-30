@@ -167,13 +167,16 @@ const env: NodeJS.ProcessEnv = {
 if (mode === "dev") {
   env.PAPERCLIP_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
   env.PAPERCLIP_DEV_SERVER_STATUS_TOKEN = devServerStatusToken ?? "";
-  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= "true";
+  env.TODERO_MIGRATION_AUTO_APPLY ??= "true";
+  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= env.TODERO_MIGRATION_AUTO_APPLY;
 }
 
 if (mode === "watch") {
   delete env.PAPERCLIP_DEV_SERVER_STATUS_TOKEN;
-  env.PAPERCLIP_MIGRATION_PROMPT ??= "never";
-  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= "true";
+  env.TODERO_MIGRATION_PROMPT ??= "never";
+  env.PAPERCLIP_MIGRATION_PROMPT ??= env.TODERO_MIGRATION_PROMPT;
+  env.TODERO_MIGRATION_AUTO_APPLY ??= "true";
+  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= env.TODERO_MIGRATION_AUTO_APPLY;
 }
 
 if (tailscaleAuth || bindMode) {
@@ -450,7 +453,7 @@ async function refreshPendingMigrations() {
 
 async function maybePreflightMigrations(options: { interactive?: boolean; autoApply?: boolean; exitOnDecline?: boolean } = {}) {
   const interactive = options.interactive ?? mode === "watch";
-  const autoApply = options.autoApply ?? env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true";
+  const autoApply = options.autoApply ?? (env.TODERO_MIGRATION_AUTO_APPLY === "true" || env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true");
   const exitOnDecline = options.exitOnDecline ?? mode === "watch";
 
   const payload = await refreshPendingMigrations();

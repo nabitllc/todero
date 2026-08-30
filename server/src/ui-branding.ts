@@ -1,7 +1,8 @@
-const FAVICON_BLOCK_START = "<!-- PAPERCLIP_FAVICON_START -->";
-const FAVICON_BLOCK_END = "<!-- PAPERCLIP_FAVICON_END -->";
-const RUNTIME_BRANDING_BLOCK_START = "<!-- PAPERCLIP_RUNTIME_BRANDING_START -->";
-const RUNTIME_BRANDING_BLOCK_END = "<!-- PAPERCLIP_RUNTIME_BRANDING_END -->";
+import { readOperatorEnv } from "@todero/shared/operator-env";
+const FAVICON_BLOCK_START = "<!-- TODERO_FAVICON_START -->";
+const FAVICON_BLOCK_END = "<!-- TODERO_FAVICON_END -->";
+const RUNTIME_BRANDING_BLOCK_START = "<!-- TODERO_RUNTIME_BRANDING_START -->";
+const RUNTIME_BRANDING_BLOCK_END = "<!-- TODERO_RUNTIME_BRANDING_END -->";
 
 const DEFAULT_FAVICON_LINKS = [
   '<link rel="icon" href="/favicon.ico" sizes="48x48" />',
@@ -148,7 +149,7 @@ function createFaviconDataUrl(background: string, foreground: string): string {
 }
 
 export function isWorktreeUiBrandingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isTruthyEnvValue(env.PAPERCLIP_IN_WORKTREE);
+  return isTruthyEnvValue(readOperatorEnv("IN_WORKTREE", env));
 }
 
 export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): WorktreeUiBranding {
@@ -163,8 +164,8 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
     };
   }
 
-  const name = nonEmpty(env.PAPERCLIP_WORKTREE_NAME) ?? nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? "worktree";
-  const color = normalizeHexColor(env.PAPERCLIP_WORKTREE_COLOR) ?? deriveColorFromSeed(name);
+  const name = nonEmpty(readOperatorEnv("WORKTREE_NAME", env)) ?? nonEmpty(readOperatorEnv("INSTANCE_ID", env)) ?? "worktree";
+  const color = normalizeHexColor(readOperatorEnv("WORKTREE_COLOR", env)) ?? deriveColorFromSeed(name);
   const textColor = pickReadableTextColor(color);
 
   return {
@@ -173,7 +174,7 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
     color,
     textColor,
     faviconHref: createFaviconDataUrl(color, textColor),
-    instanceId: nonEmpty(env.PAPERCLIP_INSTANCE_ID),
+    instanceId: nonEmpty(readOperatorEnv("INSTANCE_ID", env)),
   };
 }
 
