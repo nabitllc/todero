@@ -1,4 +1,4 @@
-interface ComposeCeoInstructionsInput {
+export interface ComposeCeoInstructionsInput {
   companyName: string;
   companyGoal: string;
   growPath: boolean;
@@ -10,6 +10,13 @@ interface ComposeCeoInstructionsInput {
   q3: string;
   q4: string;
 }
+
+export const LEAD_HIRE_INSTRUCTIONS_ENTRY_FILE = "AGENTS.md";
+
+export type LeadHireInstructionsBundle = {
+  entryFile: typeof LEAD_HIRE_INSTRUCTIONS_ENTRY_FILE;
+  files: Record<string, string>;
+};
 
 export function composeCeoInstructions(input: ComposeCeoInstructionsInput): string {
   const {
@@ -94,4 +101,25 @@ When the user asks for a specific work product, save it as a document on the tas
 
 Use these keys consistently so the user's review flows (and any parsing logic) can locate the right artifact.
 `;
+}
+
+/**
+ * The hire payload the heartbeat actually reads.
+ *
+ * `POST /agent-hires` materializes `instructionsBundle.files` as the agent's
+ * managed AGENTS.md. A post-hire overwrite is too late and can fail silently —
+ * the first heartbeat would then run on adapter defaults with no mission.
+ */
+export function buildLeadHireInstructionsBundle(
+  input: ComposeCeoInstructionsInput,
+): LeadHireInstructionsBundle {
+  if (!input.companyGoal.trim()) {
+    throw new Error("Lead hire requires a company mission");
+  }
+  return {
+    entryFile: LEAD_HIRE_INSTRUCTIONS_ENTRY_FILE,
+    files: {
+      [LEAD_HIRE_INSTRUCTIONS_ENTRY_FILE]: composeCeoInstructions(input),
+    },
+  };
 }

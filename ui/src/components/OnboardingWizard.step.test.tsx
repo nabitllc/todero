@@ -811,10 +811,10 @@ describe("OnboardingWizard — which step it lands on", () => {
     }
 
     it("seeds the lead agent's instructions with the mission it was never asked for", async () => {
-      // The regression this exists for. The agent step feeds
-      // `composeCeoInstructions` from the mission field, and a company entered
-      // here never types one — so the agent was hired knowing nothing of the
-      // mission the customer gave at signup, and nothing reported it.
+      // The regression this exists for. Hire must carry the mission on
+      // instructionsBundle (what the heartbeat materializes). A company
+      // entered here never types one — so an omitted bundle hired the agent
+      // knowing nothing of the mission the customer gave at signup.
       await openOnAgentStep();
       await nameAgent();
 
@@ -835,10 +835,15 @@ describe("OnboardingWizard — which step it lands on", () => {
       });
       await settle();
 
-      expect(mockAgentsApi.saveInstructionsFile).toHaveBeenCalled();
-      const [, file] = mockAgentsApi.saveInstructionsFile.mock.calls[0];
-      expect(file.content).toContain("Scale the marketplace");
-      expect(file.content).toContain("Reach 1000 sellers");
+      expect(mockAgentsApi.hire).toHaveBeenCalled();
+      const [, hireBody] = mockAgentsApi.hire.mock.calls[0] as unknown as [
+        string,
+        { instructionsBundle?: { files?: Record<string, string> } },
+      ];
+      const agentsMd = hireBody.instructionsBundle?.files?.["AGENTS.md"] ?? "";
+      expect(agentsMd).toContain("Scale the marketplace");
+      expect(agentsMd).toContain("Reach 1000 sellers");
+      expect(mockAgentsApi.saveInstructionsFile).not.toHaveBeenCalled();
     });
 
     it("will not hire while the mission is being re-read", async () => {
@@ -923,9 +928,14 @@ describe("OnboardingWizard — which step it lands on", () => {
       });
       await settle();
 
-      expect(mockAgentsApi.saveInstructionsFile).toHaveBeenCalled();
-      const [, file] = mockAgentsApi.saveInstructionsFile.mock.calls.at(-1)!;
-      expect(file.content).toContain("Scale the marketplace");
+      expect(mockAgentsApi.hire).toHaveBeenCalled();
+      const [, hireBody] = mockAgentsApi.hire.mock.calls.at(-1)! as unknown as [
+        string,
+        { instructionsBundle?: { files?: Record<string, string> } },
+      ];
+      const agentsMd = hireBody.instructionsBundle?.files?.["AGENTS.md"] ?? "";
+      expect(agentsMd).toContain("Scale the marketplace");
+      expect(mockAgentsApi.saveInstructionsFile).not.toHaveBeenCalled();
     });
 
     it("hires under the neutral role, with the name the customer typed", async () => {
