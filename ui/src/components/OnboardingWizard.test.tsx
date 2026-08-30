@@ -336,6 +336,61 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
     });
 
+    it("advances past org-name even when the companies list refetches after create", async () => {
+      // Create invalidates the company list. The restore-gate used to unmount
+      // the inner wizard for *any* `isFetching`, including that refetch, then
+      // remount from the frozen mount-time draft (org-name, no company id).
+      // Continue looked like it did nothing and POSTed another empty org.
+      mockCompaniesApi.create.mockResolvedValue({
+        id: "company-new",
+        name: "Initech",
+        issuePrefix: "INI",
+      });
+      const { root } = await openStepOne("create");
+
+      let resolveRefetch: (value: unknown[]) => void = () => {};
+      mockCompaniesApi.list.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveRefetch = resolve;
+          }),
+      );
+
+      await clickByText((t) => t.startsWith("Continue"));
+
+      expect(mockCompaniesApi.create).toHaveBeenCalledTimes(1);
+      expect(mockCompaniesApi.create).toHaveBeenCalledWith({ name: "Initech" });
+      expect(document.body.textContent).toContain("Create your first agent");
+      expect(document.body.textContent).not.toContain(
+        "What is the name of your organization?",
+      );
+
+      await act(async () => {
+        resolveRefetch([
+          { id: "company-new", name: "Initech", issuePrefix: "INI" },
+        ]);
+      });
+      await flushReact();
+
+      expect(document.body.textContent).toContain("Create your first agent");
+      expect(document.body.textContent).not.toContain(
+        "What is the name of your organization?",
+      );
+
+      const continueAgain = [...document.body.querySelectorAll("button")].find((b) =>
+        (b.textContent?.trim() ?? "").startsWith("Continue"),
+      );
+      if (continueAgain) {
+        await act(async () => {
+          continueAgain.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+        await flushReact();
+      }
+      expect(mockCompaniesApi.create).toHaveBeenCalledTimes(1);
+
+      await act(async () => root.unmount());
+    });
+
     it("shows no environment-check card on the model step, and no Mission row on review", async () => {
       // Round-3 walk feedback: the adapter environment check still runs —
       // Connect probes before hiring and blocks on a fail — but its idle card

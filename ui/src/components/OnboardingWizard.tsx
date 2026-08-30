@@ -338,11 +338,16 @@ export function OnboardingWizard() {
   // guess at the draft. Its ~20 `useState(saved?.x ?? default)` initializers
   // only read `saved` once.
   //
-  // `isFetching`, not `isLoading`. `isLoading` is false whenever the cache
-  // holds retained data, so a refetch over a warm cache would mount the wizard
-  // while ownership was still undecidable - and with the wizard open, the
-  // persist effect would overwrite the customer's own draft with defaults
-  // before the answer arrived. `isFetching` covers the refetch too.
+  // Wait on the *first* fetch after this observer mounts, not every refetch.
+  // `isLoading` is false whenever the cache holds retained data, so a warm
+  // cache would mount the wizard while ownership was still undecidable - and
+  // with the wizard open, the persist effect would overwrite the customer's
+  // own draft with defaults before the answer arrived. `isFetching` covers
+  // that initial freshness fetch. `isFetchedAfterMount` keeps later
+  // invalidations from unmounting an already-running wizard: create-company
+  // invalidates this list, and tearing the inner tree down remounts it from
+  // the frozen mount-time draft, which puts the operator back on org-name
+  // after the org already exists.
   //
   // While in flight, not on failure. The companies query sets `retry: false`,
   // so a failed fetch stays failed; and with no companies the dashboard offers
@@ -353,7 +358,11 @@ export function OnboardingWizard() {
   // it is itself gated on `effectiveOnboardingOpen`, so a mounted-but-closed
   // wizard writes nothing. If the wizard is open the customer is onboarding
   // right now, which supersedes the draft anyway.
-  if (rawBlob !== undefined && companiesQuery.isFetching) {
+  if (
+    rawBlob !== undefined &&
+    companiesQuery.isFetching &&
+    !companiesQuery.isFetchedAfterMount
+  ) {
     return null;
   }
 
@@ -1404,13 +1413,19 @@ function OnboardingWizardInner({
     setError(null);
     try {
       const company = await companiesApi.create({ name: companyName.trim() });
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       // Nothing was in hand when this started, so "unchanged" means still
       // nothing. A route that supplied a company while the request was open has
       // taken over the wizard, and adopting the company just created would
       // fight it — and would leave the customer on a company they never
       // navigated to.
-      if (!stillTheSameCompany(null)) return;
+      // A refetch / Dashboard auto-open can attribute the same company this
+      // request just made. stillTheSameCompany(null) is then false and used
+      // to skip setStep(3). Adopt when nothing is in hand, or when what is
+      // in hand is the company we created.
+      if (!stillTheSameCompany(null) && createdCompanyIdRef.current !== company.id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+        return;
+      }
       setCreatedCompanyId(company.id);
       // Keep the mirror current rather than waiting for the next render, for
       // the same reason the mission path does: anything downstream that asks
@@ -1419,6 +1434,9 @@ function OnboardingWizardInner({
       setCreatedCompanyPrefix(company.issuePrefix);
       setSelectedCompanyId(company.id);
       setStep(3);
+      // Invalidate after the step sticks so the ownership-gate refetch cannot
+      // race setStep(3) off the tree.
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create organization");
     } finally {
