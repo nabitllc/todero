@@ -8,7 +8,7 @@ vi.mock("./client", () => ({
   api: mockApi,
 }));
 
-import { localLlmSelectionIsConnected, toderoLocalLlmApi, type LocalLlmRuntime } from "./local-llm";
+import { LOCAL_LLM_DETECT_PATH, liveLocalLlmSelection, localLlmSelectionIsConnected, toderoLocalLlmApi, type LocalLlmRuntime } from "./local-llm";
 
 const ollama: LocalLlmRuntime = {
   id: "ollama:127.0.0.1:11434",
@@ -46,6 +46,17 @@ describe("toderoLocalLlmApi.detect", () => {
 
   it("GETs the same /todero/local-llm/detect path the server mounts", async () => {
     await toderoLocalLlmApi.detect();
+    expect(LOCAL_LLM_DETECT_PATH).toBe("/todero/local-llm/detect");
+    expect(mockApi.get).toHaveBeenCalledWith(LOCAL_LLM_DETECT_PATH);
     expect(mockApi.get).toHaveBeenCalledWith("/todero/local-llm/detect");
+  });
+});
+
+describe("liveLocalLlmSelection", () => {
+  it("clears a leftover pick when detect is empty or the pick is not in the list", () => {
+    const leftover = { runtimeId: ollama.id, modelId: "llama3.2:latest" };
+    expect(liveLocalLlmSelection([], leftover)).toBeNull();
+    expect(liveLocalLlmSelection([ollama], { runtimeId: ollama.id, modelId: "missing" })).toBeNull();
+    expect(liveLocalLlmSelection([ollama], leftover)).toEqual(leftover);
   });
 });

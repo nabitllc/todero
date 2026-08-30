@@ -2,6 +2,8 @@ import { api } from "./client";
 
 export const LOCAL_LLM_ADAPTER_TYPE = "local_llm";
 
+export const LOCAL_LLM_DETECT_PATH = "/todero/local-llm/detect";
+
 export type LocalLlmRuntimeKind = "ollama" | "lmstudio" | "openai_compatible";
 
 export type LocalLlmModel = {
@@ -33,6 +35,24 @@ export function localLlmSelectionIsConnected(params: {
   return runtime.models.some((model) => model.id === params.modelId);
 }
 
+/** Keep a leftover pick only when live detect currently lists that runtime+model. */
+export function liveLocalLlmSelection<T extends { runtimeId: string; modelId: string }>(
+  runtimes: LocalLlmRuntime[],
+  selection: T | null | undefined,
+): T | null {
+  if (!selection) return null;
+  if (
+    !localLlmSelectionIsConnected({
+      runtimes,
+      runtimeId: selection.runtimeId,
+      modelId: selection.modelId,
+    })
+  ) {
+    return null;
+  }
+  return selection;
+}
+
 export const toderoLocalLlmApi = {
-  detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>("/todero/local-llm/detect"),
+  detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>(LOCAL_LLM_DETECT_PATH),
 };

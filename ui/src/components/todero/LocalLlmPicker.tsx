@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  liveLocalLlmSelection,
   toderoLocalLlmApi,
   type LocalLlmRuntime,
 } from "@/api/local-llm";
@@ -15,27 +16,45 @@ export type LocalLlmSelection = {
 export type LocalLlmPickerProps = {
   value: LocalLlmSelection | null;
   onChange: (next: LocalLlmSelection | null) => void;
+  onRuntimesDetected?: (runtimes: LocalLlmRuntime[]) => void;
 };
 
-export function LocalLlmPicker({ value, onChange }: LocalLlmPickerProps) {
+export function LocalLlmPicker({ value, onChange, onRuntimesDetected }: LocalLlmPickerProps) {
   const [runtimes, setRuntimes] = useState<LocalLlmRuntime[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const onRuntimesDetectedRef = useRef(onRuntimesDetected);
+  onRuntimesDetectedRef.current = onRuntimesDetected;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+
+    const applyDetected = (detected: LocalLlmRuntime[]) => {
+      setRuntimes(detected);
+      onRuntimesDetectedRef.current?.(detected);
+      const live = liveLocalLlmSelection(detected, valueRef.current);
+      if (live !== valueRef.current) {
+        onChangeRef.current(live);
+      }
+    };
+
     toderoLocalLlmApi
       .detect()
       .then((res) => {
         if (cancelled) return;
-        setRuntimes(res.runtimes);
         setError(null);
+        applyDetected(res.runtimes);
       })
       .catch((err) => {
         if (cancelled) return;
-        setRuntimes([]);
         setError(err instanceof Error ? err.message : "Failed to detect local LLM runtimes");
+        applyDetected([]);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
