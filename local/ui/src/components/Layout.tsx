@@ -33,7 +33,7 @@ import { useAppsEnabled } from "../hooks/useAppsEnabled";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
 import { instanceSettingsApi } from "../api/instanceSettings";
-import { resolveArchivedCompanyBounce, shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
+import { pickColdOpenCompany, resolveArchivedCompanyBounce, resolveLastViewedCompanyId, shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import { useOptionalToastActions } from "../context/ToastContext";
 import {
   applyMainContentScrollTop,
@@ -233,9 +233,10 @@ export function Layout() {
     if (!companyPrefix || companiesLoading || companies.length === 0) return;
 
     if (!matchedCompany) {
-      const fallback = (selectedCompanyId ? companies.find((company) => company.id === selectedCompanyId) : null)
-        ?? companies[0]
-        ?? null;
+      const fallback = pickColdOpenCompany(
+        companies,
+        resolveLastViewedCompanyId(selectedCompanyId),
+      );
       if (fallback && selectedCompanyId !== fallback.id) {
         setSelectedCompanyId(fallback.id, { source: "route_sync" });
       }
@@ -250,22 +251,30 @@ export function Layout() {
 
     // Stale state (remembered paths, history, bookmarks, restored tabs)
     // deposits users into archived companies long after archiving; a cold
-    // arrival bounces to an active company instead of dwelling there.
-    // Deliberate visits (the company is already the selection) stay put.
+    // arrival uses the same pick as `/` (wizard / last-viewed-if-active /
+    // first-created active). Deliberate visits opened from the companies
+    // list this session stay put.
     const bounce = resolveArchivedCompanyBounce({
       matchedCompany,
       selectedCompanyId,
+      selectionSource,
+      lastViewedId: resolveLastViewedCompanyId(selectedCompanyId),
       companies,
     });
-    if (bounce) {
+    if (bounce.action === "onboarding") {
+      navigate("/onboarding", { replace: true });
+      return;
+    }
+    if (bounce.action === "company") {
+      const target = bounce.company;
       pushToast?.({
         title: `${matchedCompany.name} is archived`,
-        body: `Switched to ${bounce.name}.`,
+        body: `Switched to ${target.name}.`,
         tone: "info",
         dedupeKey: `archived-company-bounce:${matchedCompany.id}`,
       });
-      setSelectedCompanyId(bounce.id, { source: "route_sync" });
-      navigate(`/${bounce.issuePrefix}/dashboard`, { replace: true });
+      setSelectedCompanyId(target.id, { source: "route_sync" });
+      navigate(`/${target.issuePrefix}/dashboard`, { replace: true });
       return;
     }
 

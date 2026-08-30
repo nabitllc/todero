@@ -98,7 +98,7 @@ import {
   onboardingStepForCompany,
   shouldRedirectCompanylessRouteToOnboarding,
 } from "./lib/onboarding-route";
-import { resolveColdOpenPath, resolveLastViewedCompanyId } from "./lib/company-selection";
+import { resolveColdOpenPath, resolveLastViewedCompanyId, resolveUnprefixedBoardPath } from "./lib/company-selection";
 import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
 import { useCloudInstance } from "./hooks/useCloudInstance";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
@@ -575,16 +575,25 @@ function StatusCardsLegacyRedirect() {
   return <Navigate to={`${base}/status${cardId ? `/${cardId}` : ""}`} replace />;
 }
 
-function UnprefixedBoardRedirect() {
+export function UnprefixedBoardRedirect() {
   const location = useLocation();
-  const { companies, selectedCompany, loading } = useCompany();
+  const { companies, selectedCompanyId, loading } = useCompany();
 
   if (loading) {
     return <ToderoLoading />;
   }
 
-  const targetCompany = selectedCompany ?? companies[0] ?? null;
-  if (!targetCompany) {
+  // Same pick as `/` and restored-URL bounce: never companies[0], which can
+  // be archived, and never a stored archive. Zero active → wizard.
+  const lastViewedId = resolveLastViewedCompanyId(selectedCompanyId);
+  const target = resolveUnprefixedBoardPath({
+    pathname: location.pathname,
+    search: location.search,
+    hash: location.hash,
+    companies,
+    lastViewedId,
+  });
+  if (target === "/onboarding") {
     if (
       shouldRedirectCompanylessRouteToOnboarding({
         pathname: location.pathname,
@@ -596,12 +605,7 @@ function UnprefixedBoardRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return (
-    <Navigate
-      to={`/${targetCompany.issuePrefix}${location.pathname}${location.search}${location.hash}`}
-      replace
-    />
-  );
+  return <Navigate to={target} replace />;
 }
 
 function NoCompaniesStartPage() {

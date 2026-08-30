@@ -17,7 +17,7 @@ import {
   useCompanyListQuery,
 } from "../api/companies-query";
 import { queryKeys } from "../lib/queryKeys";
-import type { CompanySelectionSource } from "../lib/company-selection";
+import { pickColdOpenCompany, type CompanySelectionSource } from "../lib/company-selection";
 type CompanySelectionOptions = { source?: CompanySelectionSource };
 
 interface CompanyContextValue {
@@ -49,31 +49,35 @@ const STORAGE_KEY = "todero.selectedCompanyId";
 const CompanyContext = createContext<CompanyContextValue | null>(null);
 
 export function resolveBootstrapCompanySelection(input: {
-  companies: Array<Pick<Company, "id">>;
+  companies: Array<Pick<Company, "id"> & Partial<Pick<Company, "status" | "createdAt" | "issuePrefix">>>;
   sidebarCompanies: Array<Pick<Company, "id">>;
   selectedCompanyId: string | null;
   storedCompanyId: string | null;
 }) {
   if (input.companies.length === 0) return null;
 
-  const selectableCompanies = input.sidebarCompanies.length > 0
-    ? input.sidebarCompanies
-    : input.companies;
   // An already-selected company only needs to EXIST — not to be featured in
   // the sidebar. The Layout route-sync selects whatever company the URL names
   // (archived included, since archived pages are still routable); if this
   // resolver vetoed that selection against the sidebar-filtered list, the two
   // effects would re-select against each other forever and blow React's
-  // nested-update limit (the archived-company blank-screen crash). The
-  // sidebar filter keeps shaping fresh boots below, where no explicit
-  // selection exists yet.
+  // nested-update limit (the archived-company blank-screen crash). Fresh
+  // boots (no selection yet) use the same cold-open pick as `/`: last-viewed
+  // only if still active, else first-created active, else null. An empty
+  // sidebar must not fall back to the full list and revive a stored archive.
   if (input.selectedCompanyId && input.companies.some((company) => company.id === input.selectedCompanyId)) {
     return input.selectedCompanyId;
   }
-  if (input.storedCompanyId && selectableCompanies.some((company) => company.id === input.storedCompanyId)) {
-    return input.storedCompanyId;
-  }
-  return selectableCompanies[0]?.id ?? null;
+  const picked = pickColdOpenCompany(
+    input.companies.map((company) => ({
+      id: company.id,
+      issuePrefix: company.issuePrefix ?? company.id,
+      status: company.status ?? "active",
+      createdAt: company.createdAt,
+    })),
+    input.storedCompanyId,
+  );
+  return picked?.id ?? null;
 }
 
 export function shouldClearStoredCompanySelection(input: {

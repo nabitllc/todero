@@ -38,9 +38,9 @@ function sessionFor(userId: string) {
   };
 }
 
-const activeCompany = { id: "company-1" };
-const secondActiveCompany = { id: "company-2" };
-const archivedCompany = { id: "archived-company" };
+const activeCompany = { id: "company-1", status: "active" as const };
+const secondActiveCompany = { id: "company-2", status: "active" as const };
+const archivedCompany = { id: "archived-company", status: "archived" as const };
 
 function makeCompany(id: string): Company {
   return {
@@ -152,6 +152,17 @@ describe("resolveBootstrapCompanySelection", () => {
       selectedCompanyId: "deleted-company",
       storedCompanyId: null,
     })).toBe("company-1");
+  });
+
+  it("does not fall back to a stored archive when the sidebar is empty", () => {
+    // Archived-only: empty sidebar used to fall back to the full list, pick
+    // the stored archive, and Layout bounce treated that as a deliberate visit.
+    expect(resolveBootstrapCompanySelection({
+      companies: [{ id: "archived-company", status: "archived" as const, createdAt: new Date("2025-01-01") }],
+      sidebarCompanies: [],
+      selectedCompanyId: null,
+      storedCompanyId: "archived-company",
+    })).toBeNull();
   });
 });
 
