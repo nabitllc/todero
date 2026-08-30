@@ -89,6 +89,7 @@ import { AgentPreview } from "./onboarding/AgentPreview";
 import { FooterNav } from "./onboarding/FooterNav";
 import { OnboardingHeading } from "./onboarding/OnboardingPrimitives";
 import { DEFAULT_AGENT_ROLE } from "../lib/onboarding-agent-role";
+import { pickRecommendedAgentName } from "../lib/onboarding-agent-names";
 import { capsuleHeroMotion } from "./onboarding/onboarding-motion";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -2248,13 +2249,25 @@ function OnboardingWizardInner({
                 <div className="mx-auto flex w-full max-w-(--sz-320px) flex-col gap-6">
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="onboarding-agent-name">Name</Label>
-                    <Input
-                      id="onboarding-agent-name"
-                      placeholder="e.g. Chief of staff, Designer, Ron, Clippy..."
-                      value={agentName}
-                      onChange={(e) => setAgentName(e.target.value)}
-                      autoFocus
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="onboarding-agent-name"
+                        className="min-w-0 flex-1"
+                        placeholder="e.g. Chief of staff, Designer, Ron..."
+                        value={agentName}
+                        onChange={(e) => setAgentName(e.target.value)}
+                        autoFocus
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        onClick={() => setAgentName(pickRecommendedAgentName(agentName))}
+                      >
+                        Recommend
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}

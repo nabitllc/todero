@@ -177,6 +177,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE, getEnvironmentCapabilities } from "@todero/shared";
 import { CLAUDE_OAUTH_TOKEN_ENV_KEY } from "./environment-variables-editor/model";
 import { ONBOARDING_STORAGE_KEY, OnboardingWizard } from "./OnboardingWizard";
+import { RECOMMENDED_AGENT_NAMES } from "../lib/onboarding-agent-names";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -605,6 +606,97 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
       expect(document.body.textContent).toContain("What is the name of your organization?");
       expect(document.body.textContent).not.toContain("Define your mission");
+
+      await act(async () => root.unmount());
+    });
+  });
+
+  describe("step 3: Create your first agent — Recommend a name", () => {
+    async function openFirstAgentStep() {
+      mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
+      window.localStorage.setItem(
+        ONBOARDING_STORAGE_KEY,
+        JSON.stringify({ step: 1, onboardingPath: "create", companyName: "Initech" }),
+      );
+      mockDialog.onboardingOptions = {};
+      mockCompany.companies = [];
+      mockCompany.loading = false;
+      mockCompaniesApi.list.mockResolvedValue([]);
+
+      const { root, queryClient } = render();
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <OnboardingWizard />
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+
+      const clickByText = async (match: (text: string) => boolean) => {
+        const el = [...document.body.querySelectorAll("button")].find((b) =>
+          match(b.textContent?.trim() ?? ""),
+        )!;
+        await act(async () => {
+          el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+        await flushReact();
+      };
+
+      await clickByText((t) => t.startsWith("Continue"));
+      expect(document.body.textContent).toContain("Create your first agent");
+      return { root, clickByText };
+    }
+
+    function nameField() {
+      return document.body.querySelector("#onboarding-agent-name") as HTMLInputElement;
+    }
+
+    function advanceButton() {
+      return [...document.body.querySelectorAll("button")].find((b) => {
+        const text = b.textContent?.trim() ?? "";
+        return text.startsWith("Next") || text.startsWith("Continue");
+      });
+    }
+
+    it("shows Recommend next to the name field, fills a list name, and unblocks advancing", async () => {
+      const { root, clickByText } = await openFirstAgentStep();
+
+      const recommend = [...document.body.querySelectorAll("button")].find(
+        (b) => (b.textContent?.trim() ?? "") === "Recommend",
+      );
+      expect(recommend).toBeTruthy();
+      expect(nameField().placeholder).not.toContain("Clippy");
+      expect(nameField().value).toBe("");
+      expect(advanceButton()?.disabled).toBe(true);
+
+      await clickByText((t) => t === "Recommend");
+      const first = nameField().value;
+      expect(first.length).toBeGreaterThan(0);
+      expect(RECOMMENDED_AGENT_NAMES).toContain(first);
+      expect(advanceButton()?.disabled).toBe(false);
+
+      await clickByText((t) => t === "Recommend");
+      const second = nameField().value;
+      expect(RECOMMENDED_AGENT_NAMES).toContain(second);
+      expect(second).not.toBe(first);
+
+      await act(async () => {
+        setControlledValue(nameField(), "");
+      });
+      await flushReact();
+      expect(nameField().value).toBe("");
+      expect(advanceButton()?.disabled).toBe(true);
+
+      await clickByText((t) => t === "Recommend");
+      expect(nameField().value.length).toBeGreaterThan(0);
+      expect(advanceButton()?.disabled).toBe(false);
+
+      await act(async () => {
+        setControlledValue(nameField(), "Ada");
+      });
+      await flushReact();
+      expect(nameField().value).toBe("Ada");
 
       await act(async () => root.unmount());
     });
