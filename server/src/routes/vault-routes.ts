@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   applyVaultReadEnv,
+  ensureRecommendedVault,
   getVaultReadPath,
   getVaultSettings,
   RECOMMENDED_VAULT_REPO_PAGE_URL,
@@ -37,8 +38,8 @@ export function toderoVaultRoutes() {
 
   router.post("/todero/vault/recommended/ensure", (_req, res) => {
     try {
-      saveVaultSettings({ source: "recommended" });
-      res.json(vaultPayload());
+      const recommendedPath = ensureRecommendedVault();
+      res.json({ ...vaultPayload(), recommendedPath, recommendedExists: vaultPathExists(recommendedPath) });
     } catch (err) {
       res.status(400).json({
         error: err instanceof Error ? err.message : String(err),

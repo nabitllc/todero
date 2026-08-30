@@ -30,6 +30,6 @@ export const toderoVaultApi = {
       "/todero/vault",
       input,
     ),
-  /** Clone or pull the public repo into the app-owned folder, then attach it. */
+  /** Clone or pull the public repo into the app-owned folder. Does not attach. */
   ensureRecommended: () => api.post<VaultResponse>("/todero/vault/recommended/ensure", {}),
 };
