@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { after, before, test } from "node:test";
 
-import { linkSdkInto, readPluginsUnder } from "./link-plugin-dev-sdk.mjs";
+import { createSdkDirectoryLink, linkSdkInto, readPluginsUnder } from "./link-plugin-dev-sdk.mjs";
 
 let workDir;
 
@@ -86,4 +86,66 @@ test("linkSdkInto replaces a symlink that points somewhere else", () => {
   assert.equal(linkSdkInto(pkg), true);
   assert.notEqual(readlinkSync(join(scopeDir, "plugin-sdk")), "../somewhere-else");
   assert.ok(existsSync(scopeDir));
+});
+
+test("linkSdkInto treats an absolute SDK target as already linked", () => {
+  const pkg = makePackage(join(workDir, "abs-link"));
+  assert.equal(linkSdkInto(pkg), true);
+  const link = join(pkg, "node_modules", "@todero", "plugin-sdk");
+  const absTarget = resolve(join(pkg, "node_modules", "@todero"), readlinkSync(link));
+  unlinkSync(link);
+  symlinkSync(absTarget, link, "dir");
+  assert.equal(linkSdkInto(pkg), false);
+});
+
+test("createSdkDirectoryLink uses dir on non-Windows", () => {
+  const calls = [];
+  const symlink = (target, path, type) => {
+    calls.push({ target, path, type });
+  };
+  const kind = createSdkDirectoryLink("../sdk", "/tmp/plugin-sdk-link", {
+    platform: "linux",
+    symlink,
+  });
+  assert.equal(kind, "symlink");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].type, "dir");
+});
+
+test("createSdkDirectoryLink uses junction on win32", () => {
+  const calls = [];
+  const symlink = (target, path, type) => {
+    calls.push({ target, path, type });
+  };
+  const kind = createSdkDirectoryLink("../sdk", "/tmp/plugin-sdk-link", {
+    platform: "win32",
+    symlink,
+  });
+  assert.equal(kind, "junction");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].type, "junction");
+  assert.equal(calls[0].target, "../sdk");
+});
+
+test("createSdkDirectoryLink falls back to dir then copy on win32", () => {
+  const types = [];
+  const symlink = (_target, _path, type) => {
+    types.push(type);
+    const err = new Error("EPERM: operation not permitted, symlink");
+    err.code = "EPERM";
+    throw err;
+  };
+  let copied = null;
+  const copy = (src, dest, opts) => {
+    copied = { src, dest, opts };
+  };
+  const kind = createSdkDirectoryLink("../sdk", "/tmp/scope/plugin-sdk", {
+    platform: "win32",
+    symlink,
+    copy,
+  });
+  assert.equal(kind, "copy");
+  assert.deepEqual(types, ["junction", "dir"]);
+  assert.equal(copied.dest, "/tmp/scope/plugin-sdk");
+  assert.equal(copied.opts.recursive, true);
 });
