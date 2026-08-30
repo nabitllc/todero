@@ -7,6 +7,24 @@
  */
 export const DEFAULT_TASK_TITLE = "Todero onboarding";
 
+const FIRST_TASK_TITLE_MAX = 80;
+
+/**
+ * First ticket title the lead is assigned. A generic "Todero onboarding"
+ * hides the mission the operator already typed; derive the title from that
+ * text so the heartbeat run-context title carries it too.
+ */
+export function buildOnboardingFirstTaskTitle(mission: string): string {
+  const trimmed = mission.trim().replace(/\s+/g, " ");
+  if (!trimmed) return DEFAULT_TASK_TITLE;
+  const sentence = trimmed.split(/(?<=[.!?])\s/)[0] ?? trimmed;
+  if (sentence.length <= FIRST_TASK_TITLE_MAX) return sentence;
+  const clipped = sentence.slice(0, FIRST_TASK_TITLE_MAX - 1);
+  const lastSpace = clipped.lastIndexOf(" ");
+  const base = lastSpace > 40 ? clipped.slice(0, lastSpace) : clipped;
+  return `${base.trimEnd()}…`;
+}
+
 const SHARED_CHAT_RULES = `This is a user-facing chat. Everything you post here is read by the user, so
 keep your messages terse and written for them. Only surface things meant for
 the user: the questions, the plan, the team, next-step options, and short
