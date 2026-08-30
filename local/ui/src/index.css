@@ -439,6 +439,19 @@
   color-scheme: dark;
 }
 
+/*
+ * Native <select> popup menus ignore page CSS color in Chromium and inherit
+ * color-scheme:dark + light (white) text, which paints white-on-white option
+ * rows except the highlighted one. Force a light menu with dark option text.
+ */
+select.todero-native-select {
+  color-scheme: light;
+}
+select.todero-native-select option {
+  color: #111111;
+  background-color: #ffffff;
+}
+
 .dark *::-webkit-scrollbar {
   width: 8px;
   height: 8px;

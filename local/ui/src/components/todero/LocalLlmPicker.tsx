@@ -126,7 +126,7 @@ export function LocalLlmPicker({ value, onChange, onRuntimesDetected }: LocalLlm
         <label className="block space-y-1">
           <span className="text-xs text-muted-foreground">Model</span>
           <select
-            className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
+            className="todero-native-select w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"
             value={value?.modelId ?? ""}
             onChange={(e) => {
               if (!selectedRuntime) return;
