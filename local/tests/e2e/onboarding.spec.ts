@@ -6,13 +6,14 @@ import { test, expect } from "@playwright/test";
  * The wizard now opens on a front door (path picker) and the "Create a new
  * company" path runs:
  *   Step 0  — Front door (Create a new company / Level up existing)
- *   Step 1a — Name your organization (creates the company)
- *   Step 2  — Hire your team lead (adapter picker)
- *   Step 3+ — Launch celebration → CEO chat → hiring plan → orientation
+ *   Step 1a — Name your organization
+ *   Step 2  — Define your mission (creates the company with that mission)
+ *   Step 3  — Hire your team lead (adapter picker)
+ *   Step 4+ — Launch celebration → CEO chat → hiring plan → orientation
  *
  * This test covers the deterministic, LLM-free core: it drives the front door
- * through company naming (which creates the company) and verifies the wizard
- * advances to the team-lead step without asking for a mission.
+ * through company naming and a plain-text mission, and verifies the company
+ * is created with that mission before the team-lead step.
  *
  * The tail (CEO chat at step 4, hiring-plan generation at step 5, final
  * landing) depends on a live LLM and is verified separately during manual /
@@ -58,9 +59,10 @@ test.describe("Onboarding wizard", () => {
     await page.getByPlaceholder("e.g. Northwind Labs").fill(COMPANY_NAME);
     await page.getByRole("button", { name: /^Continue/ }).click();
 
-    // Step 1's "Next" now creates the company and goes straight to the agent.
-    // The mission step used to sit between them and do the creating; onboarding
-    // no longer asks for the mission, which is collected later in the app.
+    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
+    await page.getByRole("button", { name: /Confirm mission/ }).click();
+
     await page.waitForSelector("#onboarding-agent-name", {
       timeout: 30_000,
     });
@@ -75,22 +77,16 @@ test.describe("Onboarding wizard", () => {
     );
     expect(company, `company ${COMPANY_NAME} should exist`).toBeTruthy();
 
-    // And no company-level goal, which is the point rather than an omission.
-    // Onboarding no longer asks for a mission, so writing one here would mean
-    // inventing a goal the customer never chose. The mission is collected later
-    // in the app, and the absence is what leaves room for it.
     const goalsRes = await page.request.get(
       `${baseUrl}/api/companies/${company.id}/goals`,
     );
     expect(goalsRes.ok()).toBe(true);
     const goals = await goalsRes.json();
     const companyGoal = (Array.isArray(goals) ? goals : []).find(
-      (g: { level?: string }) => g.level === "company",
+      (g: { level?: string; title?: string }) => g.level === "company",
     );
-    expect(
-      companyGoal,
-      "onboarding must not invent a mission the customer never gave",
-    ).toBeFalsy();
+    expect(companyGoal, "create path must save the mission on the company").toBeTruthy();
+    expect(companyGoal.title).toBe("Ship the product");
 
     // The expanded wizard must not crash the app (Rules-of-Hooks regression).
     expect(pageErrors, pageErrors.join("\n")).toHaveLength(0);
@@ -214,6 +210,10 @@ test.describe("Onboarding wizard", () => {
     ).toBeVisible({ timeout: 15_000 });
     await page.getByPlaceholder("e.g. Northwind Labs").fill(`${COMPANY_NAME}-auth-signal`);
     await page.getByRole("button", { name: /^Continue/ }).click();
+
+    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
+    await page.getByRole("button", { name: /Confirm mission/ }).click();
 
     await page.waitForSelector("#onboarding-agent-name", { timeout: 30_000 });
     await page.locator("#onboarding-agent-name").fill("Ada");

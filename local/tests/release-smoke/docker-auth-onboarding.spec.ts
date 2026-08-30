@@ -92,12 +92,15 @@ test.describe("Docker authenticated onboarding smoke", () => {
       await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
     }
 
-    // Step 1: name the organization. "Continue" creates the company itself and
-    // routes straight to the agent step — onboarding no longer asks for the
-    // mission (it is collected later, in the app), so step 2 is skipped.
+    // Step 1: name the organization. Continue asks for a mission; confirming
+    // that creates the company with the mission before the lead is hired.
     const orgNameField = await openOnboarding(page);
     await orgNameField.fill(COMPANY_NAME);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
+
+    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
+    await page.getByRole("button", { name: /Confirm mission/ }).click();
 
     // Step 3: name the team lead. The name is the step's only question and it
     // gates the CTA; the role picker is gone, so the hire is filed as `general`.
@@ -150,14 +153,11 @@ test.describe("Docker authenticated onboarding smoke", () => {
     expect(leadAgent!.role).toBe(AGENT_ROLE);
     expect(leadAgent!.adapterType).not.toBe("process");
 
-    // Onboarding deliberately writes no goal: the mission is collected later in
-    // the app, so a fresh company must come out of the wizard with an empty
-    // goal list rather than an unchosen one.
-    const goals = await getJson<Array<{ id: string }>>(
+    const goals = await getJson<Array<{ id: string; title?: string; level?: string }>>(
       page,
       `${baseUrl}/api/companies/${company!.id}/goals`
     );
-    expect(goals).toEqual([]);
+    expect(goals.some((g) => g.level === "company" && g.title === "Ship the product")).toBe(true);
 
     const issues = await getJson<
       Array<{
