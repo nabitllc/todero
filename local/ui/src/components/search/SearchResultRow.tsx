@@ -15,7 +15,7 @@ type SnippetStyle = {
 const SNIPPET_STYLES: Record<string, SnippetStyle> = {
   comment: { Icon: MessageSquare, label: "Comment" },
   document: { Icon: FileText, label: "Doc" },
-  artifact: { Icon: Todero, label: "Artifact" },
+  artifact: { Icon: Paperclip, label: "Artifact" },
   description: { Icon: Quote, label: "Description" },
 };
 
