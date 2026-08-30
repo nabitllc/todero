@@ -84,7 +84,7 @@ export function SecondBrainPicker({ mode, onSaved }: SecondBrainPickerProps) {
         >
           <div className="font-medium">Recommended</div>
           <div className="text-xs text-muted-foreground mt-1 break-all">
-            {recommendedPath || "TODERO_VAULT_DIR or /workspace/Mich-Brain2"}
+            {recommendedPath || "TODERO_VAULT_DIR or recommended default"}
             {recommendedExists === false ? " — folder not found (still allowed)" : null}
           </div>
         </button>
