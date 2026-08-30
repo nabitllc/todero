@@ -77,7 +77,7 @@ vi.mock("./context/CompanyContext", () => ({
   CompanyProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-const { CompanyRootRedirect } = await import("./App");
+const { CompanyRootRedirect, UnprefixedBoardRedirect } = await import("./App");
 
 function LocationProbe() {
   const location = useLocation();
@@ -183,6 +183,68 @@ describe("CompanyRootRedirect cold open", () => {
 
     const root = renderColdOpen(container);
     await vi.waitFor(() => expect(container.textContent).toContain("LOC@/ONE/dashboard"));
+    expect(container.textContent).not.toContain("LOC@/ARC/");
+    flushSync(() => root.unmount());
+  });
+});
+
+function renderUnprefixedBoard(container: HTMLElement, initialPath = "/issues") {
+  const root = createRoot(container);
+  flushSync(() => {
+    root.render(
+      <MemoryRouter initialEntries={[initialPath]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="issues" element={<UnprefixedBoardRedirect />} />
+          <Route path="onboarding" element={<div>ONBOARDING_WIZARD</div>} />
+          <Route path=":companyPrefix/issues" element={<DashboardProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  });
+  return root;
+}
+
+describe("UnprefixedBoardRedirect cold open", () => {
+  let container: HTMLDivElement;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    localStorage.clear();
+    companyState.companies = [];
+    companyState.selectedCompanyId = null;
+    companyState.selectedCompany = null;
+    companyState.loading = false;
+  });
+
+  afterEach(() => {
+    container.remove();
+    document.body.innerHTML = "";
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("does not land on archived companies[0] for an unprefixed board URL", async () => {
+    companyState.companies = [archived, firstCreated];
+    companyState.selectedCompanyId = null;
+    companyState.selectedCompany = null;
+
+    const root = renderUnprefixedBoard(container);
+    await vi.waitFor(() => expect(container.textContent).toContain("LOC@/ONE/issues"));
+    expect(container.textContent).not.toContain("LOC@/ARC/");
+    flushSync(() => root.unmount());
+  });
+
+  it("opens the onboarding wizard for an unprefixed board URL when every org is archived", async () => {
+    companyState.companies = [archived];
+    companyState.selectedCompanyId = archived.id;
+    companyState.selectedCompany = archived;
+    localStorage.setItem(SELECTED_COMPANY_STORAGE_KEY, archived.id);
+
+    const root = renderUnprefixedBoard(container);
+    await vi.waitFor(() => expect(container.textContent).toContain("ONBOARDING_WIZARD"));
+    expect(container.textContent).toContain("LOC@/onboarding");
     expect(container.textContent).not.toContain("LOC@/ARC/");
     flushSync(() => root.unmount());
   });

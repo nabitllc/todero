@@ -5,6 +5,7 @@ import {
   pickColdOpenCompany,
   resolveArchivedCompanyBounce,
   resolveColdOpenPath,
+  resolveUnprefixedBoardPath,
   shouldSyncCompanySelectionFromRoute,
 } from "./company-selection";
 
@@ -52,7 +53,7 @@ describe("resolveArchivedCompanyBounce", () => {
         selectedCompanyId: "pap",
         companies: [archived, active, other],
       }),
-    ).toEqual(active);
+    ).toEqual({ action: "company", company: active });
   });
 
   it("bounces to the first active company when nothing is selected", () => {
@@ -62,34 +63,65 @@ describe("resolveArchivedCompanyBounce", () => {
         selectedCompanyId: null,
         companies: [archived, other],
       }),
-    ).toEqual(other);
+    ).toEqual({ action: "company", company: other });
   });
 
-  it("does not bounce a deliberate visit where the archived company is already selected", () => {
+  it("does not bounce a deliberate visit opened from the companies list this session", () => {
     expect(
       resolveArchivedCompanyBounce({
         matchedCompany: archived,
         selectedCompanyId: "old",
+        selectionSource: "manual",
         companies: [archived, active],
       }),
-    ).toBeNull();
+    ).toEqual({ action: "stay" });
   });
 
-  it("does not bounce active companies or when every company is archived", () => {
+  it("does not bounce active companies", () => {
     expect(
       resolveArchivedCompanyBounce({
         matchedCompany: active,
         selectedCompanyId: null,
         companies: [archived, active],
       }),
-    ).toBeNull();
+    ).toEqual({ action: "stay" });
+  });
+
+  it("does not stay on a restored archived-only URL; opens the wizard instead", () => {
     expect(
       resolveArchivedCompanyBounce({
         matchedCompany: archived,
-        selectedCompanyId: null,
+        selectedCompanyId: "old",
+        selectionSource: "bootstrap",
         companies: [archived],
       }),
-    ).toBeNull();
+    ).toEqual({ action: "onboarding" });
+  });
+
+  it("does not treat a bootstrap-selected archive as a deliberate restored visit", () => {
+    const firstCreated = {
+      id: "first",
+      name: "First Co",
+      issuePrefix: "ONE",
+      status: "active",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+    const later = {
+      id: "later",
+      name: "Later Co",
+      issuePrefix: "TWO",
+      status: "active",
+      createdAt: new Date("2026-06-01T00:00:00.000Z"),
+    };
+    expect(
+      resolveArchivedCompanyBounce({
+        matchedCompany: archived,
+        selectedCompanyId: "old",
+        selectionSource: "bootstrap",
+        lastViewedId: "old",
+        companies: [archived, later, firstCreated],
+      }),
+    ).toEqual({ action: "company", company: firstCreated });
   });
 });
 
@@ -194,5 +226,40 @@ describe("pickColdOpenCompany", () => {
 
   it("does not use array[0] when that is not created order", () => {
     expect(pickColdOpenCompany([lastViewed, firstCreated], undefined)?.id).toBe("first");
+  });
+});
+
+describe("resolveUnprefixedBoardPath", () => {
+  const archived = {
+    id: "archived",
+    issuePrefix: "ARC",
+    status: "archived",
+    createdAt: new Date("2025-01-01T00:00:00.000Z"),
+  };
+  const firstCreated = {
+    id: "first",
+    issuePrefix: "ONE",
+    status: "active",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  };
+
+  it("does not prefix an unprefixed board URL with archived companies[0]", () => {
+    expect(
+      resolveUnprefixedBoardPath({
+        pathname: "/issues",
+        companies: [archived, firstCreated],
+        lastViewedId: null,
+      }),
+    ).toBe("/ONE/issues");
+  });
+
+  it("sends archived-only unprefixed board URLs to onboarding", () => {
+    expect(
+      resolveUnprefixedBoardPath({
+        pathname: "/issues",
+        companies: [archived],
+        lastViewedId: "archived",
+      }),
+    ).toBe("/onboarding");
   });
 });

@@ -15,11 +15,12 @@ export type ColdOpenCompany = {
   id: string;
   issuePrefix: string;
   status: string;
-  createdAt: Date | string;
+  createdAt?: Date | string;
 };
 
-function createdAtMs(createdAt: Date | string): number {
+function createdAtMs(createdAt: Date | string | undefined): number {
   if (createdAt instanceof Date) return createdAt.getTime();
+  if (createdAt == null) return 0;
   const ms = Date.parse(String(createdAt));
   return Number.isFinite(ms) ? ms : 0;
 }
@@ -81,37 +82,70 @@ interface BounceCandidateCompany {
   name: string;
   issuePrefix: string;
   status: string;
+  createdAt?: Date | string;
 }
+
+export type ArchivedCompanyBounce =
+  | { action: "stay" }
+  | { action: "onboarding" }
+  | { action: "company"; company: BounceCandidateCompany };
 
 /**
  * Decides whether a navigation that landed on an archived company's URL
- * should bounce to an active company instead of dwelling in the archive.
+ * should bounce using the same cold-open pick as `/` and unprefixed board
+ * routes.
  *
  * Stale state deposits users into archived companies long after archiving:
  * remembered last-visited paths, browser history, bookmarks, and restored
- * tabs all outlive the archive. Rendering those pages is safe, but it is
- * never where the user wants to *be* — the sidebar does not even list the
- * company. Cold arrivals therefore bounce to an active company.
+ * tabs all outlive the archive. Those are cold arrivals, even when bootstrap
+ * has already written the stored archive into `selectedCompanyId`. Cold
+ * arrivals bounce through {@link pickColdOpenCompany}: last-viewed only if
+ * still active, else first-created active, else the onboarding wizard.
  *
- * Deliberate visits still work: when the archived company is already the
- * selection (the user chose it from the companies list), there is no
- * bounce, so its settings and unarchive flows stay reachable. When no
- * active company exists there is nowhere better to go, so the archive
- * renders rather than bouncing into a dead end.
+ * Deliberate visits still work: opening an archive from the companies list
+ * this session (`selectionSource === "manual"`) stays put so settings and
+ * unarchive flows remain reachable.
  */
 export function resolveArchivedCompanyBounce(params: {
   matchedCompany: BounceCandidateCompany | null;
   selectedCompanyId: string | null;
   companies: BounceCandidateCompany[];
-}): BounceCandidateCompany | null {
-  const { matchedCompany, selectedCompanyId, companies } = params;
-  if (!matchedCompany || matchedCompany.status !== "archived") return null;
-  if (selectedCompanyId === matchedCompany.id) return null;
+  selectionSource?: CompanySelectionSource;
+  lastViewedId?: string | null;
+}): ArchivedCompanyBounce {
+  const { matchedCompany, selectedCompanyId, companies, selectionSource } = params;
+  if (!matchedCompany || matchedCompany.status !== "archived") {
+    return { action: "stay" };
+  }
+  const openedFromCompaniesListThisSession =
+    selectionSource === "manual" && selectedCompanyId === matchedCompany.id;
+  if (openedFromCompaniesListThisSession) {
+    return { action: "stay" };
+  }
 
-  const selectedActive = companies.find(
-    (company) => company.id === selectedCompanyId && company.status !== "archived",
+  const picked = pickColdOpenCompany(
+    companies,
+    params.lastViewedId ?? selectedCompanyId,
   );
-  return selectedActive ?? companies.find((company) => company.status !== "archived") ?? null;
+  if (!picked) return { action: "onboarding" };
+  if (picked.id === matchedCompany.id) return { action: "stay" };
+  return { action: "company", company: picked };
+}
+
+/**
+ * Prefix an unprefixed board path with the cold-open company, or send the
+ * operator to the onboarding wizard when there is no active org.
+ */
+export function resolveUnprefixedBoardPath(params: {
+  pathname: string;
+  search?: string;
+  hash?: string;
+  companies: readonly ColdOpenCompany[];
+  lastViewedId: string | null | undefined;
+}): "/onboarding" | `/${string}` {
+  const company = pickColdOpenCompany(params.companies, params.lastViewedId);
+  if (!company) return "/onboarding";
+  return `/${company.issuePrefix}${params.pathname}${params.search ?? ""}${params.hash ?? ""}`;
 }
 
 export function shouldSyncCompanySelectionFromRoute(params: {
