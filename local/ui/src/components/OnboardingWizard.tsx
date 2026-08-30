@@ -78,6 +78,7 @@ import { useCompanyMission } from "../hooks/useCompanyMission";
 import { useCloudInstance } from "../hooks/useCloudInstance";
 import {
   isExistingCompanyMissionUnresolved,
+  isOnboardingMissionPresent,
   planMissionPersistence,
 } from "../lib/onboarding-mission";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
@@ -460,7 +461,7 @@ function OnboardingWizardInner({
   // Step 1
   const [companyName, setCompanyName] = useState((saved?.companyName as string) ?? "");
   const [companyGoal, setCompanyGoal] = useState((saved?.companyGoal as string) ?? "");
-  const [missionPath, setMissionPath] = useState<"direct" | "questionnaire" | null>((saved?.missionPath as "direct" | "questionnaire" | null) ?? null);
+  const [missionPath, setMissionPath] = useState<"direct" | "questionnaire" | null>((saved?.missionPath as "direct" | "questionnaire" | null) ?? "direct");
   const [missionConfirmed, setMissionConfirmed] = useState((saved?.missionConfirmed as boolean) ?? false);
   // Questionnaire answers
   const [q1, setQ1] = useState((saved?.q1 as string) ?? ""); // What do you do?
@@ -609,6 +610,11 @@ function OnboardingWizardInner({
     goalsLoaded: existingMissionSettled,
     goalsFetching: existingMissionFetching,
   });
+  // The create path writes the mission before this step. An existing company
+  // hydrates it. Either way, hire is blocked until a mission is actually in
+  // hand — same honesty as the LLM connect gate.
+  const missionPresentForHire = isOnboardingMissionPresent(companyGoal);
+  const hireBlockedForMission = missionUnresolvedForHire || !missionPresentForHire;
   // The step the request wants, mirrored for the same reason. `initialStep` is
   // *derived* - from the company list, and now from the goal list behind
   // `useCompanyMission` - so its value changes whenever one of those queries
@@ -1361,6 +1367,8 @@ function OnboardingWizardInner({
       }
       return;
     }
+    if (creatingCompanyRef.current) return;
+    creatingCompanyRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -1401,23 +1409,16 @@ function OnboardingWizardInner({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create organization");
     } finally {
+      creatingCompanyRef.current = false;
       setLoading(false);
     }
   }
 
-  // Step 1 → 3 ("Name your company"): create the company, then go straight to
-  // the first agent.
-  //
-  // This work used to live at the end of `handleConfirmMission`, because step 1
-  // led to the mission step and the company was created when that step was
-  // confirmed. Onboarding no longer asks for the mission, so step 1 has to do
-  // its own creating — routing 1 → 3 without this left the wizard on the agent
-  // step with no company to hire into, and nothing said so.
-  //
-  // No goal is written here. That is the difference from the path this was
-  // taken from, and it is deliberate: the mission is collected later, in the
-  // tenant app, so writing an empty one now would only give the company a goal
-  // it did not choose.
+  // Step 1 → 3 without a mission. First-run create no longer uses this: it
+  // asks for a mission and creates through `handleConfirmMission` so the
+  // company is written with that mission before the lead is hired. Kept for
+  // the skip branch (`skipsMissionStep`), which is off on both first-run
+  // paths.
   async function handleCreateCompany() {
     if (createdCompanyId) {
       setStep(3);
@@ -1471,7 +1472,12 @@ function OnboardingWizardInner({
     // seeds the agent's instructions from `companyGoal`, and hiring with an
     // unhydrated mission fails silently - the agent exists, and simply never
     // learns what the company is for.
-    if (missionUnresolvedForHire) return;
+    if (hireBlockedForMission) {
+      if (!missionPresentForHire && !missionUnresolvedForHire) {
+        setError("You must set a mission before you can start.");
+      }
+      return;
+    }
     if (createdAgentId && llmConnected) {
       setStep(5);
       return;
@@ -1754,12 +1760,11 @@ function OnboardingWizardInner({
       if (loading) return;
       if (step === 0) return; // front door requires click
       if (step === 1 && companyName.trim()) {
-        if (skipsMissionStep) void handleCreateCompany();
-        else setStep(2);
+        setStep(2);
       }
       else if (step === 2 && companyName.trim() && companyGoal.trim()) handleConfirmMission();
       else if (step === 3 && agentName.trim()) setStep(4);
-      else if (step === 4 && agentName.trim() && !missionUnresolvedForHire && (connectKind !== "local_llm" || localLlmPickIsLive))
+      else if (step === 4 && agentName.trim() && !hireBlockedForMission && (connectKind !== "local_llm" || localLlmPickIsLive))
         handleGiveHeartbeat();
       else if (step === 6 && llmConnected) handleLaunchToDashboard();
     }
@@ -1771,18 +1776,16 @@ function OnboardingWizardInner({
   // the arc — the Cloud-first path, where the company already exists and steps
   // 1-2 never happen. A run that started at step 1 keeps one continuous count.
   // Step 2 is two different screens wearing one number: the grow path's "tell us
-  // about your team" questionnaire, and the create path's mission step.
-  // Onboarding stopped asking for the mission, but the questionnaire is still
-  // how a grow run describes the team it is levelling up — its answers seed the
-  // lead agent — so only the create path skips ahead.
-  const skipsMissionStep = onboardingPath !== "grow";
+  // about your team" questionnaire, and the create path's mission step. Both
+  // paths ask it — create as plain text, grow as the questionnaire — so the
+  // company has a mission before the lead agent is hired.
+  const skipsMissionStep = false;
 
   // Back lands on whatever came before this step *for this run*, which is not
-  // always `step - 1`. A create run went 1 → 3, so stepping blindly would walk
-  // it into the mission screen it never saw. Two runs still belong on step 2
-  // going back: a grow run, whose step 2 is the questionnaire rather than the
-  // mission, and a run that *entered* on the mission step because something
-  // opened it there — it has seen that screen, so Back owes it the way back.
+  // always `step - 1`. A create run that skipped the mission went 1 → 3; that
+  // skip is gone, so Back from the agent step is the mission again. The skip
+  // branch stays only for a run that never saw step 2 while skipsMissionStep
+  // is true (it is not, on either first-run path).
   function backStepFrom(current: Step): Step {
     if (current === 3 && skipsMissionStep && entryStep !== 2) return 1;
     return (current - 1) as Step;
@@ -1861,12 +1864,11 @@ function OnboardingWizardInner({
                   progress bars on the same screen. A run that started at step 1
                   keeps this one throughout, so its count never restarts.
 
-                  Step 2 is absent: onboarding no longer asks for the mission, so
-                  a segment for it would be one the run can never fill, and the
-                  count would visibly skip from 1 to 3. */}
+                  Step 2 is the mission (create) or the grow questionnaire.
+*/}
               {!showsAgentArcStepper && (
               <div className="flex items-center gap-1.5 mb-8">
-                {([1, 3, 4, 5] as const).map((s) => {
+                {([1, 2, 3, 4, 5] as const).map((s) => {
                   const filled = step >= s;
                   const canJump = canJumpToOnboardingStep({
                     targetStep: s,
@@ -2083,8 +2085,7 @@ function OnboardingWizardInner({
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && companyName.trim()) {
                           e.preventDefault();
-                          if (skipsMissionStep) void handleCreateCompany();
-                          else setStep(2);
+                          setStep(2);
                         }
                       }}
                       autoFocus
@@ -2672,6 +2673,11 @@ function OnboardingWizardInner({
                   You must connect a model before you can start.
                 </p>
               )}
+              {step === 4 && hireBlockedForMission && !missionPresentForHire && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  You must set a mission before you can start.
+                </p>
+              )}
 
               {isAgentArcStep && step !== 5 && (
                 <FooterNav
@@ -2691,7 +2697,7 @@ function OnboardingWizardInner({
                     step === 3
                       ? !agentName.trim()
                       : step === 4
-                        ? loading || adapterEnvLoading || missionUnresolvedForHire || (connectKind === "local_llm" && !localLlmPickIsLive)
+                        ? loading || adapterEnvLoading || hireBlockedForMission || (connectKind === "local_llm" && !localLlmPickIsLive)
                         : loading || launchStateIncomplete || !llmConnected
                   }
                   onPrimary={() => {
@@ -2724,8 +2730,7 @@ function OnboardingWizardInner({
                       size="sm"
                       disabled={!companyName.trim() || loading}
                       onClick={() => {
-                        if (skipsMissionStep) void handleCreateCompany();
-                        else setStep(2);
+                        setStep(2);
                       }}
                     >
                       {loading ? (
@@ -2766,7 +2771,7 @@ function OnboardingWizardInner({
                         !agentName.trim() ||
                         loading ||
                         adapterEnvLoading ||
-                        missionUnresolvedForHire ||
+                        hireBlockedForMission ||
                         (connectKind === "local_llm" && !localLlmPickIsLive)
                       }
                       onClick={handleGiveHeartbeat}

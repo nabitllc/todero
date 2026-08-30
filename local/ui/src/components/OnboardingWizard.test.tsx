@@ -210,13 +210,34 @@ import { RECOMMENDED_AGENT_NAMES } from "../lib/onboarding-agent-names";
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 /** React tracks input value on the DOM node; set it the way React will see. */
-function setControlledValue(el: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
-    "value",
-  )!.set!;
+function setControlledValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  const proto = el instanceof HTMLTextAreaElement
+    ? window.HTMLTextAreaElement.prototype
+    : window.HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")!.set!;
   setter.call(el, value);
   el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function clickByText(match: (text: string) => boolean) {
+  const el = [...document.body.querySelectorAll("button")].find((b) =>
+    match(b.textContent?.trim() ?? ""),
+  )!;
+  await act(async () => {
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  await flushReact();
+}
+
+/** Create path: type a plain-text mission and persist it on the company. */
+async function confirmCreateMission(text = "Ship the marketplace") {
+  const mission = document.body.querySelector("textarea") as HTMLTextAreaElement;
+  expect(mission, "create path should show a mission field").toBeTruthy();
+  await act(async () => {
+    setControlledValue(mission, text);
+  });
+  await flushReact();
+  await clickByText((t) => t.includes("Confirm mission"));
 }
 
 async function flushReact() {
@@ -303,10 +324,9 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
   });
 
   describe("step 2, which is two screens wearing one number", () => {
-    // The create path's step 2 was the mission question and is skipped now. The
-    // grow path's step 2 is "tell us about your team", whose answers seed the
-    // lead agent — a different screen that happens to share the number, and one
-    // nothing covered until skipping the first nearly took it along.
+    // The create path's step 2 is the mission question again. The grow path's
+    // step 2 is "tell us about your team", whose answers seed the lead agent —
+    // a different screen that happens to share the number.
 
     async function openStepOne(path: "create" | "grow") {
       window.localStorage.setItem(
@@ -352,29 +372,51 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
     });
 
-    it("skips it on the create path, creating the company on the way", async () => {
-      mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
+    it("shows the mission step on the create path — skip is gone", async () => {
       const { root } = await openStepOne("create");
       await clickByText((t) => t.startsWith("Continue"));
 
-      expect(mockCompaniesApi.create).toHaveBeenCalledWith({ name: "Initech" });
-      expect(document.body.textContent).toContain("Create your first agent");
-      expect(document.body.textContent).not.toContain("Define your mission");
+      expect(mockCompaniesApi.create).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain("Define your mission");
+      expect(document.body.textContent).not.toContain("Create your first agent");
 
       await act(async () => root.unmount());
     });
 
-    it("advances past org-name even when the companies list refetches after create", async () => {
-      // Create invalidates the company list. The restore-gate used to unmount
-      // the inner wizard for *any* `isFetching`, including that refetch, then
-      // remount from the frozen mount-time draft (org-name, no company id).
-      // Continue looked like it did nothing and POSTed another empty org.
+    it("creates the company with that mission before the lead is hired", async () => {
+      mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
+      const { root } = await openStepOne("create");
+      await clickByText((t) => t.startsWith("Continue"));
+      expect(document.body.textContent).toContain("Define your mission");
+
+      await confirmCreateMission("Ship the marketplace");
+
+      expect(mockCompaniesApi.create).toHaveBeenCalledWith({ name: "Initech" });
+      expect(mockGoalsApi.create).toHaveBeenCalledWith(
+        "company-new",
+        expect.objectContaining({
+          title: "Ship the marketplace",
+          level: "company",
+          status: "active",
+        }),
+      );
+      expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain("Create your first agent");
+
+      await act(async () => root.unmount());
+    });
+
+    it("advances past mission even when the companies list refetches after create", async () => {
+      // Confirm mission creates the company and invalidates the list. The
+      // restore-gate used to unmount the inner wizard for *any* `isFetching`,
+      // including that refetch, then remount from the frozen mount-time draft.
       mockCompaniesApi.create.mockResolvedValue({
         id: "company-new",
         name: "Initech",
         issuePrefix: "INI",
       });
       const { root } = await openStepOne("create");
+      await clickByText((t) => t.startsWith("Continue"));
 
       let resolveRefetch: (value: unknown[]) => void = () => {};
       mockCompaniesApi.list.mockImplementation(
@@ -384,10 +426,11 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
           }),
       );
 
-      await clickByText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
 
       expect(mockCompaniesApi.create).toHaveBeenCalledTimes(1);
       expect(mockCompaniesApi.create).toHaveBeenCalledWith({ name: "Initech" });
+      expect(mockGoalsApi.create).toHaveBeenCalledTimes(1);
       expect(document.body.textContent).toContain("Create your first agent");
       expect(document.body.textContent).not.toContain(
         "What is the name of your organization?",
@@ -405,12 +448,12 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         "What is the name of your organization?",
       );
 
-      const continueAgain = [...document.body.querySelectorAll("button")].find((b) =>
-        (b.textContent?.trim() ?? "").startsWith("Continue"),
+      const confirmAgain = [...document.body.querySelectorAll("button")].find((b) =>
+        (b.textContent?.trim() ?? "").includes("Confirm mission"),
       );
-      if (continueAgain) {
+      if (confirmAgain) {
         await act(async () => {
-          continueAgain.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          confirmAgain.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         });
         await flushReact();
       }
@@ -429,6 +472,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
       const { root } = await openStepOne("create");
       await clickByText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
       expect(document.body.textContent).toContain("Create your first agent");
 
       // Step 3 → 4 needs an agent name — the one field the step has now.
@@ -509,6 +553,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       };
 
       await clickText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
       const agentField = document.body.querySelector(
         "#onboarding-agent-name",
       ) as HTMLInputElement;
@@ -543,6 +588,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
       const { root } = await openStepOne("create");
       await clickByText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
       const agentField = document.body.querySelector(
         "#onboarding-agent-name",
       ) as HTMLInputElement;
@@ -569,13 +615,11 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
     });
 
-    it("creates one company for one keystroke, modifier or not", async () => {
+    it("advances to the mission step once, modifier or not", async () => {
       // The name field handles Enter itself and does not check for a modifier,
       // so Cmd+Enter in that field reaches the field's handler *and* the
-      // wizard's step-level one. Both would start creating. The step-level
-      // `loading` guard cannot stop it — `setLoading(true)` has not landed
-      // while the same event is still bubbling — so the second caller reads a
-      // value the first has not written. Two companies, one keystroke.
+      // wizard's step-level one. Both used to start creating. They now both
+      // advance to the mission step; creating waits for Confirm mission.
       mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
       const { root } = await openStepOne("create");
 
@@ -589,19 +633,16 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       });
       await flushReact();
 
-      expect(mockCompaniesApi.create).toHaveBeenCalledTimes(1);
-      expect(document.body.textContent).toContain("Create your first agent");
+      expect(mockCompaniesApi.create).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain("Define your mission");
 
       await act(async () => root.unmount());
     });
 
-    it("creates one company however many times Enter repeats", async () => {
-      // Holding Enter down fires keydown repeatedly. Each one is a separate
-      // event, so `defaultPrevented` says nothing about the others, and neither
-      // `loading` nor `createdCompanyId` has been written by the time the next
-      // arrives — the first is state, the second is not set until the request
-      // it guards resolves. Only a ref written before the request goes out is
-      // visible to the caller behind it.
+    it("creates one company however many times Confirm mission repeats", async () => {
+      // Holding Enter / clicking Confirm while the create is in flight used
+      // to POST a second company. The ref written before the request goes
+      // out is what the caller behind it can see.
       let resolveCreate: (c: { id: string; issuePrefix: string }) => void = () => {};
       mockCompaniesApi.create.mockReturnValue(
         new Promise<{ id: string; issuePrefix: string }>((resolve) => {
@@ -609,15 +650,19 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         }),
       );
       const { root } = await openStepOne("create");
+      await clickByText((t) => t.startsWith("Continue"));
+      const mission = document.body.querySelector("textarea") as HTMLTextAreaElement;
+      await act(async () => {
+        setControlledValue(mission, "Ship the marketplace");
+      });
+      await flushReact();
 
-      const nameInput = document.body.querySelector(
-        'input[placeholder="e.g. Northwind Labs"]',
-      ) as HTMLInputElement;
+      const confirm = [...document.body.querySelectorAll("button")].find((b) =>
+        (b.textContent?.trim() ?? "").includes("Confirm mission"),
+      )!;
       await act(async () => {
         for (let i = 0; i < 4; i++) {
-          nameInput.dispatchEvent(
-            new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-          );
+          confirm.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         }
       });
 
@@ -630,18 +675,17 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
     });
 
-    it("sends Back to the screen the run actually came from", async () => {
-      // A create run reached the agent step from step 1, so Back owes it step 1 —
-      // not the mission screen it never saw.
+    it("sends Back to the mission the create run just confirmed", async () => {
       mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
       const { root } = await openStepOne("create");
       await clickByText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
       expect(document.body.textContent).toContain("Create your first agent");
 
       await clickByText((t) => t.includes("Back"));
 
-      expect(document.body.textContent).toContain("What is the name of your organization?");
-      expect(document.body.textContent).not.toContain("Define your mission");
+      expect(document.body.textContent).toContain("Define your mission");
+      expect(document.body.textContent).not.toContain("What is the name of your organization?");
 
       await act(async () => root.unmount());
     });
@@ -680,6 +724,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       };
 
       await clickByText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
       expect(document.body.textContent).toContain("Create your first agent");
       return { root, clickByText };
     }
@@ -772,6 +817,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       };
 
       await clickByText((t) => t.startsWith("Continue"));
+      await confirmCreateMission("Ship the marketplace");
       const agentField = document.body.querySelector(
         "#onboarding-agent-name",
       ) as HTMLInputElement;
@@ -784,6 +830,44 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
       return { root, clickByText };
     }
+
+    it("blocks the hire until a mission is present, same honesty as LLM connect", async () => {
+      mockCompany.companies = [{ id: "company-new", name: "Initech", issuePrefix: "INI" }];
+      mockCompany.loading = false;
+      mockCompaniesApi.list.mockResolvedValue(mockCompany.companies);
+      mockGoalsApi.list.mockResolvedValue([]);
+      window.localStorage.setItem(
+        ONBOARDING_STORAGE_KEY,
+        JSON.stringify({
+          step: 4,
+          onboardingPath: "create",
+          companyName: "Initech",
+          agentName: "Ada",
+          createdCompanyId: "company-new",
+          adapterType: "claude_local",
+        }),
+      );
+      mockDialog.onboardingOptions = {};
+      const { root, queryClient } = render();
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <OnboardingWizard />
+          </QueryClientProvider>,
+        );
+      });
+      for (let i = 0; i < 6; i++) await flushReact();
+
+      expect(document.body.textContent).toContain("Connect a model");
+      expect(document.body.textContent).toMatch(/must set a mission/i);
+      const connect = [...document.body.querySelectorAll("button")].find((b) =>
+        (b.textContent?.trim() ?? "").startsWith("Connect"),
+      );
+      expect(connect?.disabled).toBe(true);
+      expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+
+      await act(async () => root.unmount());
+    });
 
     it("blocks the hire on a warn result that holds adapter_auth_missing, and shows the returned checks", async () => {
       mockAgentsApi.testEnvironment.mockResolvedValue({
@@ -1699,6 +1783,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
           step: 4,
           onboardingPath: "create",
           companyName: "Initech",
+          companyGoal: "Ship the marketplace",
           agentName: "Ada",
           createdCompanyId: "company-new",
           adapterType: "claude_local",

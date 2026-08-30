@@ -646,8 +646,13 @@ describe("OnboardingWizard — which step it lands on", () => {
         )!,
       );
       await settle();
+      setControlledValue(missionTextarea()!, "Acme's mission");
+      await settle();
+      await click(confirmMissionButton()!);
+      await settle();
       await settle();
       expect(mockCompaniesApi.create).toHaveBeenCalled();
+      expect(mockGoalsApi.create).toHaveBeenCalled();
       expect(currentStep()).toBe("agent");
 
       // Its own onboarding path, then back to the unprefixed one.
@@ -706,8 +711,8 @@ describe("OnboardingWizard — which step it lands on", () => {
     await render();
     await settle();
 
-    // Step 1 creates the company on its own now — the mission step used to do
-    // it, and no longer runs.
+    // Confirm mission creates the company. Continue from org-name only
+    // advances to that step.
     const nameInput = document.body.querySelector("input")! as HTMLInputElement;
     setControlledValue(nameInput, "Initech");
     await settle();
@@ -716,6 +721,12 @@ describe("OnboardingWizard — which step it lands on", () => {
     )!;
     await act(async () => {
       next.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await settle();
+    setControlledValue(missionTextarea()!, "Initech's mission");
+    await settle();
+    await act(async () => {
+      confirmMissionButton()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     // A route supplies an existing company before the create lands.
