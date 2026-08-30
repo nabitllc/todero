@@ -62,7 +62,7 @@ import {
   selectDefaultCompanyGoalId,
   selectReusableOnboardingProject,
 } from "../lib/onboarding-launch";
-import { DEFAULT_TASK_TITLE, buildOnboardingFirstTaskDescription } from "../lib/onboarding-first-task";
+import { buildOnboardingFirstTaskDescription, buildOnboardingFirstTaskTitle } from "../lib/onboarding-first-task";
 import { buildNewAgentRuntimeConfig } from "../lib/new-agent-runtime-config";
 import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@todero/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@todero/adapter-cursor-local";
@@ -1109,7 +1109,7 @@ function OnboardingWizardInner({
         const issue = await issuesApi.create(
           createdCompanyId,
           buildOnboardingIssuePayload({
-            title: DEFAULT_TASK_TITLE,
+            title: buildOnboardingFirstTaskTitle(companyGoal),
             description: buildOnboardingFirstTaskDescription(companyGoal),
             assigneeAgentId: createdAgentId,
             projectId,

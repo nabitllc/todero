@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildOnboardingFirstTaskDescription } from "./onboarding-first-task";
+import {
+  DEFAULT_TASK_TITLE,
+  buildOnboardingFirstTaskDescription,
+  buildOnboardingFirstTaskTitle,
+} from "./onboarding-first-task";
 
 describe("buildOnboardingFirstTaskDescription", () => {
   it("includes the typed mission and does not tell the agent to ask for a goal", () => {
@@ -17,5 +21,16 @@ describe("buildOnboardingFirstTaskDescription", () => {
     expect(text).toMatch(/Don't guess; ask/);
     expect(text).toContain("settle on one concrete goal");
     expect(text).not.toContain("Company mission (from onboarding):");
+  });
+});
+
+describe("buildOnboardingFirstTaskTitle", () => {
+  it("uses the typed mission instead of the generic Todero onboarding title", () => {
+    expect(buildOnboardingFirstTaskTitle("Ship the marketplace")).toBe("Ship the marketplace");
+    expect(buildOnboardingFirstTaskTitle("Ship the marketplace")).not.toBe(DEFAULT_TASK_TITLE);
+  });
+
+  it("falls back to the generic title only when no mission was given", () => {
+    expect(buildOnboardingFirstTaskTitle("   \n")).toBe(DEFAULT_TASK_TITLE);
   });
 });

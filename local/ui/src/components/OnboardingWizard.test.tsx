@@ -1952,7 +1952,9 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
 
       expect(mockIssuesApi.create).toHaveBeenCalled();
       const issueArgs = mockIssuesApi.create.mock.calls.at(-1) as unknown[];
-      const issueBody = issueArgs[1] as { description?: string };
+      const issueBody = issueArgs[1] as { title?: string; description?: string };
+      expect(issueBody.title).toBe("Ship the marketplace");
+      expect(issueBody.title).not.toBe("Todero onboarding");
       expect(issueBody.description).toContain("Ship the marketplace");
       expect(issueBody.description).not.toMatch(/Don't guess; ask/);
       expect(issueBody.description).not.toMatch(/settle on one concrete goal/);

@@ -1,5 +1,6 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "../types.js";
 import { asString, asNumber, parseObject } from "../utils.js";
+import { buildChatCompletionsBody, isChatCompletionsUrl } from "./chat-completions.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -10,13 +11,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const timeoutMs = asNumber(config.timeoutMs, 0);
   const headers = parseObject(config.headers) as Record<string, string>;
   const payloadTemplate = parseObject(config.payloadTemplate);
-  const body = {
-    ...payloadTemplate,
-    agentId: agent.id,
-    runId,
-    context,
-    ...(ctx.runtimeTools ? { toderoRuntimeTools: ctx.runtimeTools } : {}),
-  };
+  const body = isChatCompletionsUrl(url)
+    ? buildChatCompletionsBody({ config, context, payloadTemplate })
+    : {
+        ...payloadTemplate,
+        agentId: agent.id,
+        runId,
+        context,
+        ...(ctx.runtimeTools ? { toderoRuntimeTools: ctx.runtimeTools } : {}),
+      };
 
   const controller = new AbortController();
   const timer = timeoutMs > 0 ? setTimeout(() => controller.abort(), timeoutMs) : null;

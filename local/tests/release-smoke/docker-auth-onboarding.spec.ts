@@ -14,9 +14,9 @@ const AGENT_NAME = "Release Smoke Lead";
 // The arc asks for a name, not a role, so every onboarding hire is filed under
 // the neutral role (DEFAULT_AGENT_ROLE in ui/src/lib/onboarding-agent-role.ts).
 const AGENT_ROLE = "general";
-// Seeded by the wizard's launch step (DEFAULT_TASK_TITLE in
-// ui/src/components/OnboardingWizard.tsx).
-const FIRST_TASK_TITLE = "Todero onboarding";
+// Seeded by the wizard's launch step (buildOnboardingFirstTaskTitle
+// in ui/src/lib/onboarding-first-task.ts) from the mission typed below.
+const FIRST_TASK_TITLE = "Ship the product";
 
 async function signIn(page: Page) {
   await page.goto("/");

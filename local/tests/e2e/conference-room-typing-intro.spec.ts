@@ -18,7 +18,7 @@ import {
  * exactly that failing condition.
  */
 
-const FIRST_TASK_TITLE = "Todero onboarding";
+const FIRST_TASK_TITLE = "Ship the product";
 
 /**
  * Intercept the two side-effecting calls the wizard makes so no real CLI check
