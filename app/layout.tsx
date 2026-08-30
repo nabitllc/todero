@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Todero",
-  description: "Todero workspace and empty product board.",
+  description: "A local company for AI agents. Your model, your Second Brain.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
