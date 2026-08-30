@@ -11,6 +11,10 @@ export function buildNewAgentHirePayload(input: {
   configValues: CreateConfigValues;
   adapterConfig: Record<string, unknown>;
   permissions?: Partial<AgentPermissions>;
+  instructionsBundle?: {
+    entryFile?: string;
+    files: Record<string, string>;
+  };
 }) {
   const {
     name,
@@ -21,6 +25,7 @@ export function buildNewAgentHirePayload(input: {
     configValues,
     adapterConfig,
     permissions,
+    instructionsBundle,
   } = input;
 
   return {
@@ -50,5 +55,6 @@ export function buildNewAgentHirePayload(input: {
     // OAuth token reference to the owner stored value with no login round trip.
     // Send it only after the owner applies an existing stored login.
     ...(configValues.claudeApplyStoredLogin ? { applyStoredClaudeLogin: true } : {}),
+    ...(instructionsBundle ? { instructionsBundle } : {}),
   };
 }

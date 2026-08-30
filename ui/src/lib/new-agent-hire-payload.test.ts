@@ -116,4 +116,21 @@ describe("buildNewAgentHirePayload", () => {
       },
     });
   });
+
+  it("carries the lead instructions bundle the heartbeat materializes", () => {
+    const payload = buildNewAgentHirePayload({
+      name: "Ada",
+      effectiveRole: "general",
+      configValues: { ...defaultCreateValues, adapterType: "claude_local" },
+      adapterConfig: {},
+      instructionsBundle: {
+        entryFile: "AGENTS.md",
+        files: { "AGENTS.md": "**Mission:** Ship the marketplace" },
+      },
+    });
+    expect(payload.instructionsBundle).toEqual({
+      entryFile: "AGENTS.md",
+      files: { "AGENTS.md": "**Mission:** Ship the marketplace" },
+    });
+  });
 });
