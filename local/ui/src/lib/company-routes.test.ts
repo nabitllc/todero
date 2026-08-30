@@ -46,6 +46,15 @@ describe("company routes", () => {
     expect(applyCompanyPrefix("/NEU/company/export", "NEU")).toBe("/NEU/company/export");
   });
 
+  it("leaves the global onboarding wizard route unprefixed", () => {
+    // Cold open with zero active orgs navigates to `/onboarding`. If this
+    // were treated as a board path, an archived selectedCompany would rewrite
+    // it onto that org and dump the user into the archive.
+    expect(extractCompanyPrefixFromPath("/onboarding")).toBeNull();
+    expect(applyCompanyPrefix("/onboarding", "ARC")).toBe("/onboarding");
+    expect(applyCompanyPrefix("/ONE/onboarding", "ONE")).toBe("/ONE/onboarding");
+  });
+
   it("normalizes prefixed company export file URLs for parsing", () => {
     expect(toCompanyRelativePath("/NEU/company/export/files/agents/ceo/AGENTS.md")).toBe(
       "/company/export/files/agents/ceo/AGENTS.md",
