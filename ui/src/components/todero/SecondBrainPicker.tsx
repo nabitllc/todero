@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toderoVaultApi, type VaultSource } from "@/api/vault";
 import { Button } from "@/components/ui/button";
@@ -7,9 +8,10 @@ import { cn } from "@/lib/utils";
 export type SecondBrainPickerProps = {
   mode: "onboarding" | "settings";
   onSaved?: (source: VaultSource) => void;
+  onBack?: () => void;
 };
 
-export function SecondBrainPicker({ mode, onSaved }: SecondBrainPickerProps) {
+export function SecondBrainPicker({ mode, onSaved, onBack }: SecondBrainPickerProps) {
   const [source, setSource] = useState<VaultSource>("recommended");
   const [personalPath, setPersonalPath] = useState("");
   const [recommendedPath, setRecommendedPath] = useState("");
@@ -61,7 +63,7 @@ export function SecondBrainPicker({ mode, onSaved }: SecondBrainPickerProps) {
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading Second Brain…</p>;
+    return <p className="text-sm text-muted-foreground">Loading Second Brain...</p>;
   }
 
   return (
@@ -125,24 +127,29 @@ export function SecondBrainPicker({ mode, onSaved }: SecondBrainPickerProps) {
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          disabled={saving || (source === "personal" && !personalPath.trim())}
-          onClick={() => void persist(source)}
-        >
-          {saving ? "Saving…" : mode === "onboarding" ? "Continue" : "Save"}
-        </Button>
-        {mode === "onboarding" ? (
+      <div className="flex items-center justify-between gap-2">
+        {mode === "onboarding" && onBack ? (
+          <Button size="sm" variant="ghost" disabled={saving} onClick={onBack}>
+            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+            Back
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-2">
+          {mode === "onboarding" ? (
+            <Button size="sm" variant="ghost" disabled={saving} onClick={() => { void persist("none"); }}>
+              None
+            </Button>
+          ) : null}
           <Button
             size="sm"
-            variant="ghost"
-            disabled={saving}
-            onClick={() => { void persist("none"); }}
+            disabled={saving || (source === "personal" && !personalPath.trim())}
+            onClick={() => void persist(source)}
           >
-            Skip
+            {saving ? "Saving..." : mode === "onboarding" ? "Continue" : "Save"}
           </Button>
-        ) : null}
+        </div>
       </div>
     </div>
   );

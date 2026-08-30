@@ -83,6 +83,8 @@ import {
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
 import { SecondBrainPicker } from "./todero/SecondBrainPicker";
+import { LocalLlmPicker, type LocalLlmSelection } from "./todero/LocalLlmPicker";
+import { toderoLocalLlmApi, localLlmSelectionIsConnected } from "../api/local-llm";
 import { PillGuy } from "./onboarding/PillGuy";
 import { AGENT_ARC_WIZARD_STEPS, Stepper, agentArcStepFor } from "./onboarding/Stepper";
 import { AgentPreview } from "./onboarding/AgentPreview";
@@ -102,6 +104,7 @@ import {
   Check,
   Loader2,
   ChevronDown,
+  Cpu,
   X
 } from "lucide-react";
 
@@ -485,6 +488,15 @@ function OnboardingWizardInner({
     (saved?.agentRole as AgentRole) || DEFAULT_AGENT_ROLE,
   );
   const [adapterType, setAdapterType] = useState<AdapterType>((saved?.adapterType as AdapterType) ?? "claude_local");
+  const [connectKind, setConnectKind] = useState<"adapter" | "local_llm">(
+    saved?.connectKind === "local_llm" ? "local_llm" : "adapter",
+  );
+  const [localLlmSelection, setLocalLlmSelection] = useState<LocalLlmSelection | null>(
+    saved?.localLlmSelection && typeof saved.localLlmSelection === "object"
+      ? (saved.localLlmSelection as LocalLlmSelection)
+      : null,
+  );
+  const [llmConnected, setLlmConnected] = useState(Boolean(saved?.llmConnected));
   const [cwd, setCwd] = useState((saved?.cwd as string) ?? "");
   const [model, setModel] = useState((saved?.model as string) ?? "");
   const [command, setCommand] = useState((saved?.command as string) ?? "");
@@ -739,6 +751,7 @@ function OnboardingWizardInner({
     const state = {
       step, companyName, companyGoal, missionPath, missionConfirmed,
       q1, q2, q3, q4, agentName, agentRole, adapterType, cwd, model, command, args, url,
+      connectKind, localLlmSelection, llmConnected,
       createdCompanyId, createdCompanyPrefix, createdAgentId,
       createdCompanyGoalId, createdProjectId, createdIssueRef,
       onboardingPath, growWorkflows, growPainPoints, growAutomate,
@@ -747,6 +760,7 @@ function OnboardingWizardInner({
   }, [
     effectiveOnboardingOpen, step, companyName, companyGoal, missionPath, missionConfirmed,
     q1, q2, q3, q4, agentName, agentRole, adapterType, cwd, model, command, args, url,
+    connectKind, localLlmSelection, llmConnected,
     createdCompanyId, createdCompanyPrefix, createdAgentId,
     createdCompanyGoalId, createdProjectId, createdIssueRef,
     onboardingPath, growWorkflows, growPainPoints, growAutomate,
@@ -1457,7 +1471,7 @@ function OnboardingWizardInner({
     // unhydrated mission fails silently - the agent exists, and simply never
     // learns what the company is for.
     if (missionUnresolvedForHire) return;
-    if (createdAgentId) {
+    if (createdAgentId && llmConnected) {
       setStep(5);
       return;
     }
@@ -1466,7 +1480,27 @@ function OnboardingWizardInner({
     setLoading(true);
     setError(null);
     try {
-      if (adapterType === "opencode_local") {
+      if (connectKind === "local_llm") {
+        if (!localLlmSelection) {
+          setError("You must connect a model before you can start.");
+          return;
+        }
+        const detected = await toderoLocalLlmApi.detect();
+        if (!localLlmSelectionIsConnected({
+          runtimes: detected.runtimes,
+          runtimeId: localLlmSelection.runtimeId,
+          modelId: localLlmSelection.modelId,
+        })) {
+          setError("You must connect a model before you can start. No reachable local LLM is selected.");
+          return;
+        }
+        setLlmConnected(true);
+        if (createdAgentId) {
+          setStep(5);
+          return;
+        }
+      }
+      if (connectKind !== "local_llm" && adapterType === "opencode_local") {
         const selectedModelId = model.trim();
         if (!isValidOpenCodeModelId(selectedModelId)) {
           setError(
@@ -1513,10 +1547,19 @@ function OnboardingWizardInner({
       // configuration the hire sends — a config without the binding can
       // report missing authentication for a user the binding would have
       // covered.
-      const baseAdapterConfig = buildAdapterConfig();
+      const baseAdapterConfig = connectKind === "local_llm" && localLlmSelection
+        ? {
+            url: `${localLlmSelection.baseUrl}/v1/chat/completions`,
+            method: "POST",
+            timeoutMs: 15000,
+            model: localLlmSelection.modelId,
+            localLlm: localLlmSelection,
+          }
+        : buildAdapterConfig();
       let storedClaudeLogin: ClaudeOAuthTokenStatusResponse | null = null;
       if (
         adapterType === "claude_local" &&
+        connectKind !== "local_llm" &&
         !adapterConfigHasAnthropicApiKey(baseAdapterConfig)
       ) {
         try {
@@ -1540,7 +1583,7 @@ function OnboardingWizardInner({
           }
         : baseAdapterConfig;
 
-      if (isLocalAdapter) {
+      if (isLocalAdapter && connectKind !== "local_llm") {
         // A cached result is reusable only when it tested the same
         // configuration the hire below sends, and only when it does not
         // block the hire — see blocksAgentCreate. With the "Test now" card
@@ -1569,6 +1612,7 @@ function OnboardingWizardInner({
           );
           return;
         }
+        setLlmConnected(true);
       }
 
       // `agentRole` always holds a value now (see its default), so this is a
@@ -1581,7 +1625,7 @@ function OnboardingWizardInner({
         // named for the job it was hired to do rather than left blank.
         name: agentName.trim() || AGENT_ROLE_LABELS[agentRole],
         role: agentRole,
-        adapterType,
+        adapterType: connectKind === "local_llm" ? "http" : adapterType,
         adapterConfig: hireAdapterConfig,
         ...(shouldApplyStoredClaudeLogin ? { applyStoredClaudeLogin: true } : {}),
         runtimeConfig: buildNewAgentRuntimeConfig()
@@ -1714,9 +1758,9 @@ function OnboardingWizardInner({
       }
       else if (step === 2 && companyName.trim() && companyGoal.trim()) handleConfirmMission();
       else if (step === 3 && agentName.trim()) setStep(4);
-      else if (step === 4 && agentName.trim() && !missionUnresolvedForHire)
+      else if (step === 4 && agentName.trim() && !missionUnresolvedForHire && (connectKind !== "local_llm" || localLlmSelection))
         handleGiveHeartbeat();
-      else if (step === 6) handleLaunchToDashboard();
+      else if (step === 6 && llmConnected) handleLaunchToDashboard();
     }
   }
 
@@ -1905,7 +1949,7 @@ function OnboardingWizardInner({
                         step === 3 ? undefined : step === 4 ? (
                           <>Todero works with your existing subscription or API keys.</>
                         ) : step === 5 ? (
-                          <>Attach a read-only vault. Recommended is pre-selected. Skip stores none.</>
+                          <>Attach a read-only vault. Recommended is pre-selected. None stores none.</>
                         ) : (
                           <>{agentName.trim() || "Your first agent"} is ready to work!</>
                         )
@@ -2285,12 +2329,15 @@ function OnboardingWizardInner({
                           key={opt.type}
                           className={cn(
                             "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
-                            adapterType === opt.type
+                            adapterType === opt.type && connectKind !== "local_llm"
                               ? "border-foreground bg-accent"
                               : "border-border hover:bg-accent/50"
                           )}
                           onClick={() => {
                             const nextType = opt.type;
+                            setConnectKind("adapter");
+                            setLlmConnected(false);
+                            setLocalLlmSelection(null);
                             setAdapterType(nextType);
                             if (nextType === "codex_local") {
                               return;
@@ -2312,6 +2359,25 @@ function OnboardingWizardInner({
                           </span>
                         </button>
                       ))}
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors relative",
+                          connectKind === "local_llm"
+                            ? "border-foreground bg-accent"
+                            : "border-border hover:bg-accent/50"
+                        )}
+                        onClick={() => {
+                          setConnectKind("local_llm");
+                          setLlmConnected(false);
+                        }}
+                      >
+                        <Cpu className="h-4 w-4" />
+                        <span className="font-medium">Local LLM</span>
+                        <span className="text-muted-foreground text-(length:--text-nano)">
+                          Detects a runtime already on this machine
+                        </span>
+                      </button>
                     </div>
 
                     <button
@@ -2344,6 +2410,9 @@ function OnboardingWizardInner({
                              onClick={() => {
                                if (opt.comingSoon) return;
                                const nextType = opt.type;
+                              setConnectKind("adapter");
+                              setLlmConnected(false);
+                              setLocalLlmSelection(null);
                               setAdapterType(nextType);
                               if (nextType === "gemini_local" && !model) {
                                 setModel(DEFAULT_GEMINI_LOCAL_MODEL);
@@ -2383,7 +2452,17 @@ function OnboardingWizardInner({
                       shows after a test — see AdapterLoginPanel in
                       AgentConfigForm.tsx. No "Use saved login" control: the
                       hire step already applies a stored login on its own. */}
-                  {showAdapterLoginPanel && createdCompanyId && resolvedLoginEnvironmentId && (
+                  {connectKind === "local_llm" && (
+                    <LocalLlmPicker
+                      value={localLlmSelection}
+                      onChange={(next) => {
+                        setLocalLlmSelection(next);
+                        setLlmConnected(false);
+                      }}
+                    />
+                  )}
+
+                  {connectKind !== "local_llm" && showAdapterLoginPanel && createdCompanyId && resolvedLoginEnvironmentId && (
                     <AdapterLoginPanel
                       key={`${adapterType}:${resolvedLoginEnvironmentId}`}
                       companyId={createdCompanyId}
@@ -2415,7 +2494,7 @@ function OnboardingWizardInner({
                       step, so this block renders only when a probe has actually
                       found something: the checks the blocking error tells the
                       customer to fix have to be visible somewhere. */}
-                  {isLocalAdapter && (adapterEnvError || (adapterEnvResult && adapterEnvResult.status !== "pass")) && (
+                  {connectKind !== "local_llm" && isLocalAdapter && (adapterEnvError || (adapterEnvResult && adapterEnvResult.status !== "pass")) && (
                     <div className="space-y-2 rounded-md border border-border p-3">
                       {adapterEnvError && (
                         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-(length:--text-micro) text-destructive">
@@ -2559,6 +2638,7 @@ function OnboardingWizardInner({
                   <SecondBrainPicker
                     mode="onboarding"
                     onSaved={() => setStep(6)}
+                    onBack={() => setStep(backStepFrom(step))}
                   />
                 </div>
               )}
@@ -2575,6 +2655,11 @@ function OnboardingWizardInner({
                 <div className="mt-3">
                   <p className="text-xs text-destructive">{visibleError}</p>
                 </div>
+              )}
+              {!llmConnected && (step === 4 || step === 6) && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  You must connect a model before you can start.
+                </p>
               )}
 
               {isAgentArcStep && step !== 5 && (
@@ -2595,8 +2680,8 @@ function OnboardingWizardInner({
                     step === 3
                       ? !agentName.trim()
                       : step === 4
-                        ? loading || adapterEnvLoading || missionUnresolvedForHire
-                        : loading || launchStateIncomplete
+                        ? loading || adapterEnvLoading || missionUnresolvedForHire || (connectKind === "local_llm" && !localLlmSelection)
+                        : loading || launchStateIncomplete || !llmConnected
                   }
                   onPrimary={() => {
                     if (step === 3) setStep(4);
@@ -2670,7 +2755,8 @@ function OnboardingWizardInner({
                         !agentName.trim() ||
                         loading ||
                         adapterEnvLoading ||
-                        missionUnresolvedForHire
+                        missionUnresolvedForHire ||
+                        (connectKind === "local_llm" && !localLlmSelection)
                       }
                       onClick={handleGiveHeartbeat}
                     >
@@ -2686,7 +2772,7 @@ function OnboardingWizardInner({
                     <Button
                       size="sm"
                       onClick={handleLaunchToDashboard}
-                      disabled={loading || launchStateIncomplete}
+                      disabled={loading || launchStateIncomplete || !llmConnected}
                     >
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
