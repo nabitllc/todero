@@ -983,19 +983,19 @@
 
 @keyframes todero-thinking-draw {
   0% {
-    stroke-dasharray: 0 85.717;
-    stroke-dashoffset: -85.717;
+    stroke-dasharray: 0 100;
+    stroke-dashoffset: -100;
     opacity: 1;
     animation-timing-function: cubic-bezier(0.455, 0.03, 0.515, 0.955);
   }
   39.0625% {
-    stroke-dasharray: 85.717 85.717;
+    stroke-dasharray: 100 100;
     stroke-dashoffset: 0;
     opacity: 1;
     animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);
   }
   78.125% {
-    stroke-dasharray: 0 85.717;
+    stroke-dasharray: 0 100;
     stroke-dashoffset: 0;
     opacity: 1;
   }
@@ -1003,7 +1003,7 @@
     opacity: 0;
   }
   100% {
-    stroke-dasharray: 0 85.717;
+    stroke-dasharray: 0 100;
     stroke-dashoffset: 0;
     opacity: 0;
   }
@@ -1069,7 +1069,7 @@
   .todero-thinking-icon-path {
     animation: none;
     opacity: 1;
-    stroke-dasharray: 85.717 85.717;
+    stroke-dasharray: 100 100;
     stroke-dashoffset: 0;
   }
 }

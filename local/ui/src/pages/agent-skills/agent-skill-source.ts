@@ -1,5 +1,6 @@
-import { Boxes, Folder, Link2, Paperclip, type LucideIcon } from "lucide-react";
+import { Boxes, Folder, Link2, type LucideIcon } from "lucide-react";
 import { GithubIcon } from "@/components/icons/github-icon";
+import { OctopusIcon } from "@/components/icons/octopus-icon";
 import type { CompanySkillListItem } from "@todero/shared";
 
 export interface AgentSkillSourceMeta {
@@ -104,7 +105,7 @@ export function buildAgentSkillSourceMeta(skill: SourceSkill): AgentSkillSourceM
   }
 
   if (skill.sourceBadge === "todero") {
-    return { icon: Paperclip, label: skill.sourceLabel?.trim() || "Todero managed" };
+    return { icon: OctopusIcon, label: skill.sourceLabel?.trim() || "Todero managed" };
   }
 
   if (skill.sourceBadge === "catalog" || skill.sourceType === "catalog") {
