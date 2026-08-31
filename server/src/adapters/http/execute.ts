@@ -1,6 +1,10 @@
 import type { AdapterExecutionContext, AdapterExecutionResult } from "../types.js";
 import { asString, asNumber, parseObject } from "../utils.js";
-import { buildChatCompletionsBody, isChatCompletionsUrl } from "./chat-completions.js";
+import {
+  buildChatCompletionsBody,
+  isChatCompletionsUrl,
+  parseChatCompletionsText,
+} from "./chat-completions.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -11,7 +15,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const timeoutMs = asNumber(config.timeoutMs, 0);
   const headers = parseObject(config.headers) as Record<string, string>;
   const payloadTemplate = parseObject(config.payloadTemplate);
-  const body = isChatCompletionsUrl(url)
+  const chatCompletions = isChatCompletionsUrl(url);
+  const body = chatCompletions
     ? buildChatCompletionsBody({ config, context, payloadTemplate })
     : {
         ...payloadTemplate,
@@ -43,11 +48,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       throw new Error(`HTTP invoke failed with status ${res.status}`);
     }
 
+    if (!chatCompletions) {
+      return {
+        exitCode: 0,
+        signal: null,
+        timedOut: false,
+        summary: `HTTP ${method} ${url}`,
+      };
+    }
+
+    // Heartbeat posts resultJson.summary as the ticket comment (issueComments.body)
+    // via buildHeartbeatRunIssueComment. Discarding a 2xx body used to count as
+    // success with nothing on the ticket.
+    const raw = await res.text();
+    const completion = parseChatCompletionsText(raw);
+    if (!completion) {
+      throw new Error("HTTP chat completions returned empty assistant text");
+    }
+    await ctx.onLog("stdout", completion.endsWith("\n") ? completion : `${completion}\n`);
     return {
       exitCode: 0,
       signal: null,
       timedOut: false,
-      summary: `HTTP ${method} ${url}`,
+      summary: completion,
+      resultJson: { summary: completion },
     };
   } catch (err) {
     if (timer && err instanceof Error && err.name === "AbortError") {

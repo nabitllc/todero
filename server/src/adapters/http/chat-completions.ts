@@ -22,6 +22,55 @@ function readNonEmptyString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readMessageContent(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    const record = part as Record<string, unknown>;
+    if (typeof record.text === "string") parts.push(record.text);
+    else if (typeof record.content === "string") parts.push(record.content);
+  }
+  return parts.join("").trim();
+}
+
+/**
+ * Assistant text from an OpenAI-compatible `/v1/chat/completions` body.
+ * Empty / whitespace / missing choices is empty string — not a reply.
+ */
+export function parseChatCompletionsText(body: unknown): string {
+  if (typeof body === "string") {
+    const trimmed = body.trim();
+    if (!trimmed) return "";
+    try {
+      return parseChatCompletionsText(JSON.parse(trimmed) as unknown);
+    } catch {
+      return "";
+    }
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "";
+
+  const record = body as Record<string, unknown>;
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  const texts: string[] = [];
+  for (const choice of choices) {
+    if (!choice || typeof choice !== "object") continue;
+    const row = choice as Record<string, unknown>;
+    const message =
+      row.message && typeof row.message === "object" && !Array.isArray(row.message)
+        ? (row.message as Record<string, unknown>)
+        : null;
+    const text = readMessageContent(message?.content) || readMessageContent(row.text);
+    if (text) texts.push(text);
+  }
+  return texts.join("\n").trim();
+}
+
 /**
  * The prompt the heartbeat actually sends: `toderoTaskMarkdown` is the
  * run-context brief (first-task description + title). Issue fields are a
