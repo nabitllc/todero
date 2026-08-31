@@ -21,7 +21,8 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 20px 48px;
+  padding: 16px 48px;
+  border-bottom: 1px solid var(--border);
   font-size: 16px;
   font-weight: 400;
   line-height: 1.4;
@@ -35,26 +36,32 @@
 
 .hero {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 48px;
-  align-items: center;
-  max-width: 1200px;
-  min-height: 85vh;
-  margin: 0 auto;
-  padding: 64px 48px;
+  grid-template-columns: minmax(480px, 1fr) minmax(520px, 1.15fr);
+  align-items: stretch;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0 48px;
+  background: var(--ink);
 }
 
 .heroCopy {
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 480px;
+  min-height: 560px;
+  padding: 48px 48px 48px 0;
 }
 
 .h1 {
   margin: 0 0 16px;
-  font-size: clamp(40px, 5vw, 56px);
+  font-size: clamp(44px, 4.5vw, 64px);
   line-height: 1.05;
   font-weight: 500;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   color: var(--fg);
+  white-space: nowrap;
 }
 
 .breath {
@@ -83,7 +90,7 @@
   display: flex;
   align-items: stretch;
   width: 100%;
-  min-height: 56px;
+  min-height: 72px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -94,13 +101,13 @@
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  padding: 16px;
+  padding: 16px 18px;
   border: 0;
   background: transparent;
   color: var(--fg);
   font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 18px;
+  line-height: 1.4;
   outline: none;
 }
 
@@ -141,18 +148,22 @@
 }
 
 .see {
-  margin: 16px 0 0;
+  margin: 12px 0 0;
 }
 
 .see a {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  padding: 8px 12px;
+  justify-content: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 0 20px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   background: transparent;
   color: var(--fg);
-  font-size: 14px;
+  font-family: var(--sans);
+  font-size: 16px;
   font-weight: 500;
   line-height: 1;
   text-decoration: none;
@@ -173,7 +184,7 @@
 
 .success {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1.5;
   color: var(--fg);
 }
@@ -181,6 +192,8 @@
 .shot {
   margin: 0;
   min-width: 0;
+  height: 100%;
+  min-height: 560px;
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -189,15 +202,43 @@
 .shot img {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: 70vh;
-  object-fit: contain;
+  height: 100%;
+  min-height: 560px;
+  object-fit: cover;
+  object-position: 0 0;
 }
 
 .bands {
+  width: 100%;
+  background: var(--surface);
+}
+
+.bandsInner {
   max-width: 1100px;
   margin: 0 auto;
   padding: 72px 48px;
+}
+
+.statement {
+  margin: 0;
+  padding: 0 0 56px;
+}
+
+.statement h2 {
+  margin: 0 0 12px;
+  font-size: 32px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg);
+}
+
+.statement p {
+  margin: 0;
+  max-width: 40em;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--fg);
 }
 
 .band {
@@ -206,7 +247,7 @@
   gap: 24px;
   align-items: start;
   margin: 0;
-  padding: 40px 0;
+  padding: 56px 0;
   border-top: 1px solid var(--border);
 }
 
@@ -229,7 +270,7 @@
 
 .faqBand {
   width: 100%;
-  background: var(--surface);
+  background: var(--ink);
 }
 
 .faqInner {
@@ -255,28 +296,35 @@
   color: var(--fg);
 }
 
-@media (max-width: 899px) {
+@media (max-width: 1099px) {
   .header {
-    padding: 20px 16px;
+    padding: 16px 16px;
   }
 
   .hero {
     display: flex;
     flex-direction: column;
-    gap: 32px;
     min-height: 0;
-    padding: 32px 16px 0;
+    padding: 0 16px;
+  }
+
+  .heroCopy {
+    min-width: 0;
+    min-height: 0;
+    padding: 32px 0;
   }
 
   .h1 {
-    font-size: 40px;
+    white-space: normal;
+    font-size: 44px;
   }
 
   .shot {
-    margin: 0 16px 16px;
+    margin: 0 0 16px;
+    min-height: 560px;
   }
 
-  .bands,
+  .bandsInner,
   .faqInner {
     padding: 48px 16px;
   }

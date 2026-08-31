@@ -6,8 +6,8 @@ function OctopusMark() {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
-      width={24}
-      height={24}
+      width={28}
+      height={28}
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
@@ -28,11 +28,7 @@ function OctopusMark() {
   );
 }
 
-const bands = [
-  {
-    title: "What you need.",
-    body: "A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No credit card.",
-  },
+const rows = [
   {
     title: "First run.",
     body: "Name the company, write the mission, connect your model, pick a brain (GitHub, a folder, or none), and hire a lead.",
@@ -65,7 +61,9 @@ export default function HomePage() {
       <section className={styles.hero}>
         <div className={styles.heroCopy}>
           <h1 className={styles.h1}>
-            A company of AI agents,<br />on your laptop.
+            A company of AI agents,
+            <br />
+            on your laptop.
           </h1>
           <p className={styles.breath}>
             You hire them. They work the mission. Your model. Your Second Brain.
@@ -83,12 +81,21 @@ export default function HomePage() {
         </figure>
       </section>
       <section className={styles.bands}>
-        {bands.map((band) => (
-          <article className={styles.band} key={band.title}>
-            <h2>{band.title}</h2>
-            <p>{band.body}</p>
+        <div className={styles.bandsInner}>
+          <article className={styles.statement}>
+            <h2>What you need.</h2>
+            <p>
+              A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No
+              credit card.
+            </p>
           </article>
-        ))}
+          {rows.map((row) => (
+            <article className={styles.band} key={row.title}>
+              <h2>{row.title}</h2>
+              <p>{row.body}</p>
+            </article>
+          ))}
+        </div>
       </section>
       <section className={styles.faqBand}>
         <div className={styles.faqInner}>
