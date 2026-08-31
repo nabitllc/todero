@@ -298,16 +298,25 @@ Todero is a full control plane, not a wrapper. Before you build any of this your
 
 ## Quickstart
 
-Open source. Self-hosted.
+Open source. Self-hosted. No Todero account required.
 
 ```bash
-cd local
-pnpm install
-pnpm todero onboard --yes
+npx todero onboard --yes
 ```
 
-Or manually:
+That quickstart path defaults to trusted local loopback mode for the fastest first run. To start in authenticated/private mode instead, choose a bind preset explicitly:
 
+```bash
+npx todero onboard --yes --bind lan
+# or:
+npx todero onboard --yes --bind tailnet
+```
+
+If you already have Todero configured, rerunning `onboard` keeps the existing config in place. Use `todero configure` to edit settings.
+
+The npx path requires Node.js, git, and pnpm to already be on PATH. It does not install Node.
+
+Or manually:
 
 ```bash
 git clone https://github.com/nabitllc/todero.git

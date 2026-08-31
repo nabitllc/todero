@@ -59,6 +59,11 @@ import {
   shouldOfferForegroundStart,
 } from "../onboard-service.js";
 import { readInstallManifest, isManagedExecutable } from "../install-store.js";
+import {
+  assertOnboardPrerequisites,
+  ensureOnboardRecommendedVault,
+  installOnboardDesktopIcon,
+} from "../onboard-extras.js";
 
 type SetupMode = "quickstart" | "advanced";
 
@@ -345,6 +350,15 @@ export function isEphemeralNpxExecution(entrypoint = process.argv[1]): boolean {
   return normalized.includes("/_npx/") || normalized.includes("/npm/_npx/");
 }
 
+function completeOnboardLocalSetup(): void {
+  const vaultPath = ensureOnboardRecommendedVault();
+  p.log.success(`Recommended Second Brain: ${pc.dim(vaultPath)}`);
+  const iconPath = installOnboardDesktopIcon();
+  if (iconPath) {
+    p.log.success(`Created Todero icon: ${pc.dim(iconPath)}`);
+  }
+}
+
 function printManagedInstallHint(): void {
   const manifest = readInstallManifest();
   if (manifest && isManagedExecutable(process.argv[1], manifest)) return;
@@ -358,6 +372,8 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   if (opts.bind && !["loopback", "lan", "tailnet"].includes(opts.bind)) {
     throw new Error(`Unsupported bind preset for onboard: ${opts.bind}. Use loopback, lan, or tailnet.`);
   }
+
+  assertOnboardPrerequisites();
 
   printToderoCliBanner();
   p.intro(pc.bgCyan(pc.black(" todero onboard ")));
@@ -461,6 +477,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     );
 
     printManagedInstallHint();
+    completeOnboardLocalSetup();
     const serviceInstalled = await handleOnboardService(opts);
     if (serviceInstalled) {
       await handoffToOnboardedService(existingConfig);
@@ -723,6 +740,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
   );
 
   printManagedInstallHint();
+  completeOnboardLocalSetup();
 
   if (canCreateBootstrapInviteImmediately({ database, server })) {
     p.log.step("Generating bootstrap CEO invite");
