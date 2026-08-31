@@ -7,6 +7,11 @@ export default function ProgressPage() {
       label: "Done",
       items: [
         {
+          title: "In-app work-item view",
+          evidence:
+            "Task screen is a brief + log, not a chat thread. Type stamp, short title, four sections, facts rail including Bolt Coming, New status with unassigned, composer “Comment, or @ an agent”. SHA 11b7dac. Designer passed look.",
+        },
+        {
           title: "Public landing",
           evidence:
             "Live https://todero.vercel.app/ — H1 “A company of AI agents,” / “on your laptop.” Four steps including Write the mission. Product board. No npx. SHA 568fb05. Designer passed look.",
@@ -22,7 +27,7 @@ export default function ProgressPage() {
         </p>
         <h1 style={{ fontSize: 32, margin: "10px 0 8px" }}>Progress</h1>
         <p style={{ color: "var(--muted)", margin: 0 }}>
-          Public board. Landing is live. No scores. No invented companies.
+          Public board. Landing and work-item view are live. No scores. No invented companies.
         </p>
       </header>
       <section
