@@ -1,10 +1,54 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@todero/shared";
+import {
+  buildHeartbeatRunIssueComment,
+  mergeHeartbeatRunResultJson,
+} from "../../services/heartbeat-run-summary.js";
 import { execute } from "./execute.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+const LOCAL_LLM_COMPLETION = "First-task plan: ship marketplace checkout next.";
+
+function localLlmExecuteArgs() {
+  return {
+    runId: "run-1",
+    agent: {
+      id: "agent-1",
+      companyId: "company-1",
+      name: "Agent",
+      adapterType: "http" as const,
+      adapterConfig: {},
+    },
+    runtime: {
+      sessionId: null,
+      sessionParams: null,
+      sessionDisplayId: null,
+      taskKey: null,
+    },
+    config: {
+      url: "http://127.0.0.1:8080/v1/chat/completions",
+      model: "local-model",
+      localLlm: { runtimeId: "ollama", modelId: "local-model" },
+    },
+    context: {
+      toderoTaskMarkdown:
+        'Todero task context:\n- Title: "Ship the marketplace"\n\nCompany mission (from onboarding):\nShip the marketplace',
+    },
+    onLog: async () => {},
+  };
+}
+
+function chatCompletionsResponse(content: string, status = 200) {
+  return new Response(
+    JSON.stringify({
+      choices: [{ message: { role: "assistant", content } }],
+    }),
+    { status, headers: { "content-type": "application/json" } },
+  );
+}
 
 describe("http adapter execute", () => {
   it("delivers the complete runtime connection descriptor and shared guidance", async () => {
@@ -118,37 +162,52 @@ describe("http adapter execute", () => {
       // A raw { context } dump is what the http adapter used to send. The
       // chat-completions endpoint never reads that field.
       expect(body.context).toBeUndefined();
-      return new Response(null, { status: 204 });
+      return chatCompletionsResponse(LOCAL_LLM_COMPLETION);
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await execute({
-      runId: "run-1",
-      agent: {
-        id: "agent-1",
-        companyId: "company-1",
-        name: "Agent",
-        adapterType: "http",
-        adapterConfig: {},
-      },
-      runtime: {
-        sessionId: null,
-        sessionParams: null,
-        sessionDisplayId: null,
-        taskKey: null,
-      },
-      config: {
-        url: "http://127.0.0.1:8080/v1/chat/completions",
-        model: "local-model",
-        localLlm: { runtimeId: "ollama", modelId: "local-model" },
-      },
-      context: {
-        toderoTaskMarkdown: `Todero task context:\n- Title: "${mission}"\n\nCompany mission (from onboarding):\n${mission}`,
-      },
-      onLog: async () => {},
-    });
+    await execute(localLlmExecuteArgs());
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/chat/completions");
+  });
+
+  it("writes a 2xx chat completion onto the ticket comment the heartbeat posts", async () => {
+    const fetchMock = vi.fn(async () => chatCompletionsResponse(LOCAL_LLM_COMPLETION));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(localLlmExecuteArgs());
+
+    const persisted = mergeHeartbeatRunResultJson(result.resultJson ?? null, result.summary ?? null);
+    expect(persisted?.summary).toBe(LOCAL_LLM_COMPLETION);
+    expect(buildHeartbeatRunIssueComment(persisted)).toBe(LOCAL_LLM_COMPLETION);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not treat an empty 2xx chat completion as success", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 })),
+    );
+
+    await expect(execute(localLlmExecuteArgs())).rejects.toThrow(
+      /empty assistant text/i,
+    );
+  });
+
+  it("does not treat a 2xx body with no assistant text as success", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ choices: [{ message: { content: "   " } }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(execute(localLlmExecuteArgs())).rejects.toThrow(
+      /empty assistant text/i,
+    );
   });
 });

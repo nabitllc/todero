@@ -3,6 +3,7 @@ import {
   buildChatCompletionsBody,
   buildChatCompletionsPrompt,
   isChatCompletionsUrl,
+  parseChatCompletionsText,
 } from "./chat-completions.js";
 
 const MISSION = "Ship the marketplace";
@@ -50,5 +51,29 @@ describe("http adapter chat completions prompt", () => {
     const prompt = JSON.stringify(body.messages);
     expect(prompt).toContain(MISSION);
     expect(prompt).not.toContain("adapter default with no mission");
+  });
+});
+
+describe("parseChatCompletionsText", () => {
+  it("reads assistant text from OpenAI-compatible choices", () => {
+    expect(
+      parseChatCompletionsText({
+        choices: [{ message: { role: "assistant", content: "Ship checkout next." } }],
+      }),
+    ).toBe("Ship checkout next.");
+  });
+
+  it("reads text parts and treats empty bodies as no reply", () => {
+    expect(
+      parseChatCompletionsText({
+        choices: [
+          { message: { content: [{ type: "text", text: "Hello " }, { type: "text", text: "world" }] } },
+        ],
+      }),
+    ).toBe("Hello world");
+    expect(parseChatCompletionsText({ choices: [] })).toBe("");
+    expect(parseChatCompletionsText("")).toBe("");
+    expect(parseChatCompletionsText("{ not json")).toBe("");
+    expect(parseChatCompletionsText({ choices: [{ message: { content: "  " } }] })).toBe("");
   });
 });
