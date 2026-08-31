@@ -28,74 +28,88 @@ function OctopusMark() {
   );
 }
 
+const bands = [
+  {
+    title: "What you need.",
+    body: "A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No credit card.",
+  },
+  {
+    title: "First run.",
+    body: "Name the company, write the mission, connect your model, pick a brain (GitHub, a folder, or none), and hire a lead.",
+  },
+  {
+    title: "How you run it.",
+    body: "You comment or @ an agent. They leave a short summary (140). Status, assignee, and acceptance criteria live on the task. The work is the item, not a chat.",
+  },
+  {
+    title: "Your model.",
+    body: "Connect one you already have. Not ours.",
+  },
+  {
+    title: "Your Second Brain.",
+    body: "GitHub (todero-brain) or a folder on this machine. Or none.",
+  },
+  {
+    title: "Open.",
+    body: "MIT. Based on Paperclip. Runs on your machine.",
+  },
+];
+
 export default function HomePage() {
   return (
-    <main className={styles.page}>
-      <header className={styles.mark}>
+    <div className={styles.page}>
+      <header className={styles.header}>
         <OctopusMark />
         Todero
       </header>
-      <h1 className={styles.h1}>
-        A company of AI agents,<br />on your laptop.
-      </h1>
-      <p className={styles.breath}>
-        You hire them. They work the mission. Your model. Your Second Brain.
-      </p>
-      <WaitlistForm />
-      <p className={styles.see}>
-        <a href="/demo">See the product</a>
-      </p>
-      <section className={styles.block}>
-        <h2>What you need.</h2>
-        <p>
-          A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No
-          credit card.
-        </p>
-      </section>
-      <section className={styles.block}>
-        <h2>First run.</h2>
-        <p>
-          Name the company, write the mission, connect your model, pick a brain (GitHub, a folder, or
-          none), and hire a lead.
-        </p>
-      </section>
-      <section className={styles.block}>
-        <h2>How you run it.</h2>
-        <p>
-          You comment or @ an agent. They leave a short summary (140). Status, assignee, and
-          acceptance criteria live on the task. The work is the item, not a chat.
-        </p>
-      </section>
-      <section className={styles.block}>
-        <h2>Your model.</h2>
-        <p>Connect one you already have. Not ours.</p>
-      </section>
-      <section className={styles.block}>
-        <h2>Your Second Brain.</h2>
-        <p>GitHub (todero-brain) or a folder on this machine. Or none.</p>
-      </section>
-      <section className={styles.faq}>
-        <div>
-          <h2>Windows?</h2>
-          <p>Yes.</p>
+      <section className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <h1 className={styles.h1}>
+            A company of AI agents,<br />on your laptop.
+          </h1>
+          <p className={styles.breath}>
+            You hire them. They work the mission. Your model. Your Second Brain.
+          </p>
+          <WaitlistForm />
+          <p className={styles.see}>
+            <a href="/demo">See the product</a>
+          </p>
         </div>
-        <div>
-          <h2>Local only?</h2>
-          <p>Yes. Your laptop.</p>
-        </div>
-        <div>
-          <h2>Cost?</h2>
-          <p>Your model’s tokens. Not a Todero bill.</p>
-        </div>
-        <div>
-          <h2>Need GitHub?</h2>
-          <p>No. The brain is optional.</p>
+        <figure className={styles.shot}>
+          <img
+            src="/landing-work-item.png"
+            alt="Todero task TESA-1 — the work item, not a chat."
+          />
+        </figure>
+      </section>
+      <section className={styles.bands}>
+        {bands.map((band) => (
+          <article className={styles.band} key={band.title}>
+            <h2>{band.title}</h2>
+            <p>{band.body}</p>
+          </article>
+        ))}
+      </section>
+      <section className={styles.faqBand}>
+        <div className={styles.faqInner}>
+          <div>
+            <h2>Windows?</h2>
+            <p>Yes.</p>
+          </div>
+          <div>
+            <h2>Local only?</h2>
+            <p>Yes. Your laptop.</p>
+          </div>
+          <div>
+            <h2>Cost?</h2>
+            <p>Your model’s tokens. Not a Todero bill.</p>
+          </div>
+          <div>
+            <h2>Need GitHub?</h2>
+            <p>No. The brain is optional.</p>
+          </div>
         </div>
       </section>
-      <section className={styles.open}>
-        <h2>Open.</h2>
-        <p>MIT. Based on Paperclip. Runs on your machine.</p>
-      </section>
-    </main>
+    </div>
   );
 }
