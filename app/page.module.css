@@ -1,0 +1,118 @@
+.main {
+  padding: 18vh 24px 64px;
+  font-family: var(--font-geist-sans), Inter, sans-serif;
+}
+
+.col {
+  max-width: 560px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 40px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+
+.mark svg {
+  color: var(--fg);
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.h1 {
+  margin: 0 0 20px;
+  font-size: 52px;
+  line-height: 1.08;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+}
+
+.breath {
+  margin: 0 0 56px;
+  font-size: 16px;
+  line-height: 1.5;
+  font-weight: 400;
+  color: var(--text);
+  max-width: 28em;
+}
+
+.steps {
+  list-style: none;
+  margin: 0 0 48px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.steps li {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.num {
+  color: var(--muted);
+}
+
+.board {
+  margin: 0 0 80px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+.board a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in srgb, var(--fg) 25%, transparent);
+  transition: color 150ms;
+}
+
+.board a:hover {
+  color: var(--fg);
+  text-decoration-color: var(--fg);
+}
+
+.board a:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.footer {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .main {
+    padding: 24px 20px 48px;
+  }
+
+  .h1 {
+    font-size: 36px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+}
