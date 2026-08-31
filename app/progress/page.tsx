@@ -1,8 +1,18 @@
 export default function ProgressPage() {
   const columns = [
-    { id: "todo", label: "To do", hint: "Nothing here yet" },
-    { id: "doing", label: "In progress", hint: "Empty" },
-    { id: "done", label: "Done", hint: "Empty" },
+    { id: "todo", label: "To do", items: [] as { title: string; evidence: string }[] },
+    { id: "doing", label: "In progress", items: [] as { title: string; evidence: string }[] },
+    {
+      id: "done",
+      label: "Done",
+      items: [
+        {
+          title: "Public landing",
+          evidence:
+            "Live https://todero.vercel.app/ — H1 “A company of AI agents,” / “on your laptop.” Four steps including Write the mission. Product board. No npx. SHA 568fb05. Designer passed look.",
+        },
+      ],
+    },
   ];
   return (
     <main style={{ minHeight: "100vh", padding: "32px 28px 64px" }}>
@@ -11,7 +21,9 @@ export default function ProgressPage() {
           Todero
         </p>
         <h1 style={{ fontSize: 32, margin: "10px 0 8px" }}>Progress</h1>
-        <p style={{ color: "var(--muted)", margin: 0 }}>A new product board. Zero items. No inherited lanes.</p>
+        <p style={{ color: "var(--muted)", margin: 0 }}>
+          Public board. Landing is live. No scores. No invented companies.
+        </p>
       </header>
       <section
         style={{
@@ -35,9 +47,26 @@ export default function ProgressPage() {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <h2 style={{ fontSize: 14, margin: 0 }}>{col.label}</h2>
-              <span style={{ color: "var(--muted)", fontSize: 12 }}>0</span>
+              <span style={{ color: "var(--muted)", fontSize: 12 }}>{col.items.length}</span>
             </div>
-            <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 18 }}>{col.hint}</p>
+            {col.items.length === 0 ? (
+              <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 18 }}>Empty</p>
+            ) : (
+              col.items.map((item) => (
+                <article
+                  key={item.title}
+                  style={{
+                    marginTop: 16,
+                    padding: 12,
+                    border: "1px solid var(--line)",
+                    borderRadius: 8,
+                  }}
+                >
+                  <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>{item.title}</h3>
+                  <p style={{ color: "var(--muted)", fontSize: 13, margin: 0, lineHeight: 1.45 }}>{item.evidence}</p>
+                </article>
+              ))
+            )}
           </div>
         ))}
       </section>
