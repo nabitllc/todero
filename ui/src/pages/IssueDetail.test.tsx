@@ -1020,7 +1020,17 @@ async function waitForAssertion(assertion: () => void, attempts = 20) {
   throw lastError;
 }
 
+function useClassicTaskInterface() {
+  mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+    enableIssuePlanDecompositions: false,
+    enableExperimentalFileViewer: false,
+    enableExternalObjects: false,
+    enableClassicTaskInterface: true,
+  });
+}
+
 describe("IssueDetail", () => {
+
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;
@@ -1128,7 +1138,8 @@ describe("IssueDetail", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Issue detail smoke");
-    expect(container.textContent).toContain("Task chat thread");
+    expect(container.querySelector('[data-testid="work-item"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-chat-thread"]')).toBeNull();
     expect(
       consoleErrorSpy.mock.calls.some((call: unknown[]) =>
         String(call[0]).includes("React has detected a change in the order of Hooks"),
@@ -1787,6 +1798,7 @@ describe("IssueDetail", () => {
   });
 
   it("does not mark the wake comment for the current live run as queued when active-run cache is stale", async () => {
+    useClassicTaskInterface();
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "in_progress",
       executionRunId: "run-stale",
@@ -1847,6 +1859,7 @@ describe("IssueDetail", () => {
   });
 
   it("queues messages against a queued live run and interrupts that exact run", async () => {
+    useClassicTaskInterface();
     const postedComment = createDeferred<IssueComment>();
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "in_progress",
@@ -1936,6 +1949,7 @@ describe("IssueDetail", () => {
   });
 
   it("does not rebind a queued message when another run becomes live before its request settles", async () => {
+    useClassicTaskInterface();
     const postedComment = createDeferred<IssueComment>();
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "in_progress",
@@ -2032,6 +2046,7 @@ describe("IssueDetail", () => {
   });
 
   it("does not optimistically queue a fresh comment from an unlocked stale active-run cache", async () => {
+    useClassicTaskInterface();
     const postedComment = createDeferred<IssueComment>();
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "todo",
@@ -2475,6 +2490,7 @@ describe("IssueDetail", () => {
   });
 
   it("exposes leaf pause controls and routes issue active-run stop through Pause work", async () => {
+    useClassicTaskInterface();
     const pausePreview = createPausePreview();
     pausePreview.totals = {
       ...pausePreview.totals,
@@ -2551,6 +2567,7 @@ describe("IssueDetail", () => {
   });
 
   it("routes live-run finalization actions through run cancellation before issue status update", async () => {
+    useClassicTaskInterface();
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "in_progress",
       assigneeAgentId: "agent-1",
@@ -2608,6 +2625,7 @@ describe("IssueDetail", () => {
   });
 
   it("reports partial success when run finalization stops the run but task status update fails", async () => {
+    useClassicTaskInterface();
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "in_progress",
       assigneeAgentId: "agent-1",
@@ -2658,9 +2676,7 @@ describe("IssueDetail", () => {
     });
     await flushReact();
 
-    expect(mockIssueChatThreadRender.mock.calls.at(-1)?.[0]).toMatchObject({
-      issueWorkMode: "planning",
-    });
+    expect(container.querySelector('[data-testid="work-item-auto-mode"]')?.textContent).toBe("Plan mode");
   });
 
   it("passes ask work mode to the issue chat thread", async () => {
@@ -2674,9 +2690,7 @@ describe("IssueDetail", () => {
     });
     await flushReact();
 
-    expect(mockIssueChatThreadRender.mock.calls.at(-1)?.[0]).toMatchObject({
-      issueWorkMode: "ask",
-    });
+    expect(container.querySelector('[data-testid="work-item-auto-mode"]')?.textContent).toBe("Ask mode");
   });
 
   it("falls back to execCommand when copying the task from an insecure context", async () => {
@@ -2752,7 +2766,7 @@ describe("IssueDetail", () => {
     }
   });
 
-  it("renders the task chat thread as the default thread", async () => {
+  it("renders the work-item view as the default task screen", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
 
     await act(async () => {
@@ -2764,8 +2778,9 @@ describe("IssueDetail", () => {
     });
     await flushReact();
 
-    expect(container.querySelector('[data-testid="task-chat-thread"]')).not.toBeNull();
-    expect(mockIssueChatThreadRender).toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="work-item"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-chat-thread"]')).toBeNull();
+    expect(container.querySelector('[data-testid="work-item-type-stamp"]')?.textContent).toBe("Task");
   });
 
   it("renders the legacy issue chat thread when the classic task interface flag is on", async () => {
@@ -2816,9 +2831,7 @@ describe("IssueDetail", () => {
     await flushReact();
 
     await waitForAssertion(() => {
-      expect(mockIssueChatThreadRender.mock.calls.at(-1)?.[0].mentions).toEqual(
-        expect.arrayContaining([expect.objectContaining({ kind: "issue", issueIdentifier: "PAP-9" })]),
-      );
+      expect(mockIssuesApi.list).toHaveBeenCalled();
     });
     expect(mockIssuesApi.list).toHaveBeenCalledWith(
       "company-1",
@@ -2855,16 +2868,15 @@ describe("IssueDetail", () => {
     await flushReact();
     await flushReact();
 
-    const lastChatThreadProps = mockIssueChatThreadRender.mock.calls.at(-1)?.[0];
-    expect(lastChatThreadProps?.issueWorkMode).toBe("standard");
-    expect(typeof lastChatThreadProps?.onWorkModeChange).toBe("function");
+    const auto = container.querySelector('[data-testid="work-item-auto-mode"]') as HTMLButtonElement;
+    expect(auto?.textContent).toBe("Auto mode");
 
     await act(async () => {
-      lastChatThreadProps?.onWorkModeChange?.("ask");
+      auto.click();
     });
     await flushReact();
 
-    expect(mockIssuesApi.update).toHaveBeenCalledWith(issue.identifier, { workMode: "ask" });
+    expect(mockIssuesApi.update).toHaveBeenCalledWith(issue.identifier, { workMode: "planning" });
     expect(localStorage.getItem("todero:issue-comment-draft:issue-1")).toBe("Draft follow-up message");
     localStorage.removeItem("todero:issue-comment-draft:issue-1");
   });
