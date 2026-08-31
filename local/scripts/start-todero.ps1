@@ -1,4 +1,4 @@
-# Pull Todero + public Todero Brain (app-owned clone), install if needed, start (or open) localhost:3100.
+# Pull Todero + public Todero Brain (app-owned clone), install, start (or open) localhost:3100.
 $ErrorActionPreference = "Stop"
 
 $Todero = "C:\Development\Todero"
@@ -7,6 +7,7 @@ $BrainRepo = "https://github.com/nabitllc/todero-brain.git"
 $Local = Join-Path $Todero "local"
 $Url = "http://localhost:3100"
 $Port = 3100
+$PgPort = 54330
 
 function Fail([string]$Message) {
     Write-Host $Message
@@ -18,9 +19,10 @@ function Test-OnPath([string]$Name) {
 }
 
 function Test-Listening {
+    param([int]$ListenPort = $Port)
     try {
         $client = New-Object System.Net.Sockets.TcpClient
-        $iar = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
+        $iar = $client.BeginConnect("127.0.0.1", $ListenPort, $null, $null)
         $ok = $iar.AsyncWaitHandle.WaitOne(400)
         $connected = $ok -and $client.Connected
         $client.Close()
@@ -69,21 +71,14 @@ if (Test-Listening) {
     exit 0
 }
 
-$nodeModules = Join-Path $Local "node_modules"
-$lockfile = Join-Path $Local "pnpm-lock.yaml"
-$needInstall = -not (Test-Path -LiteralPath $nodeModules)
-if (-not $needInstall -and (Test-Path -LiteralPath $lockfile)) {
-    if ((Get-Item -LiteralPath $lockfile).LastWriteTimeUtc -gt (Get-Item -LiteralPath $nodeModules).LastWriteTimeUtc) {
-        $needInstall = $true
-    }
-}
-
 Set-Location -LiteralPath $Local
 
-if ($needInstall) {
-    Write-Host "Running pnpm install in $Local ..."
-    pnpm install
-    if ($LASTEXITCODE -ne 0) { Fail "pnpm install failed in $Local" }
+Write-Host "Running pnpm install in $Local ..."
+pnpm install
+if ($LASTEXITCODE -ne 0) { Fail "pnpm install failed in $Local" }
+
+if (Test-Listening -ListenPort $PgPort) {
+    Fail "Close other Todero windows, then retry."
 }
 
 Write-Host "Starting Todero (pnpm dev). Opening $Url when $Port is ready..."
