@@ -49,14 +49,15 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  container-type: inline-size;
   min-width: 480px;
   min-height: 560px;
-  padding: 48px 48px 48px 0;
+  padding: 48px 24px 48px 0;
 }
 
 .h1 {
   margin: 0 0 16px;
-  font-size: clamp(44px, 4.5vw, 64px);
+  font-size: clamp(44px, min(4.5vw, 9.5cqi), 64px);
   line-height: 1.05;
   font-weight: 500;
   letter-spacing: -0.04em;
