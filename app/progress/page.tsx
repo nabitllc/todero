@@ -14,7 +14,7 @@ export default function ProgressPage() {
         {
           title: "Public landing",
           evidence:
-            "Copy shipped on https://todero.vercel.app/ — H1 “A company of AI agents,” / “on your laptop.” Four steps including Write the mission. Product board. No npx. SHA 568fb05. Look is not accepted.",
+            "Live https://todero.vercel.app/ — H1 “A company of AI agents,” / “on your laptop.” Real work-item shot (TESA-1 Tampa Timeleft). Product board. No npx. SHA 10570f15. Look accepted. Designer passed look.",
         },
       ],
     },
