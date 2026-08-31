@@ -99,7 +99,15 @@ import {
   type IssueChatComposerHandle,
   type IssueChatRunFinalizationAction,
 } from "../components/IssueChatThread";
-import { TaskChatThread } from "../components/TaskChatThread";
+import { WorkItemView } from "../components/work-item/WorkItemView";
+import {
+  applyBodyToDescription,
+  descriptionWithType,
+  patchFromBlockedBy,
+  toWorkItemViewProps,
+  workItemTypeFor,
+} from "../components/work-item/work-item-adapter";
+import { apiPriorityFor, apiStatusFor } from "../components/work-item/work-item-model";
 import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescriptionBubble";
 import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
 import { workModeMetaFor } from "../lib/work-mode-meta";
@@ -222,6 +230,7 @@ import {
   type IssueAttachment,
   type IssueComment,
   type IssueWorkProduct,
+  type IssueCostSummary,
   type IssueWorkMode,
   type IssueThreadInteraction,
   type RequestCheckboxConfirmationInteraction,
@@ -946,6 +955,9 @@ function InboxMobileToolbar({
 }
 
 type IssueDetailChatTabProps = {
+  issue: Issue;
+  projects: Array<{ id: string; name: string }>;
+  onUpdate: (data: Record<string, unknown>) => void;
   issueId: string;
   companyId: string;
   projectId: string | null;
@@ -1055,6 +1067,9 @@ type IssueDetailChatTabProps = {
 };
 
 const IssueDetailChatTab = memo(function IssueDetailChatTab({
+  issue,
+  projects,
+  onUpdate,
   issueId,
   companyId,
   projectId,
@@ -1135,14 +1150,18 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
 }: IssueDetailChatTabProps) {
   // Seam for the Classic Task Interface (flag: enableClassicTaskInterface).
   // Flag ON renders the legacy IssueChatThread verbatim; flag OFF (the
-  // default) renders the chat-style TaskChatThread. Both components share one
-  // prop type, so no cast is needed.
+  // default) renders the work-item view. The work item is the work; activity
+  // is a log, not a messenger.
   const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
-  const ThreadComponent = classicTaskInterfaceEnabled ? IssueChatThread : TaskChatThread;
   const { data: activity } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
     placeholderData: keepPreviousDataForSameQueryTail<ActivityEvent[]>(issueId),
+  });
+  const { data: costSummary } = useQuery({
+    queryKey: queryKeys.issues.costSummary(issueId),
+    queryFn: () => issuesApi.getCostSummary(issueId),
+    enabled: typeof issuesApi.getCostSummary === "function",
   });
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
@@ -1299,6 +1318,55 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     </div>
   ) : null;
 
+  if (!classicTaskInterfaceEnabled) {
+    const parsedType = workItemTypeFor(issue);
+    const waitingOnYou = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i.test(issue.description ?? "");
+    const viewProps = toWorkItemViewProps({
+      issue,
+      comments,
+      activity: activity ?? [],
+      agentMap,
+      userLabelMap,
+      projects,
+      costSummary: (costSummary ?? null) as IssueCostSummary | null,
+      workMode: issueWorkMode,
+    });
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div hidden data-testid="work-item-ops">{threadHeader}</div>
+        <WorkItemView
+          {...viewProps}
+          onTypeChange={(nextType) => {
+            onUpdate({ description: descriptionWithType(issue, nextType, waitingOnYou) });
+          }}
+          onTitleSave={(title) => onUpdate({ title })}
+          onBodySave={(body) => {
+            onUpdate({ description: applyBodyToDescription(issue, body, parsedType, waitingOnYou) });
+          }}
+          onStatusChange={(nextStatus) => {
+            onUpdate({ status: apiStatusFor(nextStatus) });
+          }}
+          onPriorityChange={(nextPriority) => onUpdate({ priority: apiPriorityFor(nextPriority) })}
+          onAssigneeChange={(nextAssigneeId) => {
+            if (!nextAssigneeId) {
+              onUpdate({ assigneeAgentId: null, assigneeUserId: null });
+              return;
+            }
+            if (nextAssigneeId.startsWith("user:")) {
+              onUpdate({ assigneeUserId: nextAssigneeId.slice(5), assigneeAgentId: null });
+              return;
+            }
+            onUpdate({ assigneeAgentId: nextAssigneeId, assigneeUserId: null });
+          }}
+          onBlockedByChange={(next) => onUpdate(patchFromBlockedBy(next, issue, parsedType))}
+          onComment={(body) => { void onAdd(body); }}
+          onAttach={(file) => { void onAttachImage(file); }}
+          onWorkModeChange={onWorkModeChange}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={classicTaskInterfaceEnabled ? "space-y-3" : "flex min-h-0 flex-1 flex-col"}>
       {/* Chat-style: the button rides inside the thread's scroll viewport with
@@ -1316,7 +1384,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           </div>
         )
       ) : (
-      <ThreadComponent
+      <IssueChatThread
         composerRef={composerRef}
         composerAccessory={composerAccessory}
         threadHeader={
@@ -5285,6 +5353,9 @@ export function IssueDetail() {
         >
           {resolvedDetailTab === "chat" ? (
             <IssueDetailChatTab
+              issue={issue}
+              projects={(projects ?? []).map((project) => ({ id: project.id, name: project.name }))}
+              onUpdate={(data) => updateIssue.mutate(data)}
               threadHeader={taskChatThreadHeader}
               issueBrief={
                 // Suppress the seeded-description bubble for the onboarding first
