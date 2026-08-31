@@ -14,7 +14,7 @@ export default function ProgressPage() {
         {
           title: "Public landing",
           evidence:
-            "Live https://todero.vercel.app/ — H1 “A company of AI agents,” / “on your laptop.” Real work-item shot (TESA-1 Tampa Timeleft). Product board. No npx. SHA 10570f15. Look accepted. Designer passed look.",
+            "Live https://todero.vercel.app/ — waitlist + use-Todero copy. H1 “A company of AI agents,” / “on your laptop.” See the product → /demo. No npx. No product shot. SHA bd919ce (copy and waitlist route). Look accepted. Designer passed look. Join not live until RESEND_API_KEY.",
         },
       ],
     },
