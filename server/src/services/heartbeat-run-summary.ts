@@ -92,18 +92,21 @@ export function summarizeHeartbeatRunResultJson(
   return Object.keys(summary).length > 0 ? summary : null;
 }
 
-// The fallback comment is only posted when a run ends without the agent posting
-// its own comment via the API. In that case `resultJson.summary` can be raw
-// inter-tool narration (assistantTexts concatenated by the adapter), which must
-// never be published verbatim to the board — see BRO-1507 / BRO-1516.
+// Heartbeat posts this text via issuesSvc.addComment when a succeeded run
+// has no agent comment yet. Local LLM first-task completions are
+// conversational plans (Let me / I'll / First,) and must land on the
+// ticket — never replaced by a stub because of opener or length. Over-long
+// text is truncated with a visible "continued" marker so the prefix still
+// shows.
 export const MAX_FALLBACK_COMMENT_CHARS = 1200;
-// Apostrophes are matched as a character class so both the straight (') and
-// curly (’) forms count — agents emit either. Openers are narration phrases a
-// declarative status summary would not begin with ("Fixed X", "13/13 pass").
-const NARRATION_OPENERS =
-  /^(let me\b|i['’]ll\b|i['’]m going\b|i need to\b|i can see\b|now i['’]ll\b|next,? i['’]ll\b|looking at\b|fetching\b|checking\b|first,)/i;
-const FALLBACK_WITHHELD_COMMENT =
-  "Run completed. Agent did not post a summary comment this run (transcript withheld — see run log).";
+export const FALLBACK_COMMENT_CONTINUED_MARKER = "\n\n... continued";
+
+function clipFallbackComment(text: string): string {
+  if (text.length <= MAX_FALLBACK_COMMENT_CHARS) return text;
+  const marker = FALLBACK_COMMENT_CONTINUED_MARKER;
+  const budget = Math.max(0, MAX_FALLBACK_COMMENT_CHARS - marker.length);
+  return text.slice(0, budget) + marker;
+}
 
 export function buildHeartbeatRunIssueComment(
   resultJson: Record<string, unknown> | null | undefined,
@@ -120,9 +123,5 @@ export function buildHeartbeatRunIssueComment(
     return null;
   }
 
-  if (text.length > MAX_FALLBACK_COMMENT_CHARS || NARRATION_OPENERS.test(text)) {
-    return FALLBACK_WITHHELD_COMMENT;
-  }
-
-  return text;
+  return clipFallbackComment(text);
 }

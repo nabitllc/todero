@@ -3,6 +3,8 @@ import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@todero/shared";
 import {
   buildHeartbeatRunIssueComment,
   mergeHeartbeatRunResultJson,
+  MAX_FALLBACK_COMMENT_CHARS,
+  FALLBACK_COMMENT_CONTINUED_MARKER,
 } from "../../services/heartbeat-run-summary.js";
 import { execute } from "./execute.js";
 
@@ -10,7 +12,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const LOCAL_LLM_COMPLETION = "First-task plan: ship marketplace checkout next.";
+const LOCAL_LLM_COMPLETION =
+  "Let me outline the first-task plan. I'll start with marketplace checkout, then payments. First, ship the listing page.";
 
 function localLlmExecuteArgs() {
   return {
@@ -180,7 +183,34 @@ describe("http adapter execute", () => {
 
     const persisted = mergeHeartbeatRunResultJson(result.resultJson ?? null, result.summary ?? null);
     expect(persisted?.summary).toBe(LOCAL_LLM_COMPLETION);
-    expect(buildHeartbeatRunIssueComment(persisted)).toBe(LOCAL_LLM_COMPLETION);
+    const comment = buildHeartbeatRunIssueComment(persisted);
+    expect(comment).toBe(LOCAL_LLM_COMPLETION);
+    expect(comment).toContain("Let me outline");
+    expect(comment).not.toMatch(/did not post a summary comment/i);
+    expect(comment).not.toMatch(/transcript withheld/i);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("posts a long First,/I'll conversational completion truncated with continued, not a stub", async () => {
+    const longPlan = (
+      "First, I'll map the checkout flow. Let me keep going. " + "next step. ".repeat(200)
+    ).trim();
+    expect(longPlan.length).toBeGreaterThan(MAX_FALLBACK_COMMENT_CHARS);
+    const fetchMock = vi.fn(async () => chatCompletionsResponse(longPlan));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(localLlmExecuteArgs());
+    const persisted = mergeHeartbeatRunResultJson(result.resultJson ?? null, result.summary ?? null);
+    expect(persisted?.summary).toBe(longPlan);
+    const comment = buildHeartbeatRunIssueComment(persisted);
+    expect(comment).toContain("First, I'll map the checkout flow");
+    expect(comment).toContain("Let me keep going");
+    expect(comment).toContain(FALLBACK_COMMENT_CONTINUED_MARKER);
+    expect(comment).toMatch(/continued/i);
+    expect(comment).not.toMatch(/did not post a summary comment/i);
+    expect(comment).not.toMatch(/transcript withheld/i);
+    expect(comment).not.toBe(longPlan);
+    expect(comment!.length).toBe(MAX_FALLBACK_COMMENT_CHARS);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 

@@ -3,6 +3,8 @@ import {
   summarizeHeartbeatRunResultJson,
   buildHeartbeatRunIssueComment,
   mergeHeartbeatRunResultJson,
+  MAX_FALLBACK_COMMENT_CHARS,
+  FALLBACK_COMMENT_CONTINUED_MARKER,
 } from "../services/heartbeat-run-summary.js";
 
 describe("summarizeHeartbeatRunResultJson", () => {
@@ -64,32 +66,27 @@ describe("buildHeartbeatRunIssueComment", () => {
     expect(buildHeartbeatRunIssueComment({ costUsd: 1.2 })).toBeNull();
   });
 
-  it("suppresses raw transcript when the summary reads like inter-tool narration", () => {
-    const narration =
+  it("posts a conversational-plan completion that starts with Let me / I'll", () => {
+    const plan =
       "Let me check the issue thread first. I'll fetch the latest comments and then decide what to do next.";
-    const comment = buildHeartbeatRunIssueComment({ summary: narration });
+    const comment = buildHeartbeatRunIssueComment({ summary: plan });
 
-    expect(comment).not.toContain("Let me check");
-    expect(comment).toContain("did not post a summary comment");
+    expect(comment).toBe(plan);
+    expect(comment).toContain("Let me check");
+    expect(comment).not.toMatch(/did not post a summary comment/i);
+    expect(comment).not.toMatch(/transcript withheld/i);
   });
 
-  it("suppresses each narration opener variant", () => {
+  it("posts completions that start with Let me / I'll / First,", () => {
     for (const opener of [
       "Let me look into this.",
       "I'll start by reading the file.",
-      "I need to inspect the config.",
-      "I can see the problem now.",
-      "Looking at the logs, the error is clear.",
-      "Fetching the run details from the API.",
-      "Checking the current branch state.",
-      "First, I will reproduce the bug.",
-      "I’m going to trace the fallback path.",
-      "Now I'll push the follow-up commit.",
-      "Next, I'll re-run the suite.",
+      "First, I'll reproduce the bug.",
     ]) {
-      expect(buildHeartbeatRunIssueComment({ summary: opener })).toContain(
-        "did not post a summary comment",
-      );
+      const comment = buildHeartbeatRunIssueComment({ summary: opener });
+      expect(comment).toBe(opener);
+      expect(comment).not.toMatch(/did not post a summary comment/i);
+      expect(comment).not.toMatch(/transcript withheld/i);
     }
   });
 
@@ -100,10 +97,29 @@ describe("buildHeartbeatRunIssueComment", () => {
     }
   });
 
-  it("suppresses over-long fallback summaries even without a narration opener", () => {
-    const comment = buildHeartbeatRunIssueComment({ summary: "x".repeat(1201) });
-    expect(comment).toContain("did not post a summary comment");
-    expect(comment).not.toContain("xxxx");
+  it("truncates an over-long completion with continued instead of replacing it with a stub", () => {
+    const summary = "x".repeat(1201);
+    const comment = buildHeartbeatRunIssueComment({ summary });
+    expect(comment).toContain("xxxx");
+    expect(comment).toContain(FALLBACK_COMMENT_CONTINUED_MARKER);
+    expect(comment).toMatch(/continued/i);
+    expect(comment).not.toMatch(/did not post a summary comment/i);
+    expect(comment).not.toMatch(/transcript withheld/i);
+    expect(comment!.length).toBe(MAX_FALLBACK_COMMENT_CHARS);
+  });
+
+  it("posts an over-long Let me / I'll / First, plan truncated with continued, not a stub", () => {
+    const plan = "First, I'll map checkout. Let me keep going. " + "next step. ".repeat(200);
+    expect(plan.length).toBeGreaterThan(MAX_FALLBACK_COMMENT_CHARS);
+    const comment = buildHeartbeatRunIssueComment({ summary: plan });
+    expect(comment).toContain("First, I'll map checkout");
+    expect(comment).toContain("Let me keep going");
+    expect(comment).toContain(FALLBACK_COMMENT_CONTINUED_MARKER);
+    expect(comment).toMatch(/continued/i);
+    expect(comment).not.toMatch(/did not post a summary comment/i);
+    expect(comment).not.toMatch(/transcript withheld/i);
+    expect(comment).not.toBe(plan);
+    expect(comment!.length).toBe(MAX_FALLBACK_COMMENT_CHARS);
   });
 
   it("posts a clean, in-length summary with no narration opener normally", () => {
