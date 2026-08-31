@@ -1,118 +1,159 @@
-.main {
-  padding: 18vh 24px 64px;
-  font-family: var(--font-geist-sans), Inter, sans-serif;
-}
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500&display=swap");
 
-.col {
-  max-width: 560px;
-  margin: 0 auto;
-  text-align: left;
+.page {
+  --ink: oklch(0.16 0.02 172);
+  --surface: oklch(0.22 0.018 172);
+  --fg: oklch(0.93 0.01 172);
+  --muted: oklch(0.68 0.02 172);
+  --mark: oklch(0.52 0.09 172);
+  --border: color-mix(in oklch, var(--fg) 12%, var(--surface));
+  --sans: "IBM Plex Sans", sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 48px 24px 64px;
+  background: var(--ink);
+  color: var(--fg);
+  font-family: var(--sans);
 }
 
 .mark {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 40px;
-  font-size: 13px;
-  line-height: 1.4;
+  margin: 0 0 48px;
+  font-size: 16px;
   font-weight: 400;
-  letter-spacing: 0.02em;
+  line-height: 1.4;
   color: var(--fg);
 }
 
 .mark svg {
-  color: var(--fg);
-  opacity: 0.9;
   flex-shrink: 0;
+  color: var(--fg);
 }
 
 .h1 {
-  margin: 0 0 20px;
-  font-size: 52px;
-  line-height: 1.08;
+  margin: 0 0 16px;
+  max-width: 65ch;
+  font-size: clamp(32px, 5vw, 48px);
+  line-height: 1.1;
   font-weight: 500;
   letter-spacing: -0.03em;
   color: var(--fg);
 }
 
 .breath {
-  margin: 0 0 56px;
+  margin: 0 0 24px;
+  max-width: 65ch;
   font-size: 16px;
   line-height: 1.5;
   font-weight: 400;
-  color: var(--text);
-  max-width: 28em;
-}
-
-.steps {
-  list-style: none;
-  margin: 0 0 48px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.steps li {
-  display: flex;
-  gap: 10px;
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  color: var(--text);
-}
-
-.num {
-  color: var(--muted);
-}
-
-.board {
-  margin: 0 0 80px;
-  font-size: 13px;
-  line-height: 1.4;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-}
-
-.board a {
-  color: var(--muted);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.18em;
-  text-decoration-color: color-mix(in srgb, var(--fg) 25%, transparent);
-  transition: color 150ms;
-}
-
-.board a:hover {
   color: var(--fg);
-  text-decoration-color: var(--fg);
 }
 
-.board a:focus-visible {
-  outline: 2px solid var(--fg);
+.cta {
+  margin: 0 0 48px;
+}
+
+.cta a {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  transition: color 150ms, border-color 150ms;
+}
+
+.cta a:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}
+
+.cta a:focus-visible {
+  outline: 2px solid var(--mark);
   outline-offset: 2px;
 }
 
-.footer {
+.shot {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.4;
+  max-width: 960px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.caption {
+  margin: 12px 0 0;
+  max-width: 960px;
+  font-size: 12px;
   font-weight: 400;
-  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.block {
+  margin: 64px 0 0;
+  max-width: 65ch;
+}
+
+.block + .block {
+  margin-top: 24px;
+}
+
+.block h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.block p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.footer {
+  margin: 80px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
   color: var(--muted);
 }
 
 @media (max-width: 640px) {
-  .main {
-    padding: 24px 20px 48px;
+  .page {
+    padding: 24px 16px 48px;
   }
 
   .h1 {
-    font-size: 36px;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
+    font-size: 32px;
+  }
+
+  .shot {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta a {
+    transition: none;
   }
 }

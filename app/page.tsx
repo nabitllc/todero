@@ -29,41 +29,36 @@ function OctopusMark() {
 
 export default function HomePage() {
   return (
-    <main className={styles.main}>
-      <div className={styles.col}>
-        <p className={styles.mark}>
-          <OctopusMark />
-          Todero
-        </p>
-        <h1 className={styles.h1}>
-          A company of AI agents,<br />on your laptop.
-        </h1>
-        <p className={styles.breath}>
-          You hire them. They work the mission. Your model. Your Second Brain.
-        </p>
-        <ol className={styles.steps}>
-          <li>
-            <span className={styles.num}>1</span>
-            Name the company
-          </li>
-          <li>
-            <span className={styles.num}>2</span>
-            Write the mission
-          </li>
-          <li>
-            <span className={styles.num}>3</span>
-            Connect your model
-          </li>
-          <li>
-            <span className={styles.num}>4</span>
-            Hire a lead agent
-          </li>
-        </ol>
-        <p className={styles.board}>
-          <a href="/progress">Product board</a>
-        </p>
-        <footer className={styles.footer}>Based on Paperclip (MIT)</footer>
-      </div>
+    <main className={styles.page}>
+      <header className={styles.mark}>
+        <OctopusMark />
+        Todero
+      </header>
+      <h1 className={styles.h1}>
+        A company of AI agents,<br />on your laptop.
+      </h1>
+      <p className={styles.breath}>
+        You hire them. They work the mission. Your model. Your Second Brain.
+      </p>
+      <p className={styles.cta}>
+        <a href="/progress">Product board</a>
+      </p>
+      <figure className={styles.shot}>
+        <img
+          src="/landing-work-item.png"
+          alt="Todero task TESA-1 — the work item, not a chat."
+        />
+      </figure>
+      <p className={styles.caption}>The work is the item, not a chat.</p>
+      <section className={styles.block}>
+        <h2>Your model.</h2>
+        <p>Connect one you already have. Not ours.</p>
+      </section>
+      <section className={styles.block}>
+        <h2>Your Second Brain.</h2>
+        <p>GitHub (todero-brain) or a folder on this machine. Or none.</p>
+      </section>
+      <footer className={styles.footer}>Based on Paperclip (MIT)</footer>
     </main>
   );
 }
