@@ -1,0 +1,7 @@
+.demo-root {
+  min-height: 100vh;
+  background: oklch(0.16 0.02 172);
+}
+.demo-root .work-item {
+  min-height: 100vh;
+}
