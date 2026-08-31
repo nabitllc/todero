@@ -27,3 +27,19 @@ describe("start-todero.ps1 Brain update", () => {
     expect(script).toMatch(/Skipping Todero Brain update:/);
   });
 });
+
+describe("start-todero.ps1 start path", () => {
+  const script = fs.readFileSync(scriptPath, "utf8");
+
+  it("installs local deps on every start", () => {
+    expect(script.includes("needInstall")).toBe(false);
+    expect(script).toMatch(/git pull failed/);
+    expect(script).toMatch(/LASTEXITCODE/);
+  });
+
+  it("asks to close other windows when embedded Postgres is busy", () => {
+    expect(script).toContain("$PgPort = 54330");
+    expect(script).toContain("Test-Listening -ListenPort $PgPort");
+    expect(script).toContain("Close other Todero windows, then retry.");
+  });
+});
