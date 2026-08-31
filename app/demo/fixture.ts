@@ -1,7 +1,7 @@
 export const demoWorkItem = {
   identifier: "TESA-1",
   type: "Task",
-  title: "Short title",
+  title: "Tampa Timeleft",
   body: "Ship the in-app work-item view. The work is the item, not a chat.",
   sections: [
     { title: "Acceptance Criteria", body: "Type stamp, facts rail, activity log." },
