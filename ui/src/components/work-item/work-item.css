@@ -139,12 +139,14 @@
   line-height: 1;
   border-radius: var(--wi-radius-stamp);
   padding: var(--wi-space-4) var(--wi-space-8);
+  color: var(--wi-muted);
   background: transparent;
   cursor: pointer;
 }
 
 .work-item-status-muted {
   color: var(--wi-muted);
+  background: transparent;
   border: 1px solid var(--wi-border);
 }
 
@@ -366,6 +368,14 @@
 }
 
 .work-item-activity-empty {
+  display: block;
+  align-self: flex-start;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
   font-family: var(--wi-sans);
   font-size: 12px;
   font-weight: 400;

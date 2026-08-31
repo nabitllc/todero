@@ -485,6 +485,7 @@ export function WorkItemView(props: WorkItemViewProps) {
               </Fact>
             )}
 
+            {status === "blocked" ? (
             <Fact label="Blocked by">
               <div style={{ position: "relative" }}>
                 <button
@@ -542,6 +543,7 @@ export function WorkItemView(props: WorkItemViewProps) {
                 ) : null}
               </div>
             </Fact>
+            ) : null}
 
             {projectCount > 1 && projectName ? (
               <Fact label="Project">

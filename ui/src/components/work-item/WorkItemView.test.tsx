@@ -6,15 +6,24 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkItemView, type WorkItemViewProps } from "./WorkItemView";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   AGENT_SUMMARY_LIMIT,
   BOLT_VALUE,
   COMPOSER_PLACEHOLDER,
+  EMPTY_ACTIVITY,
   WAITING_ON_YOU,
   WORK_ITEM_SECTION_TITLES,
   agentSummaryOverflowLine,
   visibleCopyHasForbiddenWord,
 } from "./work-item-model";
+
+const workItemCss = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "work-item.css"),
+  "utf8",
+);
 
 vi.mock("@/lib/router", () => ({
   Link: ({ children, to }: { children?: ReactNode; to: string }) => <a href={to}>{children}</a>,
@@ -235,4 +244,61 @@ describe("WorkItemView TESA-1", () => {
     const labels = [...container.querySelectorAll(".work-item-fact-label")].map((node) => node.textContent);
     expect(labels).not.toContain("Project");
   });
+
+  it("hides Blocked by unless status is Blocked", async () => {
+    for (const status of ["new", "todo", "in_progress", "done", "cancelled"] as const) {
+      await render(fixture({ status, blockedBy: { kind: "item", id: "tesa-12", identifier: "TESA-12" } }));
+      expect(container.querySelector('[data-testid="work-item-blocked-by"]')).toBeNull();
+      expect(visibleText()).not.toContain("Blocked by");
+    }
+    await render(
+      fixture({
+        status: "blocked",
+        blockedBy: { kind: "item", id: "tesa-12", identifier: "TESA-12" },
+      }),
+    );
+    expect(container.querySelector('[data-testid="work-item-blocked-by"]')?.textContent).toContain("TESA-12");
+    expect(visibleText()).toContain("Blocked by");
+    await render(
+      fixture({
+        status: "blocked",
+        blockedBy: { kind: "waiting-on-you" },
+      }),
+    );
+    expect(container.querySelector('[data-testid="work-item-blocked-by"]')?.textContent).toContain(WAITING_ON_YOU);
+  });
+
+  it("renders empty activity as a left-aligned caption, not a centered well", async () => {
+    await render(fixture({ activity: [] }));
+    const empty = container.querySelector(".work-item-activity-empty") as HTMLElement;
+    expect(empty?.textContent).toBe(EMPTY_ACTIVITY);
+    expect(empty?.textContent).toBe("No activity yet.");
+    const inline = empty.getAttribute("style") ?? "";
+    expect(inline).not.toMatch(/text-align\s*:\s*center/i);
+    expect(inline).not.toMatch(/margin\s*:\s*[^;]*auto/i);
+    expect(empty.className).not.toMatch(/mx-auto|ml-auto|mr-auto|text-center|m-auto/);
+    const emptyRule = workItemCss.match(/\.work-item-activity-empty\s*\{[^}]+\}/)?.[0] ?? "";
+    expect(emptyRule).toMatch(/text-align:\s*left/);
+    expect(emptyRule).not.toMatch(/text-align:\s*center/);
+    expect(emptyRule).not.toMatch(/margin(?:-left|-right)?\s*:\s*auto/);
+    expect(emptyRule).not.toMatch(/margin:\s*[^;}]*auto/);
+  });
+
+  it("uses muted color for the New status chip, not fg", async () => {
+    await render(fixture({ status: "new" }));
+    const chip = container.querySelector('[data-testid="work-item-status"]') as HTMLElement;
+    expect(chip?.textContent).toBe("New");
+    expect(chip.classList.contains("work-item-status-muted")).toBe(true);
+    expect(chip.classList.contains("work-item-status-progress")).toBe(false);
+    const inline = chip.getAttribute("style") ?? "";
+    expect(inline).not.toMatch(/color\s*:\s*var\(--wi-fg\)/);
+    const mutedRule = workItemCss.match(/\.work-item-status-muted\s*\{[^}]+\}/)?.[0] ?? "";
+    expect(mutedRule).toMatch(/color:\s*var\(--wi-muted\)/);
+    expect(mutedRule).not.toMatch(/color:\s*var\(--wi-fg\)/);
+    expect(mutedRule).not.toMatch(/background:\s*var\(--wi-(?:fg|mark|alert)\)/);
+    const statusRule = workItemCss.match(/\.work-item-status\s*\{[^}]+\}/)?.[0] ?? "";
+    expect(statusRule).toMatch(/color:\s*var\(--wi-muted\)/);
+    expect(statusRule).not.toMatch(/color:\s*var\(--wi-fg\)/);
+  });
+
 });
