@@ -1,3 +1,4 @@
+import WaitlistForm from "./WaitlistForm";
 import styles from "./page.module.css";
 
 function OctopusMark() {
@@ -40,16 +41,31 @@ export default function HomePage() {
       <p className={styles.breath}>
         You hire them. They work the mission. Your model. Your Second Brain.
       </p>
-      <p className={styles.cta}>
-        <a href="/progress">Product board</a>
+      <WaitlistForm />
+      <p className={styles.see}>
+        <a href="/demo">See the product</a>
       </p>
-      <figure className={styles.shot}>
-        <img
-          src="/landing-work-item.png"
-          alt="Todero task TESA-1 — the work item, not a chat."
-        />
-      </figure>
-      <p className={styles.caption}>The work is the item, not a chat.</p>
+      <section className={styles.block}>
+        <h2>What you need.</h2>
+        <p>
+          A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No
+          credit card.
+        </p>
+      </section>
+      <section className={styles.block}>
+        <h2>First run.</h2>
+        <p>
+          Name the company, write the mission, connect your model, pick a brain (GitHub, a folder, or
+          none), and hire a lead.
+        </p>
+      </section>
+      <section className={styles.block}>
+        <h2>How you run it.</h2>
+        <p>
+          You comment or @ an agent. They leave a short summary (140). Status, assignee, and
+          acceptance criteria live on the task. The work is the item, not a chat.
+        </p>
+      </section>
       <section className={styles.block}>
         <h2>Your model.</h2>
         <p>Connect one you already have. Not ours.</p>
@@ -58,7 +74,28 @@ export default function HomePage() {
         <h2>Your Second Brain.</h2>
         <p>GitHub (todero-brain) or a folder on this machine. Or none.</p>
       </section>
-      <footer className={styles.footer}>Based on Paperclip (MIT)</footer>
+      <section className={styles.faq}>
+        <div>
+          <h2>Windows?</h2>
+          <p>Yes.</p>
+        </div>
+        <div>
+          <h2>Local only?</h2>
+          <p>Yes. Your laptop.</p>
+        </div>
+        <div>
+          <h2>Cost?</h2>
+          <p>Your model’s tokens. Not a Todero bill.</p>
+        </div>
+        <div>
+          <h2>Need GitHub?</h2>
+          <p>No. The brain is optional.</p>
+        </div>
+      </section>
+      <section className={styles.open}>
+        <h2>Open.</h2>
+        <p>MIT. Based on Paperclip. Runs on your machine.</p>
+      </section>
     </main>
   );
 }
