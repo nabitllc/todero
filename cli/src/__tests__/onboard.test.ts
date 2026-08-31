@@ -6,10 +6,17 @@ import { onboard } from "../commands/onboard.js";
 import type { ToderoConfig } from "../config/schema.js";
 
 const runCommandMock = vi.hoisted(() => vi.fn());
+const extrasMock = vi.hoisted(() => ({
+  assertOnboardPrerequisites: vi.fn(),
+  ensureOnboardRecommendedVault: vi.fn(() => "/tmp/todero-brain"),
+  installOnboardDesktopIcon: vi.fn(() => null),
+}));
 
 vi.mock("../commands/run.js", () => ({
   runCommand: runCommandMock,
 }));
+
+vi.mock("../onboard-extras.js", () => extrasMock);
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_CWD = process.cwd();
@@ -111,6 +118,9 @@ describe("onboard", () => {
     delete process.env.PAPERCLIP_OPEN_ON_LISTEN;
     delete process.env.HOST;
     runCommandMock.mockReset();
+    extrasMock.assertOnboardPrerequisites.mockClear();
+    extrasMock.ensureOnboardRecommendedVault.mockClear();
+    extrasMock.installOnboardDesktopIcon.mockClear();
   });
 
   afterEach(() => {
@@ -155,6 +165,9 @@ describe("onboard", () => {
 
     expect(runCommandMock).toHaveBeenCalledWith({ config: configPath, repair: true, yes: true });
     expect(process.env.PAPERCLIP_OPEN_ON_LISTEN).toBeUndefined();
+    expect(extrasMock.assertOnboardPrerequisites).toHaveBeenCalled();
+    expect(extrasMock.ensureOnboardRecommendedVault).toHaveBeenCalled();
+    expect(extrasMock.installOnboardDesktopIcon).toHaveBeenCalled();
   });
 
   it("backs up invalid config bytes and refuses --yes replacement", async () => {
