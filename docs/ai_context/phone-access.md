@@ -41,6 +41,11 @@ fail on Windows.
   hostname, so use the MagicDNS name.
 - Plain HTTP inside WireGuard. Switch to `--https=443` only after enabling HTTPS
   certificates in the Tailscale admin console (`MagicDNS` + `HTTPS Certificates`).
-- Upstream note PAP-18043: the Vite dev middleware can stall behind Tailscale HTTPS. If the
-  phone shows a blank first load, restart with `PAPERCLIP_UI_DEV_MIDDLEWARE=false` to serve
-  the built UI bundle.
+- Android does not apply MagicDNS search domains: `http://g14-mich` fails with NXDOMAIN on
+  the phone. Use the full name `http://g14-mich.tailfb1687.ts.net`.
+- Upstream PAP-18043 reproduced on 2026-09-01: with Vite's dev middleware the phone pulled
+  ~90 MB of unbundled modules and Chrome gave ERR_TIMED_OUT. The launcher therefore sets
+  `PAPERCLIP_UI_DEV_MIDDLEWARE=false` and the server serves `local/ui/dist`. After UI
+  changes, rebuild with `pnpm --filter @todero/ui build` (about 5 s); the server picks the
+  new bundle up without a restart. For desktop HMR work, flip the variable to `true` in
+  `start-todero-dev.ps1`, restart, and flip it back before leaving the desk.
