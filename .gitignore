@@ -19,3 +19,6 @@ local/.todero-local/
 local/.todero-runtime/
 local/.env
 local/.env.local
+
+# Built by scripts/build-demo.mjs from local/ui
+public/demo/

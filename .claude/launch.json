@@ -19,6 +19,15 @@
         "demo"
       ],
       "port": 5174
+    },
+    {
+      "name": "public-prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start"
+      ],
+      "port": 3000
     }
   ]
 }
