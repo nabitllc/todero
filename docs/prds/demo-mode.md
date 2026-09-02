@@ -1,6 +1,6 @@
 # Feature: `/demo` — the real UI on a fake backend
 
-**Status**: Planned
+**Status**: Done (slices 1–5 shipped 2026-09-02; see § 16)
 **Priority**: P1
 **Author**: Claude (CTO) for Michael (Strategist)
 **Created**: 2026-09-02 · **Updated**: 2026-09-02
@@ -167,6 +167,29 @@ None sent. The product's in-app inbox shows seeded notifications.
 - The old `app/demo` Next route is removed.
 
 ## 15. Open Questions
-1. **Company name.** "Kelp Works" is invented by the CTO. Recommended: keep it; change it only if it collides with a real business you know.
-2. **Reset scope.** Recommended: Reset clears only this tab's session, no confirmation dialog — the demo is disposable.
-3. **Banner copy.** Recommended: "Demo — an invented company. Nothing leaves your browser." + Reset. Locked once you say so.
+None. Michael accepted the recommendations on 2026-09-02: Kelp Works (prefix came out as `KEL`),
+Reset clears this tab's session without confirmation, banner copy as proposed.
+
+## 16. What shipped (2026-09-02)
+
+- **Seam** — `local/ui/src/demo/`: MSW at fetch level, a fake live-updates socket, a store on
+  `sessionStorage` with timestamps rebased to "now" at load, and a 599 alarm for any endpoint the
+  seed never saw. `main.tsx` guards Sentry, the service-worker updater, and the plugin bridge.
+- **Seed** — recorded once from the product itself for Kelp Works (211 responses), scrubbed of
+  every machine path and every foreign company id, failed runs turned into succeeded ones, comment
+  authorship attributed to agents, recorded 404s kept as 404s. The test company was archived on the
+  recording instance afterwards (its DELETE endpoint returns 500 — a product bug, not a demo one).
+- **Interactions** — create and move a task, comment and @ an agent (canned reply arrives over the
+  socket as the product's `activity.logged` / `issue.comment_added` event), approve or reject
+  (approving the hire creates the agent), hire directly. Visitor-created tasks get empty
+  sub-resources and borrow the quietest seeded task's shapes for the rest.
+- **Hosting** — `scripts/build-demo.mjs` builds `local/ui` in demo mode into `public/demo/` before
+  `next build`, on Vercel too (pnpm subset install with `NODE_ENV=development`); `/demo` redirects to
+  `/demo/KEL/issues`; `/demo/*` falls back to the SPA shell after real files; Inter copied to
+  `public/fonts`; the canned `app/demo` fixture is deleted.
+- **Drift gate** — `.github/workflows/demo.yml` runs `scripts/demo-smoke.mjs`: twelve screens, the
+  four interactions, Reset. Green on the first run.
+- **Landing** — "or see a bolt →" already pointed at `/demo`, which now lands on the seeded board.
+
+Known gaps: agent runs are canned; plugin-gated screens render the product's empty states; the
+`Bolt · Coming` field on the work item is the product's, not the demo's.
