@@ -94,19 +94,19 @@ export default function WaitlistForm() {
         <button className={styles.button} type="submit" disabled={busy}>
           {busy ? "Joining…" : "Join the waitlist"}
         </button>
+        {invalid ? (
+          <p className={styles.error} id={noteId} role="alert">
+            {error}
+          </p>
+        ) : (
+          <p className={styles.help} id={noteId}>
+            {HELP}
+          </p>
+        )}
         <a className={styles.ghost} href="/demo">
           See the product
         </a>
       </div>
-      {invalid ? (
-        <p className={styles.error} id={noteId} role="alert">
-          {error}
-        </p>
-      ) : (
-        <p className={styles.help} id={noteId}>
-          {HELP}
-        </p>
-      )}
     </form>
   );
 }

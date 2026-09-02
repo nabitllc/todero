@@ -222,7 +222,25 @@
 
 .control {
   display: grid;
+  grid-template-areas: "input" "join" "note" "see";
   gap: var(--s-8);
+}
+
+.input {
+  grid-area: input;
+}
+
+.button {
+  grid-area: join;
+}
+
+.ghost {
+  grid-area: see;
+}
+
+.help,
+.error {
+  grid-area: note;
 }
 
 .input {
@@ -430,6 +448,7 @@
 @media (min-width: 40rem) {
   .control {
     grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "input join see" "note note note";
   }
 
   .role {
