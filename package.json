@@ -6,11 +6,12 @@
   "description": "Todero public surface and product board. Local app lives in local/.",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start"
+    "build": "node scripts/build-demo.mjs && next build",
+    "start": "next start",
+    "build:demo": "node scripts/build-demo.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "dependencies": {
     "next": "^14.2.35",
