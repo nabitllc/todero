@@ -19,9 +19,11 @@ if (process.env.TODERO_SKIP_DEMO === "1") {
 const pkg = JSON.parse(readFileSync(path.join(local, "package.json"), "utf8"));
 const pnpmSpec = pkg.packageManager?.startsWith("pnpm@") ? pkg.packageManager : "pnpm@latest";
 const pnpm = `npx --yes ${pnpmSpec}`;
+// NODE_ENV=development so pnpm installs the UI's devDependencies (vite is one)
+// even where the host sets production, as Vercel does.
 const run = (cmd, cwd) => {
   console.log(`build-demo: ${cmd}`);
-  execSync(cmd, { cwd, stdio: "inherit", env: { ...process.env, VITE_TODERO_DEMO: "1" } });
+  execSync(cmd, { cwd, stdio: "inherit", env: { ...process.env, NODE_ENV: "development", VITE_TODERO_DEMO: "1" } });
 };
 
 if (!existsSync(path.join(ui, "node_modules"))) {
