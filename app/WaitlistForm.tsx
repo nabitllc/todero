@@ -5,7 +5,7 @@ import styles from "./page.module.css";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
-const HELP = "We’ll email you when install is one command.";
+const HELP = "One email when npx todero works. Nothing else.";
 const INVALID = "Enter an email address.";
 const UNAVAILABLE =
   "Couldn’t join the waitlist. The list service didn’t respond. Try again in a minute.";
