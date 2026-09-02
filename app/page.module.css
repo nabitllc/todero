@@ -20,28 +20,26 @@
   --t-sm: 0.9375rem;
   --t-base: 1.0625rem;
   --t-lg: 1.375rem;
-  --t-xl: 1.75rem;
   --t-display: clamp(2.5rem, 1rem + 6.5vw, 6rem);
+  --t-breath: clamp(var(--t-base), 0.9rem + 0.6vw, var(--t-lg));
 
-  /* space — 4pt scale, fluid where the page breathes */
+  /* space — 4pt scale */
   --s-4: 0.25rem;
   --s-8: 0.5rem;
   --s-12: 0.75rem;
   --s-16: 1rem;
   --s-24: 1.5rem;
   --s-32: 2rem;
+  --s-40: 2.5rem;
   --s-48: 3rem;
   --s-64: 4rem;
   --pad-x: clamp(1.25rem, 5vw, 4rem);
-  --gap-screen: clamp(4rem, 10vh, 7rem);
 
   /* size */
-  --measure: 60ch;
-  --measure-short: 40ch;
+  --measure-short: 30ch;
   --control: 3rem;
   --page-max: 72rem;
-  --header: 4.5rem;
-  --octopus-w: clamp(20rem, 60vw, 48rem);
+  --octopus-h: clamp(8rem, 22vh, 15rem);
 
   /* radii — locked: controls 6px, surfaces square */
   --radius-control: 6px;
@@ -80,6 +78,15 @@
   outline-offset: 2px;
 }
 
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* header */
 .top {
   display: flex;
@@ -88,9 +95,8 @@
   gap: var(--s-24);
   width: 100%;
   max-width: var(--page-max);
-  min-height: var(--header);
   margin: 0 auto;
-  padding: 0 var(--pad-x);
+  padding: var(--s-12) var(--pad-x);
   animation: rise var(--enter) ease-out both;
 }
 
@@ -101,7 +107,6 @@
   min-height: 2.75rem;
   font-size: var(--t-sm);
   font-weight: 500;
-  text-decoration: none;
   color: var(--bone);
 }
 
@@ -129,50 +134,48 @@
   color: var(--bone);
 }
 
-/* hero — one screen */
+/* hero — the page */
 .hero {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--s-24);
   width: 100%;
   max-width: var(--page-max);
-  min-height: calc(100svh - var(--header));
   margin: 0 auto;
-  padding: var(--s-32) var(--pad-x) var(--s-64);
+  padding: var(--s-8) var(--pad-x) var(--s-24);
   text-align: center;
 }
 
 .octopus {
-  width: var(--octopus-w);
+  height: var(--octopus-h);
+  width: auto;
   max-width: 100%;
-  height: auto;
   color: var(--kelp);
   overflow: visible;
 }
 
-.head {
+.mantle {
   animation: fade var(--enter) ease-out both;
+  animation-delay: 300ms;
+}
+
+.mantleFill {
+  fill: var(--ink);
 }
 
 .arm {
   stroke-dasharray: 1;
   animation: draw 700ms ease-out both;
-  animation-delay: calc(200ms + var(--i) * 60ms);
+  animation-delay: calc(100ms + var(--i) * 70ms);
 }
 
-.tip,
-.role {
-  animation: fade var(--enter) ease-out both;
-  animation-delay: calc(800ms + var(--i) * 60ms);
-}
-
-.role {
-  display: none;
-  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 14px;
-  fill: var(--drift);
+.words {
+  display: grid;
+  gap: var(--s-12);
+  justify-items: center;
+  margin-top: var(--s-16);
 }
 
 .h1 {
@@ -190,8 +193,8 @@
 .breath {
   margin: 0;
   max-width: var(--measure-short);
-  font-size: var(--t-lg);
-  line-height: 1.4;
+  font-size: var(--t-breath);
+  line-height: 1.45;
   color: var(--drift);
   text-wrap: pretty;
   animation: rise var(--enter) ease-out both;
@@ -199,9 +202,12 @@
 }
 
 .action {
+  display: grid;
+  gap: var(--s-12);
+  justify-items: center;
   width: 100%;
-  max-width: 36rem;
-  margin-top: var(--s-8);
+  max-width: 28rem;
+  margin-top: var(--s-32);
   animation: rise var(--enter) ease-out both;
   animation-delay: calc(var(--stagger) * 4);
 }
@@ -210,37 +216,13 @@
 .form {
   display: grid;
   gap: var(--s-8);
+  width: 100%;
   text-align: left;
-}
-
-.label {
-  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
-  font-size: var(--t-xs);
-  font-weight: 500;
-  color: var(--drift);
 }
 
 .control {
   display: grid;
-  grid-template-areas: "input" "join" "note" "see";
   gap: var(--s-8);
-}
-
-.input {
-  grid-area: input;
-}
-
-.button {
-  grid-area: join;
-}
-
-.ghost {
-  grid-area: see;
-}
-
-.help,
-.error {
-  grid-area: note;
 }
 
 .input {
@@ -280,29 +262,24 @@
   opacity: 0.6;
 }
 
-.button,
-.ghost {
+.button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: var(--control);
   margin: 0;
   padding: 0 var(--s-24);
+  border: 0;
   border-radius: var(--radius-control);
+  background: var(--kelp);
+  color: var(--ink);
   font: inherit;
   font-size: var(--t-base);
   font-weight: 500;
   line-height: 1;
-  text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--ease), border-color var(--ease), transform 120ms ease-out;
-}
-
-.button {
-  border: 0;
-  background: var(--kelp);
-  color: var(--ink);
+  transition: background-color var(--ease), transform 120ms ease-out;
 }
 
 .button:hover {
@@ -320,31 +297,19 @@
   transform: none;
 }
 
-.ghost {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--bone);
-}
-
-.ghost:hover {
-  border-color: var(--drift);
-}
-
-.ghost:active {
-  transform: translateY(1px);
-}
-
-.help {
-  margin: 0;
-  font-size: var(--t-sm);
-  line-height: 1.5;
-  color: var(--drift);
-}
-
+.help,
 .error {
   margin: 0;
   font-size: var(--t-sm);
   line-height: 1.5;
+  text-align: center;
+}
+
+.help {
+  color: var(--drift);
+}
+
+.error {
   color: var(--coral);
 }
 
@@ -355,6 +320,10 @@
   min-height: var(--control);
   align-content: center;
   text-align: center;
+}
+
+.success:focus-visible {
+  outline: none;
 }
 
 .successTitle {
@@ -369,113 +338,73 @@
   color: var(--drift);
 }
 
-/* screen two — facts, questions, footer */
-.facts {
-  display: grid;
-  gap: var(--s-32);
-  width: 100%;
-  max-width: var(--page-max);
-  margin: 0 auto;
-  padding: var(--gap-screen) var(--pad-x) 0;
-}
-
-.fact {
-  display: grid;
+.see {
+  display: inline-flex;
+  align-items: center;
   gap: var(--s-8);
-  margin: 0;
-}
-
-.factTitle {
-  margin: 0;
-  font-size: var(--t-lg);
-  font-weight: 500;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-
-.factBody {
-  margin: 0;
-  max-width: var(--measure);
-  font-size: var(--t-base);
-  color: var(--drift);
-  text-wrap: pretty;
-}
-
-.faq {
-  width: 100%;
-  max-width: var(--page-max);
-  margin: 0 auto;
-  padding: var(--gap-screen) var(--pad-x) 0;
-}
-
-.faqList {
-  display: grid;
-  gap: var(--s-24);
-  margin: 0;
-}
-
-.faqItem {
-  display: grid;
-  gap: var(--s-4);
-}
-
-.faqQ {
-  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  min-height: 2.75rem;
   font-size: var(--t-sm);
-  color: var(--drift);
-}
-
-.faqA {
-  margin: 0;
-  font-size: var(--t-base);
+  font-weight: 500;
   color: var(--bone);
+  text-decoration: underline;
+  text-decoration-color: var(--drift);
+  transition: text-decoration-color var(--ease);
 }
 
+.see:hover {
+  text-decoration-color: var(--kelp);
+}
+
+/* one mono line instead of a page of facts */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-8) var(--s-24);
+  margin: var(--s-32) 0 0;
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  color: var(--drift);
+  animation: fade var(--enter) ease-out both;
+  animation-delay: calc(var(--stagger) * 6);
+}
+
+/* footer */
 .foot {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--s-8) var(--s-24);
   width: 100%;
   max-width: var(--page-max);
-  margin: auto auto 0;
-  padding: var(--gap-screen) var(--pad-x) var(--s-48);
+  margin: 0 auto;
+  padding: var(--s-8) var(--pad-x) var(--s-16);
   font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
   font-size: var(--t-xs);
   color: var(--drift);
 }
 
-/* ≥ 40rem: the control becomes one row; arm roles appear */
-@media (min-width: 40rem) {
-  .control {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    grid-template-areas: "input join see" "note note note";
-  }
-
-  .role {
-    display: block;
-  }
-
-  .facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s-48) var(--s-32);
-  }
-
-  .faqList {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s-24) var(--s-32);
-  }
+.footLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  margin: calc(-1 * var(--s-12)) 0;
+  color: var(--drift);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  transition: color var(--ease), text-decoration-color var(--ease);
 }
 
-/* ≥ 64rem: three-up facts, four-up questions */
-@media (min-width: 64rem) {
-  .facts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--s-48);
-  }
+.footLink:hover {
+  color: var(--bone);
+  text-decoration-color: var(--kelp);
+}
 
-  .faqList {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--s-32);
+/* ≥ 40rem: the control becomes one row */
+@media (min-width: 40rem) {
+  .control {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 

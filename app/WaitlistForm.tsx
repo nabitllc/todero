@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useId, useState } from "react";
+import { FormEvent, useEffect, useId, useRef, useState } from "react";
 import styles from "./page.module.css";
 
 type Status = "idle" | "submitting" | "success" | "error";
@@ -20,7 +20,12 @@ export default function WaitlistForm() {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
   const inputId = useId();
-  const noteId = useId();
+  const helpId = useId();
+  const successRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (status === "success") successRef.current?.focus();
+  }, [status]);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -54,7 +59,7 @@ export default function WaitlistForm() {
 
   if (status === "success") {
     return (
-      <p className={styles.success} role="status" aria-live="polite">
+      <p className={styles.success} role="status" tabIndex={-1} ref={successRef}>
         <span className={styles.successTitle}>You’re on the list.</span>
         <span className={styles.successNote}>{HELP}</span>
       </p>
@@ -66,7 +71,7 @@ export default function WaitlistForm() {
 
   return (
     <form className={styles.form} onSubmit={onSubmit} noValidate aria-busy={busy}>
-      <label className={styles.label} htmlFor={inputId}>
+      <label className={styles.srOnly} htmlFor={inputId}>
         Email
       </label>
       <div className={styles.control}>
@@ -87,26 +92,23 @@ export default function WaitlistForm() {
             }
           }}
           aria-invalid={invalid}
-          aria-describedby={noteId}
+          aria-describedby={invalid ? undefined : helpId}
           disabled={busy}
           required
         />
         <button className={styles.button} type="submit" disabled={busy}>
           {busy ? "Joining…" : "Join the waitlist"}
         </button>
-        {invalid ? (
-          <p className={styles.error} id={noteId} role="alert">
-            {error}
-          </p>
-        ) : (
-          <p className={styles.help} id={noteId}>
-            {HELP}
-          </p>
-        )}
-        <a className={styles.ghost} href="/demo">
-          See the product
-        </a>
       </div>
+      {invalid ? (
+        <p className={styles.error} role="alert">
+          {error}
+        </p>
+      ) : (
+        <p className={styles.help} id={helpId}>
+          {HELP}
+        </p>
+      )}
     </form>
   );
 }
