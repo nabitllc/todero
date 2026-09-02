@@ -1,5 +1,5 @@
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
-import Octopus from "./Octopus";
+import BoltBoard from "./BoltBoard";
 import WaitlistForm from "./WaitlistForm";
 import styles from "./page.module.css";
 
@@ -22,11 +22,11 @@ function OctopusMark() {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
-      width={24}
-      height={24}
+      width={28}
+      height={28}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.5}
+      strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden={true}
@@ -53,14 +53,16 @@ export default function HomePage() {
           Todero
         </span>
         <nav className={styles.nav} aria-label="Site">
-          <a className={styles.navLink} href="/demo">
-            Product
+          <a className={styles.navLink} href="https://github.com/nabitllc/todero">
+            GitHub
+          </a>
+          <a className={styles.navLink} href="https://github.com/nabitllc/todero-brain">
+            Brain
           </a>
         </nav>
       </header>
 
       <main className={styles.hero} aria-labelledby="hero-title">
-        <Octopus />
         <div className={styles.words}>
           <h1 className={styles.h1} id="hero-title">
             A company of AI agents,
@@ -70,20 +72,19 @@ export default function HomePage() {
           <p className={styles.breath}>
             You hire them. They work the mission. Your model. Your Second Brain.
           </p>
+          <p className={styles.what}>
+            An open-source app that runs a team of AI agents on your machine, with your own model —
+            in 24-hour sprints.
+          </p>
+          <div className={styles.action}>
+            <WaitlistForm />
+            <a className={styles.see} href="/demo">
+              or see a bolt
+              <span aria-hidden={true}>→</span>
+            </a>
+          </div>
         </div>
-        <div className={styles.action}>
-          <WaitlistForm />
-          <a className={styles.see} href="/demo">
-            See the product
-            <span aria-hidden={true}>→</span>
-          </a>
-        </div>
-        <p className={styles.strip}>
-          <span>Local</span>
-          <span>Your model</span>
-          <span>MIT</span>
-          <span>macOS, Windows, Linux</span>
-        </p>
+        <BoltBoard />
       </main>
 
       <footer className={styles.foot}>
