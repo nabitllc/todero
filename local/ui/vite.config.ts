@@ -8,6 +8,8 @@ import { createApiProxy } from "./src/lib/vite-api-proxy";
 const apiProxy = createApiProxy();
 
 export default defineConfig(({ mode }) => ({
+  // Demo build: served under /demo/ by the public site, talks to no server.
+  base: process.env.VITE_TODERO_DEMO === "1" ? "/demo/" : "/",
   plugins: [react(), tailwindcss()],
   build: {
     minify: "esbuild",

@@ -4,8 +4,21 @@
     {
       "name": "public",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "demo",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--dir",
+        "local/ui",
+        "demo"
+      ],
+      "port": 5174
     }
   ]
 }
