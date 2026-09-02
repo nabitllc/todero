@@ -5,31 +5,47 @@ import styles from "./page.module.css";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
+const HELP = "We’ll email you when install is one command.";
+const INVALID = "Enter an email address.";
+const UNAVAILABLE =
+  "Couldn’t join the waitlist. The list service didn’t respond. Try again in a minute.";
+const OFFLINE = "Couldn’t reach Todero. Check your connection and try again.";
+
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
 export default function WaitlistForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState("");
-  const errorId = useId();
+  const inputId = useId();
+  const noteId = useId();
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (status === "submitting") return;
-    const trimmed = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError("Enter an email address.");
+    if (!looksLikeEmail(email)) {
+      setError(INVALID);
       setStatus("error");
       return;
     }
     setError("");
     setStatus("submitting");
-    const res = await fetch("/api/waitlist", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
-    });
+    let res: Response;
+    try {
+      res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+    } catch {
+      setError(OFFLINE);
+      setStatus("error");
+      return;
+    }
     if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
-      setError(data?.error || "Could not join the waitlist.");
+      setError(res.status === 400 ? INVALID : UNAVAILABLE);
       setStatus("error");
       return;
     }
@@ -38,40 +54,55 @@ export default function WaitlistForm() {
 
   if (status === "success") {
     return (
-      <p className={styles.success} aria-live="polite">
-        You’re on the list.
+      <p className={styles.success} role="status" aria-live="polite">
+        <span className={styles.successTitle}>You’re on the list.</span>
+        <span className={styles.successNote}>{HELP}</span>
       </p>
     );
   }
 
+  const busy = status === "submitting";
+  const invalid = status === "error";
+
   return (
-    <form className={styles.waitlist} onSubmit={onSubmit} noValidate>
-      <label className={styles.label} htmlFor="waitlist-email">
+    <form className={styles.form} onSubmit={onSubmit} noValidate aria-busy={busy}>
+      <label className={styles.label} htmlFor={inputId}>
         Email
       </label>
-      <div className={styles.field}>
+      <div className={styles.control}>
         <input
-          id="waitlist-email"
+          className={styles.input}
+          id={inputId}
           name="email"
           type="email"
+          inputMode="email"
           autoComplete="email"
           placeholder="you@example.com"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          aria-invalid={status === "error"}
-          aria-describedby={status === "error" ? errorId : undefined}
-          disabled={status === "submitting"}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            if (invalid) {
+              setError("");
+              setStatus("idle");
+            }
+          }}
+          aria-invalid={invalid}
+          aria-describedby={noteId}
+          disabled={busy}
+          required
         />
-        <button type="submit" disabled={status === "submitting"}>
-          Join the waitlist
+        <button className={styles.button} type="submit" disabled={busy}>
+          {busy ? "Joining…" : "Join the waitlist"}
         </button>
       </div>
-      {status === "error" ? (
-        <p className={styles.error} id={errorId} role="alert">
+      {invalid ? (
+        <p className={styles.error} id={noteId} role="alert">
           {error}
         </p>
       ) : (
-        <p className={styles.helper}>We’ll email you when install is one command.</p>
+        <p className={styles.help} id={noteId}>
+          {HELP}
+        </p>
       )}
     </form>
   );

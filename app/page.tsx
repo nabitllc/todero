@@ -1,13 +1,28 @@
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import WaitlistForm from "./WaitlistForm";
 import styles from "./page.module.css";
+
+const sans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-sans",
+  display: "swap",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 function OctopusMark() {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 24 24"
-      width={28}
-      height={28}
+      width={24}
+      height={24}
       fill="none"
       stroke="currentColor"
       strokeWidth={1.5}
@@ -28,7 +43,11 @@ function OctopusMark() {
   );
 }
 
-const rows = [
+const bands = [
+  {
+    title: "What you need.",
+    body: "A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No credit card.",
+  },
   {
     title: "First run.",
     body: "Name the company, write the mission, connect your model, pick a brain (GitHub, a folder, or none), and hire a lead.",
@@ -51,72 +70,75 @@ const rows = [
   },
 ];
 
+const faq = [
+  { q: "Windows?", a: "Yes." },
+  { q: "Local only?", a: "Yes. Your laptop." },
+  { q: "Cost?", a: "Your model’s tokens. Not a Todero bill." },
+  { q: "Need GitHub?", a: "No. The brain is optional." },
+];
+
 export default function HomePage() {
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <OctopusMark />
-        Todero
+    <div className={`${styles.page} ${sans.variable} ${mono.variable}`}>
+      <header className={styles.top}>
+        <a className={styles.brand} href="/">
+          <OctopusMark />
+          Todero
+        </a>
       </header>
-      <section className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <h1 className={styles.h1}>
+
+      <main>
+        <section className={styles.hero} aria-labelledby="hero-title">
+          <h1 className={styles.h1} id="hero-title">
             A company of AI agents,
             <br />
-            on your laptop.
+            <span className={styles.h1Mono}>on your laptop.</span>
           </h1>
-          <p className={styles.breath}>
-            You hire them. They work the mission. Your model. Your Second Brain.
-          </p>
-          <WaitlistForm />
-          <p className={styles.see}>
-            <a href="/demo">See the product</a>
-          </p>
-        </div>
-        <figure className={styles.shot}>
-          <img
-            src="/landing-work-item.png"
-            alt="Todero task TESA-1 — the work item, not a chat."
-          />
-        </figure>
-      </section>
-      <section className={styles.bands}>
-        <div className={styles.bandsInner}>
-          <article className={styles.statement}>
-            <h2>What you need.</h2>
-            <p>
-              A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No
-              credit card.
+          <div className={styles.heroRow}>
+            <p className={styles.breath}>
+              You hire them. They work the mission. Your model. Your Second Brain.
             </p>
-          </article>
-          {rows.map((row) => (
-            <article className={styles.band} key={row.title}>
-              <h2>{row.title}</h2>
-              <p>{row.body}</p>
+            <div className={styles.action}>
+              <WaitlistForm />
+              <a className={styles.see} href="/demo">
+                See the product
+                <span aria-hidden={true}>→</span>
+              </a>
+            </div>
+          </div>
+        </section>
+
+        <section className={styles.bands} aria-label="About Todero">
+          {bands.map((band) => (
+            <article className={styles.band} key={band.title}>
+              <h2 className={styles.bandTitle}>{band.title}</h2>
+              <p className={styles.bandBody}>{band.body}</p>
             </article>
           ))}
-        </div>
-      </section>
-      <section className={styles.faqBand}>
-        <div className={styles.faqInner}>
-          <div>
-            <h2>Windows?</h2>
-            <p>Yes.</p>
-          </div>
-          <div>
-            <h2>Local only?</h2>
-            <p>Yes. Your laptop.</p>
-          </div>
-          <div>
-            <h2>Cost?</h2>
-            <p>Your model’s tokens. Not a Todero bill.</p>
-          </div>
-          <div>
-            <h2>Need GitHub?</h2>
-            <p>No. The brain is optional.</p>
-          </div>
-        </div>
-      </section>
+        </section>
+
+        <section className={styles.faq} aria-labelledby="faq-title">
+          <h2 className={styles.faqTitle} id="faq-title">
+            Questions.
+          </h2>
+          <dl className={styles.faqList}>
+            {faq.map((item) => (
+              <div className={styles.faqItem} key={item.q}>
+                <dt className={styles.faqQ}>{item.q}</dt>
+                <dd className={styles.faqA}>{item.a}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </main>
+
+      <footer className={styles.foot}>
+        <span>Todero</span>
+        <span>Based on Paperclip (MIT)</span>
+        <a className={styles.footLink} href="/progress">
+          Product board
+        </a>
+      </footer>
     </div>
   );
 }
