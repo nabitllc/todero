@@ -44,61 +44,24 @@ function OctopusMark() {
   );
 }
 
-const facts = [
-  {
-    title: "What you need.",
-    body: "A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No credit card.",
-  },
-  {
-    title: "First run.",
-    body: "Name the company, write the mission, connect your model, pick a brain, hire a lead.",
-  },
-  {
-    title: "How you run it.",
-    body: "Comment or @ an agent. The work is the item, not a chat.",
-  },
-  {
-    title: "Your model.",
-    body: "Connect one you already have. Not ours.",
-  },
-  {
-    title: "Your Second Brain.",
-    body: "GitHub (todero-brain) or a folder on this machine. Or none.",
-  },
-  {
-    title: "Open.",
-    body: "MIT. Based on Paperclip. Runs on your machine.",
-  },
-];
-
-const faq = [
-  { q: "Windows?", a: "Yes." },
-  { q: "Local only?", a: "Yes. Your laptop." },
-  { q: "Cost?", a: "Your model’s tokens. Not a Todero bill." },
-  { q: "Need GitHub?", a: "No. The brain is optional." },
-];
-
 export default function HomePage() {
   return (
     <div className={`${styles.page} ${sans.variable} ${mono.variable}`}>
       <header className={styles.top}>
-        <a className={styles.brand} href="/">
+        <span className={styles.brand}>
           <OctopusMark />
           Todero
-        </a>
+        </span>
         <nav className={styles.nav} aria-label="Site">
           <a className={styles.navLink} href="/demo">
             Product
           </a>
-          <a className={styles.navLink} href="/progress">
-            Board
-          </a>
         </nav>
       </header>
 
-      <main>
-        <section className={styles.hero} aria-labelledby="hero-title">
-          <Octopus />
+      <main className={styles.hero} aria-labelledby="hero-title">
+        <Octopus />
+        <div className={styles.words}>
           <h1 className={styles.h1} id="hero-title">
             A company of AI agents,
             <br />
@@ -107,35 +70,28 @@ export default function HomePage() {
           <p className={styles.breath}>
             You hire them. They work the mission. Your model. Your Second Brain.
           </p>
-          <div className={styles.action}>
-            <WaitlistForm />
-          </div>
-        </section>
-
-        <section className={styles.facts} aria-label="About Todero">
-          {facts.map((fact) => (
-            <article className={styles.fact} key={fact.title}>
-              <h2 className={styles.factTitle}>{fact.title}</h2>
-              <p className={styles.factBody}>{fact.body}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className={styles.faq} aria-label="Questions">
-          <dl className={styles.faqList}>
-            {faq.map((item) => (
-              <div className={styles.faqItem} key={item.q}>
-                <dt className={styles.faqQ}>{item.q}</dt>
-                <dd className={styles.faqA}>{item.a}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        </div>
+        <div className={styles.action}>
+          <WaitlistForm />
+          <a className={styles.see} href="/demo">
+            See the product
+            <span aria-hidden={true}>→</span>
+          </a>
+        </div>
+        <p className={styles.strip}>
+          <span>Local</span>
+          <span>Your model</span>
+          <span>MIT</span>
+          <span>macOS, Windows, Linux</span>
+        </p>
       </main>
 
       <footer className={styles.foot}>
         <span>Todero</span>
         <span>Based on Paperclip (MIT)</span>
+        <a className={styles.footLink} href="/progress">
+          Board
+        </a>
       </footer>
     </div>
   );
