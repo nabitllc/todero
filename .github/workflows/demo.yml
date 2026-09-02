@@ -1,0 +1,33 @@
+name: demo
+
+# The drift gate: the public demo is the real local/ui on a recorded seed.
+# Build it the way Vercel does, serve it, and walk it. A schema change that
+# breaks a handler, or a screen that starts asking for an endpoint the seed
+# never saw, fails here — not in a visitor's browser.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the public site
+        run: npm ci
+      - name: Build the demo and the site
+        run: npm run build
+      - name: Install a browser
+        run: npx playwright install --with-deps chromium
+      - name: Serve
+        run: |
+          npx next start -p 3000 &
+          for i in $(seq 1 30); do curl -sf http://localhost:3000/demo/KEL/issues > /dev/null && break; sleep 2; done
+      - name: Walk the demo
+        run: node scripts/demo-smoke.mjs http://localhost:3000

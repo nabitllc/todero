@@ -20,7 +20,7 @@
     "build-storybook": "storybook build -c storybook/.storybook -o storybook-static",
     "preview": "vite preview",
     "demo": "cross-env VITE_TODERO_DEMO=1 vite --port 5174",
-    "build:demo": "cross-env VITE_TODERO_DEMO=1 vite build --outDir dist-demo",
+    "build:demo": "vite build --outDir dist-demo",
     "typecheck": "tsc -b",
     "clean": "rm -rf dist storybook-static tsconfig.tsbuildinfo",
     "prepack": "rm -f package.dev.json && cp package.json package.dev.json && node ../scripts/generate-ui-package-json.mjs",
