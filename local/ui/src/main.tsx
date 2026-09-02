@@ -21,10 +21,12 @@ import { PluginLauncherProvider } from "./plugins/launchers";
 import { startPerfMeasureReaper } from "./lib/perf-measure-reaper";
 import { getOrCreateToderoReactRoot } from "./lib/react-root";
 import { startServiceWorkerUpdates } from "./lib/service-worker-updates";
+import { isDemo, startDemo } from "./demo";
+import { DemoBanner } from "./demo/DemoBanner";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
 
-initPluginBridge(React, ReactDOM);
+if (!isDemo) initPluginBridge(React, ReactDOM);
 
 // React 19.2 emits an unbounded stream of performance.measure() entries for its
 // DevTools performance tracks and never clears them; on a long-lived tab they
@@ -35,9 +37,11 @@ startPerfMeasureReaper();
 // re-checks /sw.js on tab focus and hourly, and applies a discovered update
 // with one reload while the tab is hidden — otherwise an old worker and its
 // cached shell can outlive a deploy indefinitely.
-window.addEventListener("load", () => {
-  startServiceWorkerUpdates();
-});
+if (!isDemo) {
+  window.addEventListener("load", () => {
+    startServiceWorkerUpdates();
+  });
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,13 +64,13 @@ function CompanyAwareBreadcrumbProvider({ children }: { children: React.ReactNod
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Todero root element is missing");
 
-getOrCreateToderoReactRoot(window, rootElement).render(
+const render = () => getOrCreateToderoReactRoot(window, rootElement).render(
   <StrictMode>
     <AppErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <SentryGate />
+        {isDemo ? null : <SentryGate />}
         <ThemeProvider>
-          <BrowserRouter>
+          <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <CompanyProvider>
               <EditorAutocompleteProvider>
                 <ToastProvider>
@@ -78,6 +82,7 @@ getOrCreateToderoReactRoot(window, rootElement).render(
                             <PluginLauncherProvider>
                               <DialogProvider>
                                 <App />
+                                {isDemo ? <DemoBanner /> : null}
                               </DialogProvider>
                             </PluginLauncherProvider>
                           </PanelProvider>
@@ -94,3 +99,5 @@ getOrCreateToderoReactRoot(window, rootElement).render(
     </AppErrorBoundary>
   </StrictMode>
 );
+
+void startDemo().then(render);
