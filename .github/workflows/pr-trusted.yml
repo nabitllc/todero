@@ -327,23 +327,24 @@ jobs:
       - name: Test general-server shard partition
         run: node --test ./scripts/__tests__/run-vitest-stable-shard.test.mjs
 
+      # The five skipped assertions check upstream Paperclip CI wiring
+      # (an immutable-SHA pr.yml caller, the stacked-PR scope selector, the
+      # lockfile refresh timeout) that this repository does not run. The
+      # shard-partition tests themselves still run.
       - name: Test e2e shard partition
-        run: node --test ./scripts/__tests__/e2e-shard.test.mjs
+        run: >-
+          node --test
+          --test-skip-pattern 'immutable SHA|aggregate check named e2e|stacked PR scope selector|spec filter to Playwright|stale stacked lockfiles'
+          ./scripts/__tests__/e2e-shard.test.mjs
 
-      - name: Test release verify workflow wiring
-        run: node --test ./scripts/__tests__/release-verify-workflow.test.mjs
+      # Skipped for now: "Test release verify workflow wiring",
+      # "Validate release package manifest", and "Verify release package
+      # bootstrap" validate the upstream release pipeline (release.yml,
+      # release-verify.yml, the public package manifest). This fork does not
+      # operate that pipeline yet. Restore them when it is adopted.
 
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
-
-      - name: Validate release package manifest
-        run: node ./scripts/release-package-map.mjs check
-
-      - name: Verify release package bootstrap for changed manifests
-        run: |
-          mapfile -t changed_paths < <(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
-          PAPERCLIP_RELEASE_BOOTSTRAP_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
-            node ./scripts/check-release-package-bootstrap.mjs "${changed_paths[@]}"
 
       - name: Validate dependency resolution and regenerate stale lockfile
         id: regen_lockfile
