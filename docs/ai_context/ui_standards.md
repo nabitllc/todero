@@ -2,8 +2,7 @@
 
 Scope: the public landing at `/` (`app/page.tsx`, `app/BoltBoard.tsx`, `app/page.module.css`,
 `app/WaitlistForm.tsx`) and the internal `/progress` log (`app/progress/*`). The shared tokens live in
-`app/globals.css` under `.todero`; page modules add only what is theirs. `/demo` carries the in-app work-item tokens (`app/demo/work-item.css`);
-`/progress` is a plain board. The local app under `local/` has its own system.
+`app/globals.css` under `.todero`; page modules add only what is theirs. `/demo` is the product itself, built from `local/ui`, with its own system.
 
 ## Mode 0 (written 2026-09-01; revised 2026-09-02 after the benchmark against Paperclip, Hermes, Linear, Vercel, Raycast, Ollama, Warp)
 
