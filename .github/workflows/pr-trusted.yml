@@ -285,7 +285,8 @@ jobs:
           # Diff the PR branch against its merge base so recent base-branch commits
           # do not masquerade as changes made by the PR itself.
           changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
-          if printf '%s\n' "$changed" | grep -qx 'pnpm-lock.yaml'; then
+          # The app lives under local/, so the lockfile is local/pnpm-lock.yaml.
+          if printf '%s\n' "$changed" | grep -qxE '(local/)?pnpm-lock\.yaml'; then
             echo "Do not commit pnpm-lock.yaml in pull requests. CI owns lockfile updates."
             exit 1
           fi
@@ -301,6 +302,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Validate migration ordering against target branch
         run: >-
@@ -396,6 +398,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -483,6 +486,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -503,6 +507,10 @@ jobs:
     needs: [gate, policy, typecheck_release_registry, general_tests, build]
     runs-on: ${{ needs.gate.outputs.runner }}
     timeout-minutes: 5
+    # Aggregator job without a checkout: the `local` default directory does not exist here.
+    defaults:
+      run:
+        working-directory: .
 
     steps:
       - name: Fail if any split verify lane failed
@@ -561,6 +569,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -626,6 +635,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -663,6 +673,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -741,6 +752,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          cache-dependency-path: local/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -799,6 +811,10 @@ jobs:
     needs: [gate, policy, e2e_shards]
     runs-on: ${{ needs.gate.outputs.runner }}
     timeout-minutes: 5
+    # Aggregator job without a checkout: the `local` default directory does not exist here.
+    defaults:
+      run:
+        working-directory: .
 
     steps:
       - name: Fail if any e2e shard failed
