@@ -37,6 +37,10 @@ fail on Windows.
 ## Constraints
 
 - PC must be on, awake, and signed in to Tailscale. Sleep kills access.
+- The Tailscale desktop app (`tailscale-ipn.exe`, tray icon) must be running. Without it the
+  Windows backend drops to `NoState` ("Tailscale is starting") and the node goes offline even
+  though the service is up. A Startup-folder shortcut launches it at logon; if the tray icon is
+  missing, start it from the Start menu.
 - Access by raw IP (`http://100.96.224.63`) returns 404 from tailscaled; serve routes by
   hostname, so use the MagicDNS name.
 - Plain HTTP inside WireGuard. Switch to `--https=443` only after enabling HTTPS
