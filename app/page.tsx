@@ -46,7 +46,7 @@ function OctopusMark() {
 
 export default function HomePage() {
   return (
-    <div className={`${styles.page} ${sans.variable} ${mono.variable}`}>
+    <div className={`todero ${styles.page} ${sans.variable} ${mono.variable}`}>
       <header className={styles.top}>
         <span className={styles.brand}>
           <OctopusMark />

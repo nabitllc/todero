@@ -1,6 +1,6 @@
 # Feature: `/progress` — an internal, password-gated log of merged PRs
 
-**Status**: Planned
+**Status**: Done (shipped 2026-09-02; see § 16)
 **Priority**: P1
 **Author**: Claude (CTO) for Michael (Strategist)
 **Created**: 2026-09-02 · **Updated**: 2026-09-02
@@ -179,7 +179,23 @@ GitHub REST API, read-only, server-side.
 - `/progress/logout` — server action target.
 
 ## 15. Open Questions
-1. **Session length 30 days** — recommended; shorter means typing the password on the phone more often.
-2. **Show author** as the GitHub login (agents will show as whoever pushed) — recommended; a
-   `Session:` field in the template can name the agent later.
-3. **How far back:** last 90 days, recommended; older stays on GitHub.
+None. Michael took the recommendations on 2026-09-02: 30-day session, GitHub login as author
+(`Session:` in the template overrides it), 90 days of history.
+
+## 16. What shipped (2026-09-02)
+
+- **Gate** — `middleware.ts` + `lib/progress/session.ts`: HMAC-signed HttpOnly cookie, 30 days,
+  constant-time password compare, five wrong tries → ten minutes, closed when env is missing.
+- **Data** — `lib/progress/github.ts`: merged PRs **and direct commits to `main`** (most of the
+  early work never went through a PR; the page would have been a lie without them). Checkpoint and
+  merge commits are skipped. `lib/progress/parse.ts` reads Summary / Cost / Proof / Session, strips
+  markdown and git trailers, truncates on a word. Five unit tests (`npm test`).
+- **Page** — one repeated row: label · title / summary / `+adds −dels · files · cost` / area · who ·
+  time. Bot PRs collapse to one line in Now. Tokens moved to `app/globals.css` `.todero`, shared with
+  the landing. Designer pass done; the rejected meta row was rebuilt as two ranks.
+- **Convention** — Paperclip's PR template kept, with Summary / Cost / Proof / Session prepended;
+  root `CLAUDE.md` and `local/AGENTS.md` tell sessions to fill them.
+- **Smoke** — `scripts/progress-smoke.mjs` walks redirect, wrong password, right password, both widths.
+
+Not done: the CI run of the smoke (needs the three secrets in GitHub Actions); automatic cost from
+Claude Code session logs or Todero run usage (follow-ups named in the PRD's cost section).

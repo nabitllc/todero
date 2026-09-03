@@ -3,49 +3,19 @@
   Hue 172 is the in-app kelp hue — the landing and /demo are the same product.
 */
 .page {
-  /* color — semantic */
-  --ink: oklch(0.19 0.028 172);
-  --shallows: oklch(0.25 0.03 172);
-  --bone: oklch(0.94 0.012 172);
-  --kelp: oklch(0.72 0.12 172);
-  --drift: oklch(0.72 0.03 172);
-  --coral: oklch(0.76 0.13 30);
-  /* color — derived */
-  --line: color-mix(in oklch, var(--bone) 14%, var(--ink));
-  --kelp-hover: color-mix(in oklch, var(--kelp) 88%, var(--bone));
-  --kelp-active: color-mix(in oklch, var(--kelp) 88%, var(--ink));
-
-  /* type — 1.25 ratio */
-  --t-xs: 0.8125rem;
-  --t-sm: 0.9375rem;
-  --t-base: 1.0625rem;
-  --t-lg: 1.375rem;
+  /* type — page-specific; the scale lives in globals.css .todero */
   --t-display: clamp(2.5rem, 1rem + 6.5vw, 6rem);
   --t-display-column: clamp(3rem, 1rem + 3.8vw, 4.25rem);
   --t-breath: clamp(var(--t-base), 0.9rem + 0.6vw, var(--t-lg));
 
-  /* space — 4pt scale */
-  --s-4: 0.25rem;
-  --s-8: 0.5rem;
-  --s-12: 0.75rem;
-  --s-16: 1rem;
-  --s-24: 1.5rem;
-  --s-32: 2rem;
-  --s-40: 2.5rem;
-  --s-48: 3rem;
-  --s-64: 4rem;
   --pad-x: clamp(1.25rem, 5vw, 4rem);
 
   /* size */
   --measure-short: 30ch;
-  --control: 3rem;
   --page-max: 72rem;
 
-  /* radii — locked: controls 6px, surfaces square */
-  --radius-control: 6px;
 
-  /* motion */
-  --ease: 160ms ease-out;
+  /* motion — page-specific */
   --enter: 250ms;
   --stagger: 80ms;
 

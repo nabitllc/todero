@@ -11,3 +11,37 @@
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
 body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
 a { color: inherit; }
+
+/* Todero public-surface tokens. Documented in docs/ai_context/ui_standards.md.
+   Both the landing and /progress take these from here; page modules add only what is theirs. */
+.todero {
+  --ink: oklch(0.19 0.028 172);
+  --shallows: oklch(0.25 0.03 172);
+  --bone: oklch(0.94 0.012 172);
+  --kelp: oklch(0.72 0.12 172);
+  --drift: oklch(0.72 0.03 172);
+  --coral: oklch(0.76 0.13 30);
+  --line: color-mix(in oklch, var(--bone) 14%, var(--ink));
+  --kelp-hover: color-mix(in oklch, var(--kelp) 88%, var(--bone));
+  --kelp-active: color-mix(in oklch, var(--kelp) 88%, var(--ink));
+
+  --t-xs: 0.8125rem;
+  --t-sm: 0.9375rem;
+  --t-base: 1.0625rem;
+  --t-lg: 1.375rem;
+  --t-xl: 1.6875rem;
+
+  --s-4: 0.25rem;
+  --s-8: 0.5rem;
+  --s-12: 0.75rem;
+  --s-16: 1rem;
+  --s-24: 1.5rem;
+  --s-32: 2rem;
+  --s-40: 2.5rem;
+  --s-48: 3rem;
+  --s-64: 4rem;
+
+  --control: 3rem;
+  --radius-control: 6px;
+  --ease: 160ms ease-out;
+}
