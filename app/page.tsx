@@ -1,4 +1,5 @@
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import Octopus from "./Octopus";
 import WaitlistForm from "./WaitlistForm";
 import styles from "./page.module.css";
 
@@ -43,18 +44,18 @@ function OctopusMark() {
   );
 }
 
-const bands = [
+const facts = [
   {
     title: "What you need.",
     body: "A laptop. A model you already have. Optional Second Brain. No Todero cloud account. No credit card.",
   },
   {
     title: "First run.",
-    body: "Name the company, write the mission, connect your model, pick a brain (GitHub, a folder, or none), and hire a lead.",
+    body: "Name the company, write the mission, connect your model, pick a brain, hire a lead.",
   },
   {
     title: "How you run it.",
-    body: "You comment or @ an agent. They leave a short summary (140). Status, assignee, and acceptance criteria live on the task. The work is the item, not a chat.",
+    body: "Comment or @ an agent. The work is the item, not a chat.",
   },
   {
     title: "Your model.",
@@ -85,42 +86,42 @@ export default function HomePage() {
           <OctopusMark />
           Todero
         </a>
+        <nav className={styles.nav} aria-label="Site">
+          <a className={styles.navLink} href="/demo">
+            Product
+          </a>
+          <a className={styles.navLink} href="/progress">
+            Board
+          </a>
+        </nav>
       </header>
 
       <main>
         <section className={styles.hero} aria-labelledby="hero-title">
+          <Octopus />
           <h1 className={styles.h1} id="hero-title">
             A company of AI agents,
             <br />
-            <span className={styles.h1Mono}>on your laptop.</span>
+            on your laptop.
           </h1>
-          <div className={styles.heroRow}>
-            <p className={styles.breath}>
-              You hire them. They work the mission. Your model. Your Second Brain.
-            </p>
-            <div className={styles.action}>
-              <WaitlistForm />
-              <a className={styles.see} href="/demo">
-                See the product
-                <span aria-hidden={true}>→</span>
-              </a>
-            </div>
+          <p className={styles.breath}>
+            You hire them. They work the mission. Your model. Your Second Brain.
+          </p>
+          <div className={styles.action}>
+            <WaitlistForm />
           </div>
         </section>
 
-        <section className={styles.bands} aria-label="About Todero">
-          {bands.map((band) => (
-            <article className={styles.band} key={band.title}>
-              <h2 className={styles.bandTitle}>{band.title}</h2>
-              <p className={styles.bandBody}>{band.body}</p>
+        <section className={styles.facts} aria-label="About Todero">
+          {facts.map((fact) => (
+            <article className={styles.fact} key={fact.title}>
+              <h2 className={styles.factTitle}>{fact.title}</h2>
+              <p className={styles.factBody}>{fact.body}</p>
             </article>
           ))}
         </section>
 
-        <section className={styles.faq} aria-labelledby="faq-title">
-          <h2 className={styles.faqTitle} id="faq-title">
-            Questions.
-          </h2>
+        <section className={styles.faq} aria-label="Questions">
           <dl className={styles.faqList}>
             {faq.map((item) => (
               <div className={styles.faqItem} key={item.q}>
@@ -135,9 +136,6 @@ export default function HomePage() {
       <footer className={styles.foot}>
         <span>Todero</span>
         <span>Based on Paperclip (MIT)</span>
-        <a className={styles.footLink} href="/progress">
-          Product board
-        </a>
       </footer>
     </div>
   );

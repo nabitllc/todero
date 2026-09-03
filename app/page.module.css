@@ -4,8 +4,8 @@
 */
 .page {
   /* color — semantic */
-  --ink: oklch(0.17 0.028 172);
-  --shallows: oklch(0.23 0.03 172);
+  --ink: oklch(0.19 0.028 172);
+  --shallows: oklch(0.25 0.03 172);
   --bone: oklch(0.94 0.012 172);
   --kelp: oklch(0.72 0.12 172);
   --drift: oklch(0.72 0.03 172);
@@ -21,7 +21,7 @@
   --t-base: 1.0625rem;
   --t-lg: 1.375rem;
   --t-xl: 1.75rem;
-  --t-display: clamp(2.5rem, 1rem + 6.5vw, 5.5rem);
+  --t-display: clamp(2.5rem, 1rem + 6.5vw, 6rem);
 
   /* space — 4pt scale, fluid where the page breathes */
   --s-4: 0.25rem;
@@ -33,22 +33,25 @@
   --s-48: 3rem;
   --s-64: 4rem;
   --pad-x: clamp(1.25rem, 5vw, 4rem);
-  --gap-band: clamp(4rem, 10vw, 7rem);
-  --hero-top: clamp(4rem, 14vh, 9rem);
+  --gap-screen: clamp(4rem, 10vh, 7rem);
 
   /* size */
   --measure: 60ch;
-  --measure-short: 36ch;
+  --measure-short: 40ch;
   --control: 3rem;
   --page-max: 72rem;
+  --header: 4.5rem;
+  --octopus-w: clamp(20rem, 60vw, 48rem);
 
   /* radii — locked: controls 6px, surfaces square */
   --radius-control: 6px;
 
   /* motion */
   --ease: 160ms ease-out;
+  --enter: 250ms;
+  --stagger: 80ms;
 
-  min-height: 100vh;
+  min-height: 100svh;
   display: flex;
   flex-direction: column;
   background: var(--ink);
@@ -79,10 +82,16 @@
 
 /* header */
 .top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-24);
   width: 100%;
   max-width: var(--page-max);
+  min-height: var(--header);
   margin: 0 auto;
-  padding: var(--s-16) var(--pad-x);
+  padding: 0 var(--pad-x);
+  animation: rise var(--enter) ease-out both;
 }
 
 .brand {
@@ -101,12 +110,69 @@
   color: var(--kelp);
 }
 
-/* hero */
+.nav {
+  display: flex;
+  gap: var(--s-24);
+}
+
+.navLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  font-size: var(--t-sm);
+  color: var(--drift);
+  text-decoration: none;
+  transition: color var(--ease);
+}
+
+.navLink:hover {
+  color: var(--bone);
+}
+
+/* hero — one screen */
 .hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-24);
   width: 100%;
   max-width: var(--page-max);
+  min-height: calc(100svh - var(--header));
   margin: 0 auto;
-  padding: var(--hero-top) var(--pad-x) 0;
+  padding: var(--s-32) var(--pad-x) var(--s-64);
+  text-align: center;
+}
+
+.octopus {
+  width: var(--octopus-w);
+  max-width: 100%;
+  height: auto;
+  color: var(--kelp);
+  overflow: visible;
+}
+
+.head {
+  animation: fade var(--enter) ease-out both;
+}
+
+.arm {
+  stroke-dasharray: 1;
+  animation: draw 700ms ease-out both;
+  animation-delay: calc(200ms + var(--i) * 60ms);
+}
+
+.tip,
+.role {
+  animation: fade var(--enter) ease-out both;
+  animation-delay: calc(800ms + var(--i) * 60ms);
+}
+
+.role {
+  display: none;
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 14px;
+  fill: var(--drift);
 }
 
 .h1 {
@@ -115,21 +181,10 @@
   font-size: var(--t-display);
   font-weight: 500;
   line-height: 1.04;
-  letter-spacing: -0.03em;
-  text-wrap: pretty;
-}
-
-.h1Mono {
-  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
-  font-weight: 400;
-  letter-spacing: -0.04em;
-  color: var(--kelp);
-}
-
-.heroRow {
-  display: grid;
-  gap: var(--s-32);
-  margin-top: var(--s-32);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  animation: rise var(--enter) ease-out both;
+  animation-delay: calc(var(--stagger) * 2);
 }
 
 .breath {
@@ -139,18 +194,23 @@
   line-height: 1.4;
   color: var(--drift);
   text-wrap: pretty;
+  animation: rise var(--enter) ease-out both;
+  animation-delay: calc(var(--stagger) * 3);
 }
 
 .action {
-  display: grid;
-  gap: var(--s-16);
-  max-width: 30rem;
+  width: 100%;
+  max-width: 36rem;
+  margin-top: var(--s-8);
+  animation: rise var(--enter) ease-out both;
+  animation-delay: calc(var(--stagger) * 4);
 }
 
 /* waitlist */
 .form {
   display: grid;
   gap: var(--s-8);
+  text-align: left;
 }
 
 .label {
@@ -162,7 +222,25 @@
 
 .control {
   display: grid;
+  grid-template-areas: "input" "join" "note" "see";
   gap: var(--s-8);
+}
+
+.input {
+  grid-area: input;
+}
+
+.button {
+  grid-area: join;
+}
+
+.ghost {
+  grid-area: see;
+}
+
+.help,
+.error {
+  grid-area: note;
 }
 
 .input {
@@ -202,21 +280,29 @@
   opacity: 0.6;
 }
 
-.button {
+.button,
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: var(--control);
-  min-width: 11em;
   margin: 0;
   padding: 0 var(--s-24);
-  border: 0;
   border-radius: var(--radius-control);
-  background: var(--kelp);
-  color: var(--ink);
   font: inherit;
   font-size: var(--t-base);
   font-weight: 500;
   line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--ease);
+  transition: background-color var(--ease), border-color var(--ease), transform 120ms ease-out;
+}
+
+.button {
+  border: 0;
+  background: var(--kelp);
+  color: var(--ink);
 }
 
 .button:hover {
@@ -225,11 +311,27 @@
 
 .button:active {
   background: var(--kelp-active);
+  transform: translateY(1px);
 }
 
 .button:disabled {
   cursor: progress;
   opacity: 0.6;
+  transform: none;
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--bone);
+}
+
+.ghost:hover {
+  border-color: var(--drift);
+}
+
+.ghost:active {
+  transform: translateY(1px);
 }
 
 .help {
@@ -252,6 +354,7 @@
   margin: 0;
   min-height: var(--control);
   align-content: center;
+  text-align: center;
 }
 
 .successTitle {
@@ -266,77 +369,49 @@
   color: var(--drift);
 }
 
-.see {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-8);
-  min-height: 2.75rem;
-  width: fit-content;
-  font-size: var(--t-sm);
-  font-weight: 500;
-  color: var(--bone);
-  text-decoration: underline;
-  text-decoration-color: var(--drift);
-  transition: text-decoration-color var(--ease);
-}
-
-.see:hover {
-  text-decoration-color: var(--kelp);
-}
-
-/* bands */
-.bands {
+/* screen two — facts, questions, footer */
+.facts {
   display: grid;
-  gap: var(--gap-band);
+  gap: var(--s-32);
   width: 100%;
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: var(--gap-band) var(--pad-x) 0;
+  padding: var(--gap-screen) var(--pad-x) 0;
 }
 
-.band {
+.fact {
   display: grid;
-  gap: var(--s-12);
+  gap: var(--s-8);
   margin: 0;
 }
 
-.bandTitle {
+.factTitle {
   margin: 0;
-  font-size: var(--t-xl);
+  font-size: var(--t-lg);
   font-weight: 500;
-  line-height: 1.2;
-  letter-spacing: -0.015em;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
 
-.bandBody {
+.factBody {
   margin: 0;
   max-width: var(--measure);
   font-size: var(--t-base);
-  color: var(--bone);
+  color: var(--drift);
   text-wrap: pretty;
 }
 
-/* faq */
 .faq {
   width: 100%;
   max-width: var(--page-max);
   margin: 0 auto;
-  padding: var(--gap-band) var(--pad-x);
-}
-
-.faqTitle {
-  margin: 0 0 var(--s-32);
-  font-size: var(--t-xl);
-  font-weight: 500;
-  line-height: 1.2;
-  letter-spacing: -0.015em;
+  padding: var(--gap-screen) var(--pad-x) 0;
 }
 
 .faqList {
   display: grid;
   gap: var(--s-24);
   margin: 0;
-  max-width: var(--measure);
 }
 
 .faqItem {
@@ -356,7 +431,6 @@
   color: var(--bone);
 }
 
-/* footer */
 .foot {
   display: flex;
   flex-wrap: wrap;
@@ -364,59 +438,81 @@
   width: 100%;
   max-width: var(--page-max);
   margin: auto auto 0;
-  padding: var(--s-24) var(--pad-x) var(--s-48);
-  border-top: 1px solid var(--line);
+  padding: var(--gap-screen) var(--pad-x) var(--s-48);
   font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
   font-size: var(--t-xs);
   color: var(--drift);
 }
 
-.footLink {
-  display: inline-flex;
-  align-items: center;
-  min-height: 2.75rem;
-  margin: calc(-1 * var(--s-12)) 0;
-  color: var(--drift);
-  text-decoration: underline;
-  text-decoration-color: var(--line);
-  transition: color var(--ease), text-decoration-color var(--ease);
-}
-
-.footLink:hover {
-  color: var(--bone);
-  text-decoration-color: var(--kelp);
-}
-
-/* ≥ 40rem: the control becomes one row */
+/* ≥ 40rem: the control becomes one row; arm roles appear */
 @media (min-width: 40rem) {
   .control {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-}
-
-/* ≥ 64rem: breath and action share a row; bands become a ledger */
-@media (min-width: 64rem) {
-  .heroRow {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 30rem);
-    gap: var(--s-64);
-    margin-top: var(--s-48);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "input join see" "note note note";
   }
 
-  .band {
-    grid-template-columns: 14rem minmax(0, var(--measure));
-    gap: var(--s-48);
-    align-items: start;
+  .role {
+    display: block;
+  }
+
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-48) var(--s-32);
   }
 
   .faqList {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s-32) var(--s-48);
+    gap: var(--s-24) var(--s-32);
+  }
+}
+
+/* ≥ 64rem: three-up facts, four-up questions */
+@media (min-width: 64rem) {
+  .facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-48);
+  }
+
+  .faqList {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--s-32);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page * {
+  .page *,
+  .page *::before,
+  .page *::after {
+    animation: none !important;
     transition: none !important;
   }
 }
