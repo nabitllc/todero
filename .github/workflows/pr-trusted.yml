@@ -25,6 +25,11 @@ jobs:
     name: Select trusted runner
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # This job never checks out code, so the workflow-level `local` working
+    # directory does not exist here. Run its shell steps in the workspace root.
+    defaults:
+      run:
+        working-directory: .
     outputs:
       runner: ${{ steps.route.outputs.runner }}
       full_ci: ${{ steps.scope.outputs.full_ci }}
