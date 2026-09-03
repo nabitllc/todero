@@ -8,6 +8,7 @@ import { parseBody, type ParsedBody } from "./parse";
 const REPO = "nabitllc/todero";
 const API = `https://api.github.com/repos/${REPO}`;
 const DAYS = 90;
+const LIMIT = 10;
 const REVALIDATE = 300;
 const CONCURRENCY = 6;
 
@@ -155,8 +156,8 @@ async function commitEntry(token: string, item: CommitListItem): Promise<Entry> 
   };
 }
 
-/** Merged PRs and direct commits on main from the last 90 days, newest first. */
-export async function landed(token: string, now = Date.now()): Promise<Entry[]> {
+/** The ten most recent things on main — merged PRs and direct commits — within 90 days, newest first. */
+export async function landed(token: string, now = Date.now(), limit = LIMIT): Promise<Entry[]> {
   const since = new Date(now - DAYS * 24 * 60 * 60 * 1000).toISOString();
   const [closed, commits] = await Promise.all([
     gh<PullListItem[]>(token, "/pulls?state=closed&sort=updated&direction=desc&per_page=100"),
@@ -172,8 +173,15 @@ export async function landed(token: string, now = Date.now()): Promise<Entry[]> 
 
   const direct = commits.filter((c) => !viaPr.has(c.sha) && c.parents.length === 1 && !isNoise(c.commit.message));
 
-  const entries = await Promise.all([mapLimit(merged, (p) => pullEntry(token, p)), mapLimit(direct, (c) => commitEntry(token, c))]);
-  return entries.flat().sort((a, b) => b.at.localeCompare(a.at));
+  // Pick the newest before enriching, so a long history costs a fixed number of calls.
+  const candidates = [
+    ...merged.map((p) => ({ at: p.merged_at ?? p.created_at, enrich: () => pullEntry(token, p) })),
+    ...direct.map((c) => ({ at: c.commit.author?.date ?? "", enrich: () => commitEntry(token, c) })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, limit);
+  const entries = await mapLimit(candidates, (c) => c.enrich());
+  return entries.sort((a, b) => b.at.localeCompare(a.at));
 }
 
 export async function openPulls(token: string): Promise<Entry[]> {
