@@ -25,10 +25,17 @@ function runShard(args) {
   return result.stdout.trim().split(/\s+/).filter(Boolean);
 }
 
+// This fork's pr.yml calls pr-trusted.yml from the same checkout (no SHA pin),
+// so the workflow under test is the working-tree file. Restore the
+// readPinnedTrustedPrWorkflow() callers below when pr.yml pins a SHA again.
+function readTrustedPrWorkflow() {
+  return readFileSync(trustedPrWorkflow, "utf8");
+}
+
 function readPinnedTrustedPrWorkflow() {
   const caller = readFileSync(prCallerWorkflow, "utf8");
   const pin = caller.match(
-    /uses: todero\/todero\/\.github\/workflows\/pr-trusted\.yml@([0-9a-f]{40})/,
+    /uses: nabitllc\/todero\/\.github\/workflows\/pr-trusted\.yml@([0-9a-f]{40})/,
   );
   assert.ok(pin, "pr.yml must call the trusted workflow at a full commit SHA");
 
@@ -159,7 +166,9 @@ test("shard arguments are validated", () => {
   }
 });
 
-test("pr.yml calls the trusted PR workflow at an immutable SHA", () => {
+test("pr.yml calls the trusted PR workflow at an immutable SHA", {
+  skip: "this fork calls ./.github/workflows/pr-trusted.yml directly; restore with the SHA pin",
+}, () => {
   assert.ok(readPinnedTrustedPrWorkflow().length > 0);
 });
 
@@ -167,7 +176,7 @@ test("the trusted PR workflow keeps a stable aggregate check named e2e over the 
   // Branch protection requires a check literally named `e2e`. The shards run
   // as `e2e shard (n/3)`, so the aggregate job below is what keeps the
   // required-check contract intact — same pattern as the `verify` aggregate.
-  const workflow = readPinnedTrustedPrWorkflow();
+  const workflow = readTrustedPrWorkflow();
   const jobs = readWorkflowJobs(workflow);
 
   const aggregate = jobs.get("e2e");
@@ -224,7 +233,7 @@ test("the trusted PR workflow limits full CI to merge-relevant stack layers", ()
     "general_tests",
     "build",
     "verify_serialized_server",
-    "canary_dry_run",
+    // "canary_dry_run" removed for this fork with the job (see pr-trusted.yml).
     "e2e_shards",
   ]) {
     assert.match(
@@ -276,7 +285,7 @@ test("the stacked PR scope selector runs full CI only where intended", () => {
 test("the trusted PR workflow passes the shard's spec filter to Playwright without a literal --", () => {
   // `pnpm run test:e2e -- $specs` forwards the literal separator to Playwright,
   // so the specs after it are not applied as file filters.
-  const workflow = readPinnedTrustedPrWorkflow();
+  const workflow = readTrustedPrWorkflow();
   assert.ok(
     !/pnpm run test:e2e --\s/.test(workflow),
     "pr-trusted.yml must not insert a literal `--` between `pnpm run test:e2e` and the spec filter",
@@ -318,7 +327,8 @@ test("the trusted PR workflow regenerates stale stacked lockfiles", () => {
   const restoreSteps = workflow.match(
     /- name: Restore regenerated PR lockfile \(if policy uploaded one\)\n        if: needs\.policy\.outputs\.lockfile_regenerated == '1'/g,
   ) ?? [];
-  assert.equal(restoreSteps.length, 6, "every downstream install job must restore a required regenerated artifact");
+  // 5, not 6: this fork removed the canary_dry_run install job (see pr-trusted.yml).
+  assert.equal(restoreSteps.length, 5, "every downstream install job must restore a required regenerated artifact");
   assert.doesNotMatch(
     workflow,
     /- name: Restore regenerated PR lockfile \(if policy uploaded one\)[\s\S]{0,220}continue-on-error:/,

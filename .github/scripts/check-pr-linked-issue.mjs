@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const ISSUE_PATTERNS = [
   /(?:fixes|closes|resolves|refs)\s+#\d+/i,
-  /(?:^|[\s(])https:\/\/github\.com\/todero\/todero\/issues\/\d+(?=$|[\s),:;!?]|[.](?![\w-]))/i,
+  /(?:^|[\s(])https:\/\/github\.com\/nabitllc\/todero\/issues\/\d+(?=$|[\s),:;!?]|[.](?![\w-]))/i,
   /(?<!\w)#\d+/,
 ];
 

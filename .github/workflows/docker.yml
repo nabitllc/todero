@@ -1,9 +1,12 @@
 name: Docker
 
 on:
+  # Removed for this fork: `branches: ["main"]` under `push`. Every push to the
+  # default branch built and published a multi-arch `:canary` image to ghcr.io,
+  # which is the upstream release lane this fork does not operate (and it would
+  # burn the private-repo Actions minutes the PR checks need). Tag pushes and
+  # manual dispatch still build. Restore the branch trigger with the pipeline.
   push:
-    branches:
-      - "master"
     tags:
       - "v*"
       - "nightly/v*"
@@ -150,7 +153,7 @@ jobs:
           echo "last=${last}" >> "$GITHUB_OUTPUT"
           echo "count=${count}" >> "$GITHUB_OUTPUT"
 
-      # Lane tag mapping: master pushes publish `:canary`, nightly/v* tags
+      # Lane tag mapping: main pushes publish `:canary`, nightly/v* tags
       # publish `:nightly`, and only stable v* tags move `:latest` and the
       # versioned tags. `:sha-<short>` is published on every build.
       - name: Docker meta
@@ -159,7 +162,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=canary,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=canary,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=nightly,enable=${{ startsWith(github.ref, 'refs/tags/nightly/v') }}
             type=raw,value=beta,enable=${{ startsWith(github.ref, 'refs/tags/beta/v') }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -188,7 +191,7 @@ jobs:
           # cache is capped at 10GB per repo, and two multi-arch mode=max jobs
           # evict each other, so most builds ran effectively cold. The cache
           # ref lives in ghcr next to the image and is written only by this
-          # workflow (docker.yml runs on master/tag pushes, never on PRs).
+          # workflow (docker.yml runs on main/tag pushes, never on PRs).
           cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
           tags: ${{ steps.meta.outputs.tags }}
@@ -355,7 +358,7 @@ jobs:
           flavor: |
             suffix=-cloud,onlatest=true
           tags: |
-            type=raw,value=canary,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=canary,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=nightly,enable=${{ startsWith(github.ref, 'refs/tags/nightly/v') }}
             type=raw,value=beta,enable=${{ startsWith(github.ref, 'refs/tags/beta/v') }}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}

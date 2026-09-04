@@ -1,5 +1,23 @@
 <!-- Write all pull request text in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, simple approved vocabulary, and the active voice. -->
 
+## Summary
+
+<!-- One sentence. It is the line /progress shows. -->
+
+## Cost
+
+tokens= usd=
+
+<!-- What this PR's session spent. Leave blank if unknown; never estimate. -->
+
+## Proof
+
+<!-- A screenshot, a CI run, or a URL that shows it works. -->
+
+## Session
+
+<!-- Who did the work: "Claude Code on G14", "Todero agent Build", a person. Optional. -->
+
 ## Thinking Path
 
 <!--
