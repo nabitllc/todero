@@ -318,20 +318,15 @@ jobs:
       - name: Test e2e shard partition
         run: node --test ./scripts/__tests__/e2e-shard.test.mjs
 
-      - name: Test release verify workflow wiring
-        run: node --test ./scripts/__tests__/release-verify-workflow.test.mjs
-
       - name: Test standalone package build concurrency
         run: node --test ./scripts/__tests__/build-standalone-concurrency.test.mjs
 
-      - name: Validate release package manifest
-        run: node ./scripts/release-package-map.mjs check
-
-      - name: Verify release package bootstrap for changed manifests
-        run: |
-          mapfile -t changed_paths < <(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")
-          PAPERCLIP_RELEASE_BOOTSTRAP_BASE_SHA="${{ github.event.pull_request.base.sha }}" \
-            node ./scripts/check-release-package-bootstrap.mjs "${changed_paths[@]}"
+      # Removed for this fork: "Test release verify workflow wiring",
+      # "Validate release package manifest", and "Verify release package
+      # bootstrap for changed manifests". They validate the upstream Paperclip
+      # release pipeline (release.yml, release-verify.yml, the public npm
+      # package manifest), which this fork does not operate. Restore the three
+      # steps from upstream pr-trusted.yml when the release pipeline is adopted.
 
       - name: Validate dependency resolution and regenerate stale lockfile
         id: regen_lockfile
@@ -393,8 +388,10 @@ jobs:
       - name: Typecheck workspaces whose build scripts skip TypeScript
         run: pnpm run typecheck:build-gaps
 
-      - name: Verify release registry test coverage
-        run: pnpm run test:release-registry
+      # Removed for this fork: "Verify release registry test coverage"
+      # (`pnpm run test:release-registry`). It exercises the upstream npm
+      # release registry machinery, which this fork does not publish to.
+      # Restore the step when the release pipeline is adopted.
 
   general_tests:
     name: General tests (${{ matrix.group_label }})
@@ -623,63 +620,10 @@ jobs:
       - name: Run serialized server test shard
         run: pnpm test:run:serialized -- --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}
 
-  canary_dry_run:
-    name: Canary Dry Run
-    needs: [gate, policy]
-    if: ${{ needs.gate.outputs.full_ci == 'true' }}
-    runs-on: ${{ needs.gate.outputs.runner }}
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
-        with:
-          version: 9.15.4
-
-      - name: Restore regenerated PR lockfile (if policy uploaded one)
-        if: needs.policy.outputs.lockfile_regenerated == '1'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          name: pr-lockfile
-          path: .
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # `release.sh` always executes its Step 2/7 workspace build, even when
-      # `--skip-verify` bypasses the initial verification gate. release.sh
-      # also requires a clean working tree, so any in-place lockfile churn
-      # from `pnpm install --frozen-lockfile` must be reverted first — unless
-      # the policy job uploaded a regenerated lockfile (manifest-changing
-      # PRs), in which case we stage the artifact-restored copy into an
-      # ephemeral local commit so release.sh sees a clean tree and its
-      # workspace build sees a lockfile that matches the manifest.
-      - name: Release canary dry run via release.sh internal build
-        env:
-          USED_ARTIFACT_LOCKFILE: ${{ needs.policy.outputs.lockfile_regenerated || '0' }}
-        run: |
-          git checkout -B master HEAD
-          if [ "$USED_ARTIFACT_LOCKFILE" = "1" ]; then
-            git add pnpm-lock.yaml
-            if ! git diff --cached --quiet; then
-              git -c user.email=ci@todero.local -c user.name=CI \
-                commit --no-verify -m "ci(canary): stage regenerated lockfile"
-            fi
-          else
-            git checkout -- pnpm-lock.yaml
-          fi
-          ./scripts/release.sh canary --skip-verify --dry-run
+  # Removed for this fork: the `canary_dry_run` job ran `./scripts/release.sh
+  # canary --skip-verify --dry-run` on a throwaway `master` branch. It belongs
+  # to the upstream npm release pipeline, which this fork does not operate.
+  # Restore the job from upstream pr-trusted.yml when the pipeline is adopted.
 
   e2e_shards:
     name: e2e shard (${{ matrix.shard_label }})

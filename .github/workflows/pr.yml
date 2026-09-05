@@ -10,4 +10,9 @@ permissions:
 
 jobs:
   ci:
-    uses: nabitllc/todero/.github/workflows/pr-trusted.yml@39b8ee2960541d14b380f95365deecba6723d9bd
+    # This fork calls the trusted workflow from the same checkout instead of
+    # pinning a commit SHA. Only maintainers open pull requests here, and the
+    # upstream pin needs a second "activation" PR for every workflow change.
+    # Restore the `nabitllc/todero/.github/workflows/pr-trusted.yml@<sha>` pin
+    # when outside contributors arrive.
+    uses: ./.github/workflows/pr-trusted.yml
