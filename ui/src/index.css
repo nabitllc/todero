@@ -2493,4 +2493,5 @@ span.todero-mention-chip[data-mention-kind="external-object"] {
    * allow ui/src/pages/ProjectWorkspaceDetail.test.tsx — mock project color fixture
    * allow ui/src/pages/Projects.test.tsx — mock project color fixture
    * allow ui/src/pages/Routines.test.tsx — mock routine/label color fixtures
+   * allow ui/src/components/todero/LocalLlmPicker.test.tsx — regex assertion values read from this file's own select.todero-native-select option rule (a deliberate literal-color opt-out for Chromium native popup menus, see the rule's comment); the test guards the token layer's source text, so a var() reference would defeat the assertion
    ── end allowlist ── */
