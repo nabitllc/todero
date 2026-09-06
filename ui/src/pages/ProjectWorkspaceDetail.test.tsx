@@ -236,7 +236,7 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
 
   it("renders an arbitrary project_workspace plugin detail tab from the generic URL value", async () => {
     mockPluginSlotState.slots = [pluginSlot()];
-    mockRouteSearch.value = "?tab=plugin%3Apaperclip.quality%3Aquality-tab&diffView=head&baseRef=origin%2Fmaster";
+    mockRouteSearch.value = "?tab=plugin%3Atodero.quality%3Aquality-tab&diffView=head&baseRef=origin%2Fmaster";
 
     await render();
 
@@ -254,7 +254,7 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
 
   it("keeps the project workspace heading visible on plugin tabs", async () => {
     mockPluginSlotState.slots = [pluginSlot({ displayName: "Changes" })];
-    mockRouteSearch.value = "?tab=plugin%3Apaperclip.quality%3Aquality-tab";
+    mockRouteSearch.value = "?tab=plugin%3Atodero.quality%3Aquality-tab";
 
     await render();
 
@@ -289,7 +289,7 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
     });
 
     expect(mockNavigate).toHaveBeenCalledWith(
-      "/projects/todero-app/workspaces/workspace-1?tab=plugin%3Apaperclip.quality%3Aquality-tab",
+      "/projects/todero-app/workspaces/workspace-1?tab=plugin%3Atodero.quality%3Aquality-tab",
     );
     expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining("diffView"));
     expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining("baseRef"));
@@ -322,7 +322,7 @@ describe("ProjectWorkspaceDetail plugin tabs", () => {
 
   it("shows loading and error states for plugin tab manifests", async () => {
     mockPluginSlotState.isLoading = true;
-    mockRouteSearch.value = "?tab=plugin%3Apaperclip.quality%3Aquality-tab";
+    mockRouteSearch.value = "?tab=plugin%3Atodero.quality%3Aquality-tab";
 
     await render();
 

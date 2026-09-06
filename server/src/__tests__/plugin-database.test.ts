@@ -473,7 +473,7 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
       .where(and(eq(pluginMigrations.pluginId, pluginId), eq(pluginMigrations.status, "applied")));
     expect(migrations.map((migration) => migration.migrationKey)).toEqual([
       "001_llm_wiki.sql",
-      "002_paperclip_distillation.sql",
+      "002_todero_distillation.sql",
       "003_spaces.sql",
     ]);
 
