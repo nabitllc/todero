@@ -238,7 +238,7 @@ interface CatalogTeamProvenance {
 }
 
 /**
- * Extract `metadata.paperclip.catalogTeam` provenance written by the team
+ * Extract `metadata.todero.catalogTeam` provenance written by the team
  * importer (see `renderCatalogProvenanceYaml`). Returns null when the agent was
  * not installed from a catalog team.
  */
@@ -246,7 +246,7 @@ export function readCatalogTeamProvenance(
   metadata: Record<string, unknown> | null | undefined,
 ): CatalogTeamProvenance | null {
   if (!isPlainRecord(metadata)) return null;
-  const todero = isPlainRecord(metadata.paperclip) ? metadata.paperclip : null;
+  const todero = isPlainRecord(metadata.todero) ? metadata.todero : null;
   const catalogTeam = todero && isPlainRecord(todero.catalogTeam) ? todero.catalogTeam : null;
   if (!catalogTeam) return null;
   const catalogId = readNonEmptyString(catalogTeam.catalogId);

@@ -31,7 +31,7 @@
     "dist",
     "bridge-template"
   ],
-  "paperclipPlugin": {
+  "toderoPlugin": {
     "manifest": "./dist/manifest.js",
     "worker": "./dist/worker.js"
   },

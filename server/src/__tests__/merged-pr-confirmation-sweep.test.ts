@@ -39,10 +39,10 @@ describe("merged pull-request confirmation extraction", () => {
   it("extracts and deduplicates full GitHub URLs and owner/repo#N shorthand", () => {
     expect(extractGitHubPullRequestReferences([
       "Merge https://github.com/ToderoAI/todero/pull/39.",
-      "Also nabitllc/todero#40 and TODEROAI/todero#40.",
+      "Also nabitllc/todero#40 and NABITLLC/todero#40.",
     ])).toEqual([
       { host: "github.com", owner: "ToderoAI", repo: "todero", number: 39 },
-      { host: "github.com", owner: "todero", repo: "todero", number: 40 },
+      { host: "github.com", owner: "nabitllc", repo: "todero", number: 40 },
     ]);
   });
 
@@ -84,8 +84,8 @@ describe("merged pull-request confirmation extraction", () => {
         },
       },
     })).toEqual([
-      { host: "github.com", owner: "todero", repo: "todero", number: 39 },
-      { host: "github.com", owner: "todero", repo: "todero", number: 40 },
+      { host: "github.com", owner: "nabitllc", repo: "todero", number: 39 },
+      { host: "github.com", owner: "nabitllc", repo: "todero", number: 40 },
     ]);
   });
 

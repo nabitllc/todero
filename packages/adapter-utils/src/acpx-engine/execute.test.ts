@@ -3991,8 +3991,8 @@ describe("ACPX engine sandbox-start spans (opt-in root + child parenting)", () =
     expect(childNames).toEqual(
       [
         "acp.handshake",
-        "bridge.todero",
         "bridge.process-session",
+        "bridge.todero",
         "codex-home.seed",
         "pack",
         "skills.reconcile",

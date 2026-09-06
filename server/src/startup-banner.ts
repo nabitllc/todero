@@ -94,7 +94,7 @@ function resolveAgentJwtSecretStatus(
 
   return {
     status: "warn",
-    message: "missing (run `pnpm todero onboard`)",
+    message: "missing (run `npx todero onboard`)",
   };
 }
 

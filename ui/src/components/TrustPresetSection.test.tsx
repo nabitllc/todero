@@ -48,7 +48,7 @@ describe("TrustPresetSection", () => {
 
     expect(view.text()).toContain("Trust preset");
     expect(view.text()).not.toContain("Boundary type");
-    expect(view.text()).not.toContain("Get Todero EE.");
+    expect(view.text()).not.toContain("Learn more about Todero.");
   });
 
   it("shows a selectable CE boundary editor for low-trust review", () => {
@@ -68,7 +68,7 @@ describe("TrustPresetSection", () => {
     expect(view.text()).toContain("Containment active");
     expect(view.text()).toContain("Boundary type");
     expect(view.text()).toContain("Todero App");
-    expect(view.text()).toContain("Get Todero EE.");
+    expect(view.text()).toContain("Learn more about Todero.");
     expect(view.text()).not.toContain("Managed by EE/API");
   });
 

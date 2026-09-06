@@ -88,8 +88,12 @@ async function runOnboardingWizard(page: Page, companyName: string) {
 
   // Step 4: adapter (claude_local default); heartbeat is intercepted.
   await page.getByRole("button", { name: /^Connect$/ }).click();
+  // Step 5: Second Brain. The wizard offers the Recommended vault that
+  // `onboard --yes` already cloned; the test keeps the instance vault-free.
+  await page.getByRole("button", { name: /^None/ }).click();
+  await page.getByRole("button", { name: /^Continue/ }).click();
 
-  // Step 5: review → Get started creates the first task and opens its
+  // Step 6: review → Get started creates the first task and opens its
   // detail page.
   const getStarted = page.getByRole("button", { name: /Get started/ });
   await getStarted.waitFor({ timeout: 20_000 });

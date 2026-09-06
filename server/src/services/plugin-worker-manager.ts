@@ -1765,6 +1765,10 @@ export function createPluginWorkerHandle(
   interface HeldDuplexExitEvent {
     workerSessionId: string;
     exitCode: number | null;
+    // A reason-less transport close carries no exit code. Keep the discriminator
+    // through the hold, so the replay after the bind still tells a transport
+    // close from a real exit.
+    transportClosed: boolean;
   }
 
   interface DuplexChannelRoute {
@@ -2169,7 +2173,7 @@ export function createPluginWorkerHandle(
       // Normalize the exit to the narrow duplex-event schema. A replaced exit
       // simply overwrites the earlier held exit.
       const exitCode = typeof params.exitCode === "number" ? params.exitCode : null;
-      route.preBindExit = { workerSessionId, exitCode };
+      route.preBindExit = { workerSessionId, exitCode, transportClosed: params.transportClosed === true };
       return;
     }
     // A data event. Validate and normalize it to the narrow duplex-event schema
@@ -2237,6 +2241,7 @@ export function createPluginWorkerHandle(
             hostRouteId: route.hostRouteId,
             workerSessionId: heldExit.workerSessionId,
             exitCode: heldExit.exitCode,
+            ...(heldExit.transportClosed ? { transportClosed: true } : {}),
           },
         });
       }

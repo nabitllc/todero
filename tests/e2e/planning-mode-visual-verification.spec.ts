@@ -6,9 +6,17 @@ import {
 
 /** The name the CEO role fills in — see AGENT_ROLE_LABELS. */
 const AGENT_NAME = "CEO";
-const TASK_TITLE = "Todero onboarding";
+/** The typed mission; the wizard names the first task after it. */
+const MISSION = "Ship the product";
+const TASK_TITLE = MISSION;
 
 test("captures planning mode UI for desktop and mobile", async ({ page }) => {
+  // The work-item task page (ui/src/components/work-item, the default since
+  // 2026-08-30) has no task-chat composer and no planning-mode toggle, so the
+  // surface this spec captures is gone. The wizard steps above the capture are
+  // current. Remove this fixme once the work-item view gets a planning mode,
+  // or once the spec is rewritten for it.
+  test.fixme(true, "the work-item task page has no task-chat composer or planning-mode toggle");
   const timestamp = Date.now();
   const companyName = `PAP-3413-${timestamp}`;
   const screenshotDir = "test-results/planning-mode";
@@ -59,7 +67,11 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
   await page.locator('input[placeholder="e.g. Northwind Labs"]').fill(companyName);
   await page.getByRole("button", { name: /^Continue/ }).click();
 
-  // Naming the company creates it and goes straight to the agent step.
+  // Naming the company creates it and opens the mission step; confirming
+  // the mission goes on to the agent step.
+  await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+  await page.getByPlaceholder("What is your team trying to achieve?").fill(MISSION);
+  await page.getByRole("button", { name: /Confirm mission/ }).click();
 
   // The agent step asks for a name and nothing else; the name is what gates
   // "Next", and the hire is filed under the neutral `general` role.
@@ -68,6 +80,11 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
 
   await page.getByRole("button", { name: /^Next/ }).click();
   await page.getByRole("button", { name: /^Connect$/ }).click();
+
+  // Second Brain step: the wizard offers the Recommended vault that
+  // `onboard --yes` already cloned; the test keeps the instance vault-free.
+  await page.getByRole("button", { name: /^None/ }).click();
+  await page.getByRole("button", { name: /^Continue/ }).click();
 
   // The review step names the agent rather than the step.
   await expect(

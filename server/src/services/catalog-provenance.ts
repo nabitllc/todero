@@ -37,7 +37,7 @@ export function readPortableCatalogProvenance(
   metadata: Record<string, unknown> | null,
   canonicalKey: string | null = null,
 ) {
-  const todero = isCatalogRecord(metadata?.paperclip) ? metadata.paperclip : null;
+  const todero = isCatalogRecord(metadata?.todero) ? metadata.todero : null;
   const catalog = isCatalogRecord(todero?.catalog) ? todero.catalog : null;
   if (!catalog) return null;
 

@@ -8060,6 +8060,46 @@ registerCurrentRoute({
 // ─── Spec builder ─────────────────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// ─── Todero first-run endpoints (Second Brain vault, local LLM detection) ─────
+
+registry.registerPath({
+  method: "get",
+  path: "/api/todero/vault",
+  tags: ["todero"],
+  summary: "Get the Second Brain vault settings and resolved read path",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/todero/vault/recommended/ensure",
+  tags: ["todero"],
+  summary: "Clone the Recommended vault into the app-owned folder if it is missing",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/todero/vault",
+  tags: ["todero"],
+  summary: "Choose the Second Brain vault source (recommended, personal, or none)",
+  request: {
+    body: jsonBody(z.object({
+      source: z.enum(["recommended", "personal", "none"]),
+      path: z.string().nullable().optional(),
+    })),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/todero/local-llm/detect",
+  tags: ["todero"],
+  summary: "Detect local LLM runtimes reachable from this instance",
+  responses: { 200: r.ok(), 401: r.unauthorized, 500: r.serverError },
+});
+
 export function buildOpenApiDocument(): any {
   return applyDocumentFixups({
     openapi: "3.0.0",

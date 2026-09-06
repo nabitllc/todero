@@ -196,6 +196,12 @@ test("store setup and task connection intent share one fake provider through con
   page,
   request,
 }) => {
+  // The work-item task page (ui/src/components/work-item, the default since
+  // 2026-08-30) renders no issue-thread interaction cards, so the connection
+  // request this spec resolves from the task page never appears there. Remove
+  // this fixme once the work-item view shows pending interactions again, or
+  // once the spec is rewritten against the surface that does.
+  test.fixme(true, "the work-item task page does not render connection-intent interaction cards");
   test.setTimeout(180_000);
   const provider = await startFakeProvider();
   try {

@@ -118,8 +118,8 @@ describe("shipped skills catalog", () => {
       .map((skill) => skill.key)
       .sort();
 
-    expect(bundledKeys).toEqual(EXPECTED_BUNDLED_KEYS);
-    expect(optionalKeys).toEqual(EXPECTED_OPTIONAL_KEYS);
+    expect(bundledKeys).toEqual([...EXPECTED_BUNDLED_KEYS].sort());
+    expect(optionalKeys).toEqual([...EXPECTED_OPTIONAL_KEYS].sort());
   });
 
   it("keeps script-bearing shipped skills explicit so install stays audit-gated", () => {
