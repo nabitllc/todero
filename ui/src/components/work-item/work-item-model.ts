@@ -383,9 +383,7 @@ export function defaultWorkItemType(ancestorCount: number): WorkItemType {
 }
 
 export function isHumanComment(comment: Pick<IssueComment, "authorType">): boolean {
-  return comment.authorType === "user" || comment.authorType === "system" && false
-    ? true
-    : comment.authorType === "user";
+  return comment.authorType === "user";
 }
 
 export function isAgentComment(comment: Pick<IssueComment, "authorType" | "authorAgentId" | "derivedAuthorAgentId">): boolean {
