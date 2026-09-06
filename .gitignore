@@ -51,7 +51,8 @@ diagnostics/
 .todero-local/
 .todero-runtime/
 /.idea/
-/.agents/
+/.agents/*
+!/.agents/skills/
 
 # Doc maintenance cursor
 .doc-review-cursor
@@ -75,3 +76,5 @@ tests/storybook-visual/playwright-report/
 .env.local
 test-results/
 dist-demo/
+# The pr-gardening maintainer skill ships a check-*.mjs script that the rule above would hide.
+!/.agents/skills/pr-gardening/scripts/check-readiness.mjs
