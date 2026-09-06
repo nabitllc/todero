@@ -105,8 +105,8 @@ describe("update command", () => {
   it("requires explicit confirmation before a global npm downgrade", async () => {
     const paths = resolveInstallStorePaths();
     const executable = path.join(root, "lib", "node_modules", "todero", "dist", "index.js");
-    const runCommand = vi.fn(async () => ({ stdout: '"0.2.0"\n', stderr: "" }));
-    await expect(updateCommand({ version: "0.2.0" }, { paths, executablePath: executable, runCommand, confirm: async () => false })).rejects.toThrow("Downgrade cancelled");
+    const runCommand = vi.fn(async () => ({ stdout: '"0.0.1"\n', stderr: "" }));
+    await expect(updateCommand({ version: "0.0.1" }, { paths, executablePath: executable, runCommand, confirm: async () => false })).rejects.toThrow("Downgrade cancelled");
     expect(runCommand).toHaveBeenCalledTimes(1);
   });
 

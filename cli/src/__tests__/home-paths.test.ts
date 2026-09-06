@@ -36,7 +36,7 @@ describe("home path resolution", () => {
   });
 
   it("rejects invalid instance ids", () => {
-    expect(() => resolveToderoInstanceId("bad/id")).toThrow(/Invalid PAPERCLIP_INSTANCE_ID/);
+    expect(() => resolveToderoInstanceId("bad/id")).toThrow(/Invalid TODERO_INSTANCE_ID/);
   });
 
   it("expands ~ prefixes", () => {
