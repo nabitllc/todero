@@ -320,13 +320,13 @@ function normalizeSkillKey(value: string | null | undefined) {
 
 function readSkillKey(frontmatter: Record<string, unknown>) {
   const metadata = isPlainRecord(frontmatter.metadata) ? frontmatter.metadata : null;
-  const todero = isPlainRecord(metadata?.paperclip) ? metadata?.paperclip as Record<string, unknown> : null;
+  const todero = isPlainRecord(metadata?.todero) ? metadata?.todero as Record<string, unknown> : null;
   return normalizeSkillKey(
     asString(frontmatter.key)
     ?? asString(frontmatter.skillKey)
     ?? asString(metadata?.skillKey)
     ?? asString(metadata?.canonicalKey)
-    ?? asString(metadata?.paperclipSkillKey)
+    ?? asString(metadata?.toderoSkillKey)
     ?? asString(todero?.skillKey)
     ?? asString(todero?.key),
   );
@@ -2687,9 +2687,9 @@ async function withSkillSourceMetadata(skill: CompanySkill, markdown: string) {
   }
   const catalogProvenance = buildPortableCatalogProvenance(skill);
   metadata.skillKey = skill.key;
-  metadata.paperclipSkillKey = skill.key;
-  metadata.paperclip = {
-    ...(isPlainRecord(metadata.paperclip) ? metadata.paperclip : {}),
+  metadata.toderoSkillKey = skill.key;
+  metadata.todero = {
+    ...(isPlainRecord(metadata.todero) ? metadata.todero : {}),
     skillKey: skill.key,
     slug: skill.slug,
     ...(catalogProvenance ? { catalog: catalogProvenance } : {}),

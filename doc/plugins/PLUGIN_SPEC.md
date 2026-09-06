@@ -300,7 +300,7 @@ Suggested `package.json` keys:
 {
   "name": "@todero/plugin-linear",
   "version": "0.1.0",
-  "paperclipPlugin": {
+  "toderoPlugin": {
     "manifest": "./dist/manifest.js",
     "worker": "./dist/worker.js",
     "ui": "./dist/ui/"
@@ -1690,7 +1690,7 @@ For developing a plugin against a running Todero instance:
 
 The host should publish a starter template (`create-todero-plugin`) that scaffolds:
 
-- `package.json` with correct `paperclipPlugin` keys
+- `package.json` with correct `toderoPlugin` keys
 - manifest with placeholder values
 - worker entry with SDK type imports and example event handler
 - UI entry with example `DashboardWidget` using bridge hooks

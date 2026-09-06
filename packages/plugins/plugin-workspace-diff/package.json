@@ -30,7 +30,7 @@
   "files": [
     "dist"
   ],
-  "paperclipPlugin": {
+  "toderoPlugin": {
     "manifest": "./dist/manifest.js",
     "worker": "./dist/worker.js",
     "ui": "./dist/ui/"

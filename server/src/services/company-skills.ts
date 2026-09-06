@@ -608,10 +608,10 @@ function readCanonicalSkillKey(frontmatter: Record<string, unknown>, metadata: R
     ?? asString(frontmatter.skillKey)
     ?? asString(metadata?.skillKey)
     ?? asString(metadata?.canonicalKey)
-    ?? asString(metadata?.paperclipSkillKey),
+    ?? asString(metadata?.toderoSkillKey),
   );
   if (direct) return direct;
-  const todero = isPlainRecord(metadata?.paperclip) ? metadata?.paperclip as Record<string, unknown> : null;
+  const todero = isPlainRecord(metadata?.todero) ? metadata?.todero as Record<string, unknown> : null;
   return normalizeSkillKey(
     asString(todero?.skillKey)
     ?? asString(todero?.key),
