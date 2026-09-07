@@ -13,6 +13,7 @@ import {
   statementContainsMultipleTopLevelStatements,
   __migrationStatementAlreadyAppliedForTests,
   __replayUnrecognizedStatementForTests,
+  __splitTopLevelStatementsForTests,
 } from "./client.js";
 import {
   getEmbeddedPostgresTestSupport,
@@ -1826,7 +1827,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await verifySql.end();
       }
 
-      await expect(applyPendingMigrations(connectionString)).resolves.toBeUndefined();
+      // PR #48 round 4 Important 1: `applyPendingMigrations` now resolves
+      // with the list of skipped statements instead of `void`.
+      await expect(applyPendingMigrations(connectionString)).resolves.toEqual(expect.any(Array));
       await expect(inspectMigrations(connectionString)).resolves.toMatchObject({
         status: "upToDate",
       });
@@ -1876,17 +1879,30 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   );
 });
 
-// PR #48 Blocker 2: 64 of 232 migration files (as of this fix) contain no
-// `--> statement-breakpoint` marker at all, and 20 of those actually bundle
-// more than one SQL statement without one -- the shape that let
-// `migrationStatementAlreadyApplied` verify only the first statement in the
-// blob and decide the fate of the whole file (see `0182_connections_v3_schema_core.sql`,
-// 10 statements, no markers). This fix does not rewrite the 232 existing
+// PR #48 Blocker 2 / round 4 Blocker: `filesWithNoBreakpointAtAll` counts, out
+// of all 232 migration files, how many contain no literal
+// `--> statement-breakpoint` marker anywhere (a plain substring check, so it
+// does not care whether the file is really one statement or several).
+// `filesBundlingMultipleStatements` counts, out of those same 232 files, how
+// many have at least one `splitMigrationStatements` element for which
+// `statementContainsMultipleTopLevelStatements` is true after the
+// comment-aware scan added in round 4 -- i.e. an element with more than one
+// *real* top-level `;` once `--` line comments are skipped. That is the shape
+// that let `migrationStatementAlreadyApplied` verify only the first statement
+// in the blob and decide the fate of the whole file (see
+// `0182_connections_v3_schema_core.sql`, 10 statements, no markers).
+// Before the comment-aware fix this second count was 20 and included files
+// that do have a marker between every real statement but also have a `;`
+// inside a `--` comment (`0196_drop_cloud_upstream_tables.sql`,
+// `0224_unified_adapter_auth_sessions.sql`) -- those files split correctly at
+// runtime today and drop out of this count entirely, which is why it is now
+// a true subset of `filesWithNoBreakpointAtAll` (verified below) instead of a
+// mislabeled "20 of those". This fix does not rewrite the 232 existing
 // migration files (out of scope; the runtime fix is
-// `statementContainsMultipleTopLevelStatements`, exercised directly in the
-// unit cases below) -- this lint test only makes the corpus's current shape
-// visible and pins the counts so a newly authored migration cannot silently
-// grow the list.
+// `statementContainsMultipleTopLevelStatements` and `splitTopLevelStatements`,
+// exercised directly in the unit cases below) -- this lint test only makes
+// the corpus's current shape visible and pins the counts so a newly authored
+// migration cannot silently grow the list.
 describe("migration statement-breakpoint lint", () => {
   it("reports how many migration files bundle more than one statement without a --> statement-breakpoint marker", async () => {
     const entries = await fs.promises.readdir(new URL("./migrations", import.meta.url), {
@@ -1916,12 +1932,113 @@ describe("migration statement-breakpoint lint", () => {
         `${filesBundlingMultipleStatements.length} of those actually bundle more than one statement without one.`,
     );
 
-    // Baseline as of this fix (2026-09-06): do not increase either number by
-    // adding a new marker-less multi-statement migration. A decrease (an
-    // existing file gaining markers) is welcome and should lower these.
+    // Baseline as of the round-4 comment-aware scan fix (2026-09-06): do not
+    // increase either number by adding a new marker-less multi-statement
+    // migration. A decrease (an existing file gaining markers) is welcome and
+    // should lower these. `filesBundlingMultipleStatements` was 20 before
+    // this fix; 9 of those were files whose only "extra" `;` lived inside a
+    // `--` comment (`0196`, `0224`) and now correctly read as one statement.
     expect(filesWithNoBreakpointAtAll.length).toBe(64);
-    expect(filesBundlingMultipleStatements.length).toBe(20);
+    expect(filesBundlingMultipleStatements.length).toBe(11);
+
+    // `filesBundlingMultipleStatements` is now a true subset of
+    // `filesWithNoBreakpointAtAll`: every file this lint flags as bundling
+    // more than one real statement is also a file with no marker at all.
+    // Before the comment-aware fix this did not hold -- `0196` and `0224` do
+    // have a marker between every real statement but were still flagged,
+    // purely because of a `;` inside a `--` comment.
+    for (const file of filesBundlingMultipleStatements) {
+      expect(filesWithNoBreakpointAtAll).toContain(file);
+    }
   });
+});
+
+// PR #48 round 4 Blocker: `countTopLevelStatementSeparators` and
+// `splitTopLevelStatements` did not skip `--` line comments, so a `;` inside
+// prose was miscounted as a statement separator. `0196_drop_cloud_upstream_tables.sql`
+// is the real reproduction: its leading comment block mentions "from 0089;",
+// and its first `--> statement-breakpoint`-delimited chunk (the comment plus
+// `DROP TABLE IF EXISTS "cloud_upstream_runs";`) has no dedicated DDL check
+// (there is no `tableExists`-based `DROP TABLE` case), so it always fell
+// through to `"unrecognized"`. Before the fix, that chunk's *own* `;` and the
+// comment's `;` both counted, `statementContainsMultipleTopLevelStatements`
+// read `true`, and `applyMigrationStatement` called `splitTopLevelStatements`
+// on it during replay -- splitting right after "0089;" and handing
+// `sql.unsafe` a fragment that begins mid-comment ("the receiver-side tables
+// ... DROP TABLE ...;"), a 42601 syntax error.
+describe("comment-aware top-level statement scanning (round 4 Blocker)", () => {
+  it("splitTopLevelStatements(0196's first statement-breakpoint chunk) returns exactly one statement", async () => {
+    const content = await fs.promises.readFile(
+      new URL("./migrations/0196_drop_cloud_upstream_tables.sql", import.meta.url),
+      "utf8",
+    );
+    const firstChunk = splitMigrationStatements(content)[0];
+    expect(firstChunk).toBeDefined();
+    expect(firstChunk).toContain("0089;");
+
+    // The root cause: before the fix this chunk's own comment-embedded `;`
+    // made it look like more than one statement.
+    expect(statementContainsMultipleTopLevelStatements(firstChunk as string)).toBe(false);
+
+    const split = __splitTopLevelStatementsForTests(firstChunk as string);
+    expect(split).toHaveLength(1);
+    expect(split[0]).toBe((firstChunk as string).trim());
+  });
+
+  it("splitTopLevelStatements(0224's first statement-breakpoint chunk) returns exactly one statement", async () => {
+    const content = await fs.promises.readFile(
+      new URL("./migrations/0224_unified_adapter_auth_sessions.sql", import.meta.url),
+      "utf8",
+    );
+    const firstChunk = splitMigrationStatements(content)[0];
+    expect(firstChunk).toBeDefined();
+    expect(firstChunk).toContain('"claude_setup_token_sessions";');
+
+    expect(statementContainsMultipleTopLevelStatements(firstChunk as string)).toBe(false);
+
+    const split = __splitTopLevelStatementsForTests(firstChunk as string);
+    expect(split).toHaveLength(1);
+    expect(split[0]).toBe((firstChunk as string).trim());
+  });
+});
+
+describeEmbeddedPostgres("marker-less-file-style replay of a comment-only semicolon (round 4 Blocker)", () => {
+  it(
+    "replays 0196 (DROP TABLE, comment mentions \"0089;\") against a database where it already ran without throwing, and re-stamps it",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const dropCloudUpstreamHash = await migrationHash("0196_drop_cloud_upstream_tables.sql");
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${dropCloudUpstreamHash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: ["0196_drop_cloud_upstream_tables.sql"],
+        reason: "pending-migrations",
+      });
+
+      // Before the fix: `applyMigrationStatement` sees this chunk as
+      // (falsely) bundling multiple statements, splits it at the comment's
+      // "0089;", and hands `sql.unsafe` a fragment beginning mid-comment --
+      // 42601. The whole migration transaction rolls back and the file is
+      // never re-stamped.
+      await expect(applyPendingMigrations(connectionString)).resolves.toEqual(expect.any(Array));
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+      expect(finalState.appliedMigrations).toContain("0196_drop_cloud_upstream_tables.sql");
+    },
+    30_000,
+  );
 });
 
 describeEmbeddedPostgres("reconcilePendingMigrationHistory", () => {
@@ -2063,23 +2180,52 @@ describeEmbeddedPostgres("applyPendingMigrationsManually savepoint recovery", ()
       // Captured via direct reassignment, not `vi.spyOn` -- `vi.spyOn`'s
       // call history was observed to be cleared partway through this
       // `await`-heavy call in this suite, for reasons unrelated to this fix.
+      // Both `console.info` and `console.warn` are captured: PR #48 round 4
+      // Important 1 moved `definition-differs-skipped-not-replayed` to
+      // `console.warn` specifically, so it must not be buried at the same
+      // level as routine already-applied skips.
       const originalInfo = console.info;
+      const originalWarn = console.warn;
       const capturedLogs: string[] = [];
+      const capturedWarnLogs: string[] = [];
       console.info = ((...args: unknown[]) => {
         capturedLogs.push(args.map(String).join(" "));
       }) as typeof console.info;
+      console.warn = ((...args: unknown[]) => {
+        capturedWarnLogs.push(args.map(String).join(" "));
+      }) as typeof console.warn;
+      let manuallySkipped: Awaited<ReturnType<typeof applyPendingMigrations>>;
       try {
-        await expect(applyPendingMigrations(connectionString)).resolves.toBeUndefined();
+        manuallySkipped = await applyPendingMigrations(connectionString);
       } finally {
         console.info = originalInfo;
+        console.warn = originalWarn;
       }
 
-      const definitionDiffersSkipLogged = capturedLogs.some(
+      // Never logged at info: this skip reason is audible specifically
+      // because it is a `console.warn`, not folded in with the rest.
+      const definitionDiffersSkipLoggedAtInfo = capturedLogs.some(
         (message) =>
           message.includes("definition-differs-skipped-not-replayed") &&
           message.includes("budget_incidents_policy_window_threshold_idx"),
       );
-      expect(definitionDiffersSkipLogged).toBe(true);
+      expect(definitionDiffersSkipLoggedAtInfo).toBe(false);
+
+      const definitionDiffersSkipLoggedAtWarn = capturedWarnLogs.some(
+        (message) =>
+          message.includes("definition-differs-skipped-not-replayed") &&
+          message.includes("budget_incidents_policy_window_threshold_idx"),
+      );
+      expect(definitionDiffersSkipLoggedAtWarn).toBe(true);
+
+      // PR #48 round 4 Important 1: the returned skip list carries the same
+      // entry, so a caller does not have to scrape console output to find it.
+      const definitionDiffersEntry = manuallySkipped.find(
+        (skipped) =>
+          skipped.reason === "definition-differs-skipped-not-replayed" &&
+          skipped.statementPreview.includes("budget_incidents_policy_window_threshold_idx"),
+      );
+      expect(definitionDiffersEntry).toBeDefined();
 
       const finalState = await inspectMigrations(connectionString);
       expect(finalState.status).toBe("upToDate");
@@ -2548,15 +2694,21 @@ describeEmbeddedPostgres("marker-less multi-statement migration replay (Blocker 
       // Captured via direct reassignment, not `vi.spyOn` -- `vi.spyOn`'s
       // call history was observed to be cleared partway through this
       // `await`-heavy call in this suite, for reasons unrelated to this fix.
+      // `console.warn` is captured too: PR #48 round 4 Important 1 moved
+      // `definition-differs-skipped-not-replayed` there specifically.
       const originalInfo = console.info;
-      const capturedLogs: string[] = [];
-      console.info = ((...args: unknown[]) => {
-        capturedLogs.push(args.map(String).join(" "));
-      }) as typeof console.info;
+      const originalWarn = console.warn;
+      const capturedWarnLogs: string[] = [];
+      console.info = ((..._args: unknown[]) => {}) as typeof console.info;
+      console.warn = ((...args: unknown[]) => {
+        capturedWarnLogs.push(args.map(String).join(" "));
+      }) as typeof console.warn;
+      let manuallySkipped: Awaited<ReturnType<typeof applyPendingMigrations>>;
       try {
-        await expect(applyPendingMigrations(connectionString)).resolves.toBeUndefined();
+        manuallySkipped = await applyPendingMigrations(connectionString);
       } finally {
         console.info = originalInfo;
+        console.warn = originalWarn;
       }
 
       const finalState = await inspectMigrations(connectionString);
@@ -2567,12 +2719,21 @@ describeEmbeddedPostgres("marker-less multi-statement migration replay (Blocker 
       // superseded by a later migration's edit (the "organization"/"workspace"
       // enum rename) and correctly reads "definition-differs" rather than
       // being blind-replayed into a duplicate-object abort.
-      const definitionDiffersSkipLogged = capturedLogs.some(
+      const definitionDiffersSkipLogged = capturedWarnLogs.some(
         (message) =>
           message.includes("0182_connections_v3_schema_core.sql") &&
           message.includes("definition-differs-skipped-not-replayed"),
       );
       expect(definitionDiffersSkipLogged).toBe(true);
+
+      // PR #48 round 4 Important 1: the returned skip list carries the same
+      // entry.
+      const definitionDiffersEntry = manuallySkipped.find(
+        (skipped) =>
+          skipped.reason === "definition-differs-skipped-not-replayed" &&
+          skipped.migrationFile === "0182_connections_v3_schema_core.sql",
+      );
+      expect(definitionDiffersEntry).toBeDefined();
     },
     30_000,
   );

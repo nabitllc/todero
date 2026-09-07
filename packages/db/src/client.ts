@@ -126,6 +126,14 @@ function escapeRegExp(value: string): string {
  * silently decide the fate of all the others (see PR #48 Blocker 2:
  * `0182_connections_v3_schema_core.sql`, no markers, 10 statements, verified
  * "applied" by its `CREATE TABLE`'s column check alone).
+ *
+ * Also skips `--` line comments (from `--` to the next newline, or to end of
+ * text if the comment has no trailing newline) — a `;` inside a comment is
+ * prose, not a statement separator (see PR #48 round 4 Blocker:
+ * `0196_drop_cloud_upstream_tables.sql`'s comment mentions "0089;",
+ * `0224_unified_adapter_auth_sessions.sql`'s comment mentions
+ * "claude_setup_token_sessions";" — both were miscounted as multiple
+ * statements before this fix).
  */
 function countTopLevelStatementSeparators(text: string): number {
   let count = 0;
@@ -151,6 +159,11 @@ function countTopLevelStatementSeparators(text: string): number {
     if (ch === "'") {
       inSingleQuote = true;
       i += 1;
+      continue;
+    }
+    if (ch === "-" && text[i + 1] === "-") {
+      const newlineIndex = text.indexOf("\n", i);
+      i = newlineIndex === -1 ? text.length : newlineIndex + 1;
       continue;
     }
     if (ch === "$") {
@@ -555,11 +568,22 @@ export type SkippedMigrationStatement = {
   detail?: string;
 };
 
+// `"definition-differs-skipped-not-replayed"` is logged at `console.warn`
+// while every other skip reason stays at `console.info` (PR #48 round 4
+// Important 1): because `normalizeDdlText` cannot round-trip everything
+// (e.g. `IN (...)` re-serializing as `= ANY(ARRAY[...])`), this skip also
+// fires on healthy, non-drifted replays — but it is the one skip reason that
+// means "this instance's schema does not match what the migration file
+// says it should be", so it must not be buried among routine
+// already-applied / unique-violation skips at the same log level.
 function logSkippedStatement(skipped: SkippedMigrationStatement): void {
   const detailSuffix = skipped.detail ? ` | ${skipped.detail}` : "";
-  console.info(
-    `[todero-db] Skipped statement in ${skipped.migrationFile} (${skipped.reason}): ${skipped.statementPreview}${detailSuffix}`,
-  );
+  const message = `[todero-db] Skipped statement in ${skipped.migrationFile} (${skipped.reason}): ${skipped.statementPreview}${detailSuffix}`;
+  if (skipped.reason === "definition-differs-skipped-not-replayed") {
+    console.warn(message);
+  } else {
+    console.info(message);
+  }
 }
 
 /**
@@ -596,6 +620,11 @@ function statementStartsWithDml(statement: string): boolean {
  * lets `applyMigrationStatement` apply the same per-statement
  * applied / not-applied / definition-differs / unrecognized judgement to
  * each piece instead.
+ *
+ * Also skips `--` line comments, same rule and same reason as
+ * `countTopLevelStatementSeparators`: a `;` inside a comment must not become
+ * a split point, or the fragment starting right after it begins mid-comment
+ * and fails with 42601 (see PR #48 round 4 Blocker).
  */
 function splitTopLevelStatements(text: string): string[] {
   const statements: string[] = [];
@@ -622,6 +651,11 @@ function splitTopLevelStatements(text: string): string[] {
     if (ch === "'") {
       inSingleQuote = true;
       i += 1;
+      continue;
+    }
+    if (ch === "-" && text[i + 1] === "-") {
+      const newlineIndex = text.indexOf("\n", i);
+      i = newlineIndex === -1 ? text.length : newlineIndex + 1;
       continue;
     }
     if (ch === "$") {
@@ -676,6 +710,11 @@ async function replayUnrecognizedStatement(
 // against a real connection and an arbitrary statement, without needing a
 // real migration file on disk. See `client.test.ts`'s Critical 1 case.
 export const __replayUnrecognizedStatementForTests = replayUnrecognizedStatement;
+
+// Test-only accessor: lets `client.test.ts` assert the comment-aware
+// top-level-statement split directly against a real migration file's content
+// (see PR #48 round 4 Blocker) without going through a full replay.
+export const __splitTopLevelStatementsForTests = splitTopLevelStatements;
 
 /**
  * Applies (or verifiably skips) one statement from a migration file, inside
@@ -1774,16 +1813,28 @@ export async function inspectMigrations(url: string): Promise<MigrationState> {
 // partially-applied file, or a unique violation on a replayed backfill — see
 // `applyPendingMigrationsManually`), so a `pnpm run migrate` operator sees
 // that *something* was skipped instead of it happening silently.
-function logMigrationCompletion(repairedCount: number, skippedStatementCount: number): void {
+//
+// PR #48 round 4 Important 1: `definition-differs-skipped-not-replayed` is
+// broken out into its own count here too, not just at the per-statement log
+// level (see `logSkippedStatement`) — the migration is still stamped applied
+// when this happens, so the completion line is the one place an operator who
+// only watches for the final summary line (rather than every `console.warn`)
+// can see that a schema mismatch was skipped rather than resolved.
+function logMigrationCompletion(repairedCount: number, skippedStatements: SkippedMigrationStatement[]): void {
+  const skippedStatementCount = skippedStatements.length;
   if (repairedCount === 0 && skippedStatementCount === 0) return;
+  const definitionDiffersCount = skippedStatements.filter(
+    (skipped) => skipped.reason === "definition-differs-skipped-not-replayed",
+  ).length;
   console.info(
-    `[todero-db] Migration reconciliation complete: ${repairedCount} migration(s) repaired via reconciliation, ${skippedStatementCount} statement(s) skipped during replay.`,
+    `[todero-db] Migration reconciliation complete: ${repairedCount} migration(s) repaired via reconciliation, ` +
+      `${skippedStatementCount} statement(s) skipped during replay (${definitionDiffersCount} definition-differs).`,
   );
 }
 
-export async function applyPendingMigrations(url: string): Promise<void> {
+export async function applyPendingMigrations(url: string): Promise<SkippedMigrationStatement[]> {
   const initialState = await inspectMigrations(url);
-  if (initialState.status === "upToDate") return;
+  if (initialState.status === "upToDate") return [];
 
   if (initialState.reason === "no-migration-journal-empty-db") {
     const sql = createUtilitySql(url);
@@ -1795,7 +1846,8 @@ export async function applyPendingMigrations(url: string): Promise<void> {
     }
 
     let bootstrappedState = await inspectMigrations(url);
-    if (bootstrappedState.status === "upToDate") return;
+    if (bootstrappedState.status === "upToDate") return [];
+    let bootstrapSkipped: SkippedMigrationStatement[] = [];
     if (bootstrappedState.reason === "pending-migrations") {
       const repair = await reconcilePendingMigrationHistory(url);
       if (repair.repairedMigrations.length > 0) {
@@ -1806,12 +1858,10 @@ export async function applyPendingMigrations(url: string): Promise<void> {
         manuallySkipped = await applyPendingMigrationsManually(url, bootstrappedState.pendingMigrations);
         bootstrappedState = await inspectMigrations(url);
       }
-      logMigrationCompletion(
-        repair.repairedMigrations.length,
-        repair.skippedStatements.length + manuallySkipped.length,
-      );
+      bootstrapSkipped = [...repair.skippedStatements, ...manuallySkipped];
+      logMigrationCompletion(repair.repairedMigrations.length, bootstrapSkipped);
     }
-    if (bootstrappedState.status === "upToDate") return;
+    if (bootstrappedState.status === "upToDate") return bootstrapSkipped;
     throw new Error(
       `Failed to bootstrap migrations: ${bootstrappedState.pendingMigrations.join(", ")}`,
     );
@@ -1824,14 +1874,14 @@ export async function applyPendingMigrations(url: string): Promise<void> {
   }
 
   let state = await inspectMigrations(url);
-  if (state.status === "upToDate") return;
+  if (state.status === "upToDate") return [];
 
   const repair = await reconcilePendingMigrationHistory(url);
   if (repair.repairedMigrations.length > 0) {
     state = await inspectMigrations(url);
     if (state.status === "upToDate") {
-      logMigrationCompletion(repair.repairedMigrations.length, repair.skippedStatements.length);
-      return;
+      logMigrationCompletion(repair.repairedMigrations.length, repair.skippedStatements);
+      return repair.skippedStatements;
     }
   }
 
@@ -1848,7 +1898,9 @@ export async function applyPendingMigrations(url: string): Promise<void> {
     );
   }
 
-  logMigrationCompletion(repair.repairedMigrations.length, repair.skippedStatements.length + manuallySkipped.length);
+  const allSkipped = [...repair.skippedStatements, ...manuallySkipped];
+  logMigrationCompletion(repair.repairedMigrations.length, allSkipped);
+  return allSkipped;
 }
 
 export type MigrationBootstrapResult =
