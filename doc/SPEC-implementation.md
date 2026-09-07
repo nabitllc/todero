@@ -104,7 +104,7 @@ in `packages/shared/src/constants.ts`.
 - Primary: PostgreSQL
 - Local default: embedded PostgreSQL at `~/.todero/instances/default/db`
 - Optional local prod-like: Docker Postgres
-- Optional hosted: Supabase/Postgres-compatible
+- Optional hosted: any PostgreSQL provider (Neon recommended)
 - File/object storage:
   - local default: `~/.todero/instances/default/data/storage` (`local_disk`)
   - cloud: S3-compatible object storage (`s3`)

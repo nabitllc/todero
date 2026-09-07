@@ -46,15 +46,15 @@ DATABASE_URL=postgres://todero:todero@localhost:5432/todero \
   npx drizzle-kit push
 ```
 
-## 3. Hosted PostgreSQL (Supabase)
+## 3. Hosted PostgreSQL (Neon)
 
-For production, use a hosted provider like [Supabase](https://supabase.com/).
+For production, use a hosted provider like [Neon](https://neon.tech/).
 
-1. Create a project at [database.new](https://database.new)
-2. Copy the connection string from Project Settings > Database
+1. Create a project in the Neon console
+2. Copy the connection string from Connection Details
 3. Set `DATABASE_URL` in your `.env`
 
-Use the **direct connection** (port 5432) for migrations and the **pooled connection** (port 6543) for the application.
+Use the **direct connection** for migrations and the **pooled connection** (the host with a `-pooler` suffix) for the application.
 
 If using connection pooling (transaction mode), disable prepared statements via the environment — no source edits needed:
 
@@ -70,6 +70,6 @@ Related optional client tuning (driver defaults apply when unset): `DATABASE_POO
 |----------------|------|
 | Not set | Embedded PostgreSQL |
 | `postgres://...localhost...` | Local Docker PostgreSQL |
-| `postgres://...supabase.com...` | Hosted Supabase |
+| `postgres://...neon.tech...` | Hosted PostgreSQL (Neon or any provider) |
 
 The Drizzle schema (`packages/db/src/schema/`) is the same regardless of mode.
