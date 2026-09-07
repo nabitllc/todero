@@ -82,7 +82,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^5.2.0",
     "cross-env": "^10.1.0",
     "msw": "^2.15.0",
