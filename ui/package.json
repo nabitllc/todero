@@ -39,7 +39,7 @@
     "@mdxeditor/editor": "^4.2.1",
     "@radix-ui/react-slot": "^1.3.0",
     "@tailwindcss/typography": "^0.5.20",
-    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query": "^5.102.8",
     "@todero/adapter-claude-local": "workspace:*",
     "@todero/adapter-codex-local": "workspace:*",
     "@todero/adapter-cursor-cloud": "workspace:*",
