@@ -4,8 +4,34 @@ The real verification commands for this repo, read out of `package.json` scripts
 `.github/workflows/pr-trusted.yml`. Every command below was run once on 2026-09-06 (Windows 11,
 Node v24.18.0, pnpm 9.15.4) and the result recorded verbatim. Nothing here is inferred.
 
-`AGENTS.md` § 7 is the authoritative policy on *when* to run these; this file records *what they
-are* and *which ones work on this machine*.
+This file is the authoritative policy on *when* to run these. It also records *what they are* and
+*which ones work on this machine*. The policy and the definition of done moved here from
+`AGENTS.md` § 7 and § 11 on 2026-09-06 (ADR-010).
+
+## When to run what
+
+Default local and agent test path:
+
+```sh
+pnpm test
+```
+
+This is the cheap default and only runs the Vitest suite. Browser suites stay opt-in:
+
+```sh
+pnpm test:e2e
+pnpm test:release-smoke
+```
+
+Run the browser suites only when your change touches them, or when you verify CI/release flows.
+
+For normal issue work, run the smallest relevant verification first. Do not default to repo-wide
+typecheck/build/test on every heartbeat when a narrower check is enough to prove the change.
+
+Run the full check before you claim repo work done in a PR-ready hand-off, or when the change scope
+is broad enough that targeted checks are not sufficient. The commands are in § Hand-off gate below.
+
+If you cannot run something, report what you did not run and why.
 
 ## There is no jest here, and no eslint
 
@@ -20,12 +46,14 @@ are* and *which ones work on this machine*.
 
 ### Cheap deterministic checks
 
-| Command | Script | Run 2026-09-06 |
+All four pass. Re-run on `origin/main` at commit `d9132fe5` on 2026-09-06.
+
+| Command | Script | Result |
 |---|---|---|
 | `pnpm check:node-version` | `scripts/check-node-version-policy.mjs` | **PASS** |
 | `pnpm check:no-git-push` | `scripts/check-no-git-push.mjs` | **PASS** |
 | `pnpm check:tokens` | `scripts/check-forbidden-tokens.mjs` | **PASS** |
-| `pnpm check:token-gates` | `scripts/check-token-gates.mjs` | **FAIL** (pre-existing) |
+| `pnpm check:token-gates` | `scripts/check-token-gates.mjs` | **PASS** |
 
 Tails:
 
@@ -35,24 +63,24 @@ Node version policy check passed (Node >=24.11.0, @types/node 24.x).
   V  No forbidden tokens found.
 ```
 
-`pnpm check:token-gates` exits 1 on a clean checkout of `main`:
-
 ```
   Files scanned:                 833
-  Gate 1 (color literals):       4 violation(s)
+  Allowlist entries loaded:      34
+  Allowlisted issues skipped:    118
+
+  Gate 1 (color literals):       CLEAN
   Gate 2 (arbitrary bracket vals): CLEAN
   Gate 3 (raw font-size):        CLEAN
   Gate 4 (legacy hsl(var())):    CLEAN
 
-  ui/src/components/todero/LocalLlmPicker.test.tsx:126  #111111
-  ui/src/components/todero/LocalLlmPicker.test.tsx:127  #ffffff
-  ui/src/components/todero/LocalLlmPicker.test.tsx:128  #fff
-  ui/src/components/todero/LocalLlmPicker.test.tsx:128  #ffffff
+All gates clean.
 ```
 
-All four are hex literals inside a **test** file. This is a standing failure, not caused by any
-change in this branch. It means the gate cannot currently be used as a pass/fail signal for a UI
-change — compare the violation list before and after instead, or fix the four literals.
+**Correction.** An earlier revision of this file recorded `check:token-gates` as a standing failure
+for four hex literals in `ui/src/components/todero/LocalLlmPicker.test.tsx`. That is no longer true,
+and it was already untrue when it was written: commit `fb75d94c` (PR #45) added an allowlist entry
+for exactly those assertions to `ui/src/index.css:2496`, and `fb75d94c` is an ancestor of `main`.
+The gate is a usable pass/fail signal for a UI change. Do not carry the old note forward.
 
 `check:tokens` and `check:token-gates` are **not** in any CI workflow (grepped
 `.github/workflows/`). They are local pre-commit gates, required by `AGENTS.md` § Design system
@@ -116,7 +144,7 @@ All four `@todero/shared` failures are in `src/worktree-seed-source.test.ts` and
 `fs.symlinkSync` raising `EPERM`, the same Windows symlink restriction as the preflight step above.
 They are environment failures, not code failures.
 
-Opt-in browser suites (`AGENTS.md` § 7 — run only when your change touches them):
+Opt-in browser suites (§ When to run what — run only when your change touches them):
 
 ```
 pnpm test:e2e                 # Playwright, tests/e2e/playwright.config.ts
@@ -156,7 +184,7 @@ warning is worth a look before trusting a local install to match CI — the two 
 
 ## Hand-off gate
 
-`AGENTS.md` § 7 defines the PR-ready check. On a machine with both prerequisites:
+The PR-ready check. On a machine with both prerequisites:
 
 ```
 pnpm -r typecheck
@@ -165,8 +193,25 @@ pnpm build
 ```
 
 For normal issue work, run the smallest relevant check first — do not default to repo-wide
-typecheck/build/test on every heartbeat. If anything could not be run, report what and why
-(`AGENTS.md` § 7, last line).
+typecheck/build/test on every heartbeat. If anything could not be run, report what and why.
+
+## Definition of done
+
+A change is done when all are true:
+
+1. Behavior matches `doc/SPEC-implementation.md`.
+2. Typecheck, tests, and build pass.
+3. Contracts are synced across `packages/db`, `packages/shared`, `server` and `ui`
+   (`architecture.md` § Contract synchronization).
+4. Docs are updated when behavior or commands change.
+5. The PR description follows `.github/PULL_REQUEST_TEMPLATE.md` with all sections filled in,
+   including Model Used.
+
+## Progress log
+
+Every PR fills the template's `Summary`, `Cost`, `Proof` and `Session` fields; the internal
+`/progress` page on the public site reads them. Cost is what your session spent (`tokens= usd=`) —
+leave it blank rather than estimate.
 
 ## CI — what actually gates a PR
 

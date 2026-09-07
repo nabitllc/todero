@@ -17,10 +17,10 @@
 **The rule that matters:** when a file approaches its soft cap, extract *before* adding new code.
 The cap is a trigger to refactor, not a budget to spend.
 
-Entry-point files are governed separately by the vault's `Project_Bootstrap_Standard` § Eager-load
-discipline: `CLAUDE.md` stays 30-100 lines, pointer-style. `AGENTS.md` (224 lines) is exempt — the
-vault waived it on 2026-08-26 because it is parsed data, not documentation
-(`Wiring/projects.json`, `entry_point_exempt`).
+**Entry-point files are governed separately.** A runtime loads `AGENTS.md` and `CLAUDE.md` eagerly,
+so both stay 30-100 lines and pointer-style. Neither holds rule text of its own: each names the file
+that does. `AGENTS.md` was exempt from this rule until 2026-09-06; ADR-010 withdrew the exemption
+and factored the file down.
 
 ## Reality check — the repo is far past these today
 
