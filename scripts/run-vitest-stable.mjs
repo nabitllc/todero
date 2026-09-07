@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
+import { resolveVitestLaunch, withNodeModulesBinOnPath } from "./vitest-launch.mjs";
 
 const repoRoot = process.cwd();
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -277,20 +278,34 @@ function runVitest(args, label) {
   const tempRootParent = process.platform === "win32" ? os.tmpdir() : "/tmp";
   const testRoot = mkdtempSync(path.join(tempRootParent, `pcvt-${process.pid}-${invocationIndex}-`));
   // Keep per-run paths compact so Unix socket fixtures stay under macOS path limits.
-  const env = {
-    ...process.env,
-    NODE_ENV: "test",
-    PAPERCLIP_HOME: path.join(testRoot, "h"),
-    PAPERCLIP_INSTANCE_ID: `vt-${process.pid}-${invocationIndex}`,
-    TMPDIR: path.join(testRoot, "t"),
-  };
+  const env = withNodeModulesBinOnPath(
+    {
+      ...process.env,
+      NODE_ENV: "test",
+      PAPERCLIP_HOME: path.join(testRoot, "h"),
+      PAPERCLIP_INSTANCE_ID: `vt-${process.pid}-${invocationIndex}`,
+      TMPDIR: path.join(testRoot, "t"),
+    },
+    repoRoot,
+  );
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
-    cwd: repoRoot,
-    env,
-    stdio: "inherit",
-  });
+  let launch;
+  try {
+    launch = resolveVitestLaunch(repoRoot);
+  } catch (error) {
+    console.error(`[test:run] Failed to start Vitest: ${error.message}`);
+    process.exit(1);
+  }
+  const result = spawnSync(
+    launch.command,
+    [...launch.args, "run", ...sourceOnlyVitestArgs, ...args],
+    {
+      cwd: repoRoot,
+      env,
+      stdio: "inherit",
+    },
+  );
   if (result.error) {
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);
     process.exit(1);

@@ -224,3 +224,42 @@ test("the real shard partition is duration-balanced", () => {
     `shard weight spread ${maxTotal - minTotal}ms exceeds heaviest suite ${heaviest}ms: ${totals.join(", ")}`,
   );
 });
+
+test("the vitest launch resolves the package entry under Node instead of a pnpm shim", async () => {
+  const { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } = await import("node:fs");
+  const os = await import("node:os");
+  const { resolveVitestLaunch, withNodeModulesBinOnPath } = await import("../vitest-launch.mjs");
+
+  const root = mkdtempSync(path.join(os.tmpdir(), "vitest-launch-"));
+  try {
+    assert.throws(() => resolveVitestLaunch(root), /pnpm install/);
+
+    const packageDir = path.join(root, "node_modules", "vitest");
+    mkdirSync(packageDir, { recursive: true });
+    writeFileSync(
+      path.join(packageDir, "package.json"),
+      JSON.stringify({ name: "vitest", version: "0.0.0-test", bin: { vitest: "./vitest.mjs" } }),
+    );
+    writeFileSync(path.join(packageDir, "vitest.mjs"), "");
+
+    const launch = resolveVitestLaunch(root);
+    assert.equal(launch.command, process.execPath);
+    assert.equal(launch.args.length, 1);
+    assert.ok(path.isAbsolute(launch.args[0]), "entry must be absolute");
+    assert.ok(existsSync(launch.args[0]), `entry must exist: ${launch.args[0]}`);
+    assert.equal(path.basename(launch.args[0]), "vitest.mjs");
+    assert.equal(path.basename(path.dirname(launch.args[0])), "vitest");
+
+    const env = withNodeModulesBinOnPath({ Path: "C:\existing", OTHER: "kept" }, root);
+    assert.equal(env.OTHER, "kept");
+    assert.equal(Object.keys(env).filter((key) => key.toUpperCase() === "PATH").length, 1);
+    assert.equal(
+      env.Path,
+      [path.join(root, "node_modules", ".bin"), "C:\existing"].join(path.delimiter),
+    );
+    const fresh = withNodeModulesBinOnPath({}, root);
+    assert.equal(fresh.PATH, path.join(root, "node_modules", ".bin"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
