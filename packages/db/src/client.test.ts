@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import {
   applyPendingMigrations,
   inspectMigrations,
+  reconcilePendingMigrationHistory,
   resetPostgresDatabase,
+  splitMigrationStatements,
+  statementContainsMultipleTopLevelStatements,
+  __migrationStatementAlreadyAppliedForTests,
 } from "./client.js";
 import {
   getEmbeddedPostgresTestSupport,
@@ -1867,4 +1871,488 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
     },
     60_000,
   );
+});
+
+// PR #48 Blocker 2: 64 of 232 migration files (as of this fix) contain no
+// `--> statement-breakpoint` marker at all, and 20 of those actually bundle
+// more than one SQL statement without one -- the shape that let
+// `migrationStatementAlreadyApplied` verify only the first statement in the
+// blob and decide the fate of the whole file (see `0182_connections_v3_schema_core.sql`,
+// 10 statements, no markers). This fix does not rewrite the 232 existing
+// migration files (out of scope; the runtime fix is
+// `statementContainsMultipleTopLevelStatements`, exercised directly in the
+// unit cases below) -- this lint test only makes the corpus's current shape
+// visible and pins the counts so a newly authored migration cannot silently
+// grow the list.
+describe("migration statement-breakpoint lint", () => {
+  it("reports how many migration files bundle more than one statement without a --> statement-breakpoint marker", async () => {
+    const entries = await fs.promises.readdir(new URL("./migrations", import.meta.url), {
+      withFileTypes: true,
+    });
+    const sqlFiles = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".sql"));
+
+    const filesWithNoBreakpointAtAll: string[] = [];
+    const filesBundlingMultipleStatements: string[] = [];
+
+    for (const entry of sqlFiles) {
+      const content = await fs.promises.readFile(
+        new URL(`./migrations/${entry.name}`, import.meta.url),
+        "utf8",
+      );
+      if (!content.includes("--> statement-breakpoint")) {
+        filesWithNoBreakpointAtAll.push(entry.name);
+      }
+      const statements = splitMigrationStatements(content);
+      if (statements.some((statement) => statementContainsMultipleTopLevelStatements(statement))) {
+        filesBundlingMultipleStatements.push(entry.name);
+      }
+    }
+
+    console.info(
+      `[migration lint] ${filesWithNoBreakpointAtAll.length} of ${sqlFiles.length} migration files contain no --> statement-breakpoint marker at all; ` +
+        `${filesBundlingMultipleStatements.length} of those actually bundle more than one statement without one.`,
+    );
+
+    // Baseline as of this fix (2026-09-06): do not increase either number by
+    // adding a new marker-less multi-statement migration. A decrease (an
+    // existing file gaining markers) is welcome and should lower these.
+    expect(filesWithNoBreakpointAtAll.length).toBe(64);
+    expect(filesBundlingMultipleStatements.length).toBe(20);
+  });
+});
+
+describeEmbeddedPostgres("reconcilePendingMigrationHistory", () => {
+  it(
+    "does not stamp migration 0229 while migration 0073 (earlier in journal order) is still unresolved",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const shinySaloHash = await migrationHash("0073_shiny_salo.sql");
+      const dropAttachmentHash = await migrationHash(
+        "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+      );
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash IN ('${shinySaloHash}', '${dropAttachmentHash}')`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        reason: "pending-migrations",
+        pendingMigrations: expect.arrayContaining([
+          "0073_shiny_salo.sql",
+          "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+        ]),
+      });
+
+      const reconcileResult = await reconcilePendingMigrationHistory(connectionString);
+      // 0073's ADD COLUMN cannot be verified applied (the column is
+      // genuinely absent -- 0229 already dropped it) -- 0229 must not be
+      // stamped ahead of it just because its own DROP COLUMN IF EXISTS
+      // check independently reads "applied" (the column it targets is also
+      // absent). Real case from PR #48, commit 1fe8112c.
+      expect(reconcileResult.repairedMigrations).not.toContain(
+        "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+      );
+      expect(reconcileResult.remainingMigrations).toEqual(
+        expect.arrayContaining([
+          "0073_shiny_salo.sql",
+          "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+        ]),
+      );
+      expect(reconcileResult.skippedStatements.map((skipped) => skipped.migrationFile)).toEqual(
+        expect.arrayContaining([
+          "0073_shiny_salo.sql",
+          "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+        ]),
+      );
+
+      // Left pending together, `applyPendingMigrationsManually` (journal-
+      // ordered, per-statement, idempotent) replays 0073 then 0229 back to
+      // back and converges on the correct end state instead of permanently
+      // re-adding a column 0229 already retired.
+      await applyPendingMigrations(connectionString);
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const columns = await verifySql.unsafe<{ column_name: string }[]>(`
+          SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'companies'
+            AND column_name IN ('attachment_max_bytes', 'brand_color')
+        `);
+        expect(columns).toEqual([]);
+      } finally {
+        await verifySql.end();
+      }
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+    },
+    40_000,
+  );
+});
+
+describeEmbeddedPostgres("applyPendingMigrationsManually savepoint recovery", () => {
+  it(
+    "treats a unique violation on a replayed backfill as already applied instead of failing the whole migration (Critical 3)",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const prettyDoctorOctopusHash = await migrationHash("0032_pretty_doctor_octopus.sql");
+      const companyId = "00000000-0000-0000-0000-0000000a0032";
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        // A company with a monthly budget already set -- exactly the shape
+        // migration 0032's company-scope backfill (`INSERT ... SELECT ...
+        // FROM companies WHERE budget_monthly_cents > 0`, no `ON CONFLICT`)
+        // targets.
+        await sql.unsafe(`
+          INSERT INTO "companies" ("id", "name", "issue_prefix", "budget_monthly_cents", "created_at", "updated_at")
+          VALUES ('${companyId}', 'Replay Conflict Co', 'RPC032', 500, now(), now())
+        `);
+        // Simulate the backfill having already run once for this company:
+        // the row the statement would insert already exists, and
+        // `budget_policies_company_scope_metric_unique_idx` (0032's own
+        // unique index on company_id/scope_type/scope_id/metric/window_kind)
+        // makes a second attempt a 23505, not a duplicate.
+        await sql.unsafe(`
+          INSERT INTO "budget_policies" (
+            "company_id", "scope_type", "scope_id", "metric", "window_kind", "amount"
+          ) VALUES (
+            '${companyId}', 'company', '${companyId}', 'billed_cents', 'calendar_month_utc', 500
+          )
+        `);
+        // Migration 0034 later drops and replaces 0032's own
+        // "budget_incidents_policy_window_threshold_idx" with a partial
+        // (WHERE-clause) version -- unrelated to what this test targets, but
+        // it means the live index no longer matches 0032's own CREATE UNIQUE
+        // INDEX statement byte-for-byte, which (correctly, per Critical 4)
+        // reads as "unrecognized" rather than a false-positive "applied" and
+        // would otherwise fail this replay on an unrelated 42P07. Revert it
+        // to 0032's own shape so 0032 alone can be isolated and replayed
+        // cleanly; 0034's own journal entry is untouched.
+        await sql.unsafe(`DROP INDEX "budget_incidents_policy_window_threshold_idx"`);
+        await sql.unsafe(`
+          CREATE UNIQUE INDEX "budget_incidents_policy_window_threshold_idx"
+          ON "budget_incidents" USING btree ("policy_id","window_start","threshold_type")
+        `);
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${prettyDoctorOctopusHash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: ["0032_pretty_doctor_octopus.sql"],
+        reason: "pending-migrations",
+      });
+
+      // Before Critical 3's fix this throws: the replayed INSERT hits the
+      // unique index and the uncaught 23505 fails the whole migration.
+      await expect(applyPendingMigrations(connectionString)).resolves.toBeUndefined();
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const rows = await verifySql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count
+          FROM "budget_policies"
+          WHERE "company_id" = '${companyId}' AND "scope_type" = 'company'
+        `);
+        // No duplicate row -- the conflicting statement was rolled back to
+        // its savepoint, not partially applied.
+        expect(rows[0]?.count).toBe(1);
+      } finally {
+        await verifySql.end();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "still fails the whole migration loudly on a non-unique-violation error mid-file, and does not stamp it (regression)",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const prettyDoctorOctopusHash = await migrationHash("0032_pretty_doctor_octopus.sql");
+      const companyId = "00000000-0000-0000-0000-0000000b0032";
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(`
+          INSERT INTO "companies" ("id", "name", "issue_prefix", "budget_monthly_cents", "created_at", "updated_at")
+          VALUES ('${companyId}', 'Mid-File Failure Co', 'MFF032', 500, now(), now())
+        `);
+        // Force 0032's agent-scope backfill statement to fail with
+        // something other than a unique violation (an undefined-column
+        // error, not 23505) -- the savepoint added for Critical 3 must not
+        // swallow this.
+        await sql.unsafe(`ALTER TABLE "agents" DROP COLUMN "budget_monthly_cents"`);
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${prettyDoctorOctopusHash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      await expect(applyPendingMigrations(connectionString)).rejects.toThrow();
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const policyRows = await verifySql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count FROM "budget_policies" WHERE "company_id" = '${companyId}'
+        `);
+        // The company-scope INSERT ran inside the same transaction as the
+        // statement that then failed -- it must roll back with everything
+        // else in the file, not persist as a partial apply.
+        expect(policyRows[0]?.count).toBe(0);
+
+        const journalRows = await verifySql.unsafe<{ count: number }[]>(
+          `SELECT count(*)::int AS count FROM "drizzle"."__drizzle_migrations" WHERE hash = '${prettyDoctorOctopusHash}'`,
+        );
+        expect(journalRows[0]?.count).toBe(0);
+      } finally {
+        await verifySql.end();
+      }
+    },
+    30_000,
+  );
+});
+
+describeEmbeddedPostgres("migrationStatementAlreadyApplied DDL shape checks", () => {
+  let connectionString: string;
+  let sql: ReturnType<typeof postgres>;
+  let cleanupDb: (() => Promise<void>) | undefined;
+
+  // Deliberately calls `startEmbeddedPostgresTestDatabase` directly instead
+  // of the module's `createTempDatabase` helper: that helper pushes its
+  // cleanup onto the shared, module-level `cleanups` array that the global
+  // `afterEach` above drains after *every* `it` in this file. These unit
+  // cases share one database across many lightweight `it`s on purpose (each
+  // just checks one DDL shape) — going through `createTempDatabase` would
+  // have the first `it`'s `afterEach` tear the shared cluster down out from
+  // under every case after it.
+  beforeAll(async () => {
+    const db = await startEmbeddedPostgresTestDatabase("todero-db-client-ddl-shape-");
+    connectionString = db.connectionString;
+    cleanupDb = db.cleanup;
+    sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+    await sql.unsafe(`
+      CREATE TABLE "ddl_shape_probe" (
+        "id" uuid PRIMARY KEY,
+        "company_id" uuid NOT NULL,
+        "created_at" timestamptz NOT NULL
+      )
+    `);
+    await sql.unsafe(
+      `CREATE INDEX "ddl_shape_probe_company_idx" ON "ddl_shape_probe" USING btree ("company_id")`,
+    );
+  }, 90_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await cleanupDb?.();
+  }, 30_000);
+
+  it("CREATE TABLE with a schema-qualified name resolves the real table, not \"public\" itself (Minor 12)", async () => {
+    // Before the fix, the single greedy `"([^"]+)"` capture matched
+    // "public" (the schema token) as if it were the table name, so this
+    // schema-qualified statement -- whose real table already fully exists
+    // -- misread as "not-applied".
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE TABLE "public"."ddl_shape_probe" ("id" uuid PRIMARY KEY, "company_id" uuid NOT NULL, "created_at" timestamptz NOT NULL);',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("DROP INDEX IF EXISTS on an index that still exists is not-applied", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'DROP INDEX IF EXISTS "ddl_shape_probe_company_idx";',
+    );
+    expect(state).toBe("not-applied");
+  });
+
+  it("DROP INDEX IF EXISTS with lowercase keyword casing is still recognized", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'drop index if exists "ddl_shape_probe_company_idx";',
+    );
+    expect(state).toBe("not-applied");
+  });
+
+  it("DROP INDEX with an unquoted identifier falls back to unrecognized", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      "DROP INDEX IF EXISTS ddl_shape_probe_company_idx;",
+    );
+    expect(state).toBe("unrecognized");
+  });
+
+  it("DROP INDEX with a schema-qualified name resolves the real index, not \"public\" itself (Critical 4/5, Minor 12)", async () => {
+    // Before the fix this misread "public" as the index name, found no
+    // index called "public", and reported "applied" (already dropped) even
+    // though the real index is still there.
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'DROP INDEX IF EXISTS "public"."ddl_shape_probe_company_idx";',
+    );
+    expect(state).toBe("not-applied");
+  });
+
+  it("a dropped index that genuinely no longer exists reads as applied", async () => {
+    await sql.unsafe(`CREATE INDEX "ddl_shape_probe_temp_idx" ON "ddl_shape_probe" USING btree ("id")`);
+    await sql.unsafe(`DROP INDEX "ddl_shape_probe_temp_idx"`);
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'DROP INDEX IF EXISTS "ddl_shape_probe_temp_idx";',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("a same-named index with a different definition is unrecognized, not a false-positive applied (Critical 4)", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE INDEX "ddl_shape_probe_company_idx" ON "ddl_shape_probe" USING btree ("company_id","created_at");',
+    );
+    expect(state).toBe("unrecognized");
+  });
+
+  it("a matching CREATE INDEX statement reads as applied", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE INDEX "ddl_shape_probe_company_idx" ON "ddl_shape_probe" USING btree ("company_id");',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("multi-clause ALTER TABLE ... DROP COLUMN a, DROP COLUMN b is unrecognized, not verified from the first clause alone", async () => {
+    await sql.unsafe(`ALTER TABLE "ddl_shape_probe" ADD COLUMN IF NOT EXISTS "extra_a" text`);
+    await sql.unsafe(`ALTER TABLE "ddl_shape_probe" ADD COLUMN IF NOT EXISTS "extra_b" text`);
+    await sql.unsafe(`ALTER TABLE "ddl_shape_probe" DROP COLUMN "extra_a"`);
+    // "extra_a" is already gone but "extra_b" still exists -- a regex
+    // anchored only at the start of the statement would match the first
+    // DROP COLUMN clause, see it satisfied, and misreport the whole
+    // statement as applied while "extra_b" survives.
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe" DROP COLUMN "extra_a", DROP COLUMN "extra_b";',
+    );
+    expect(state).toBe("unrecognized");
+  });
+
+  it("a constraint with the same name but a different definition is unrecognized, not a false-positive applied (Critical 4)", async () => {
+    await sql.unsafe(
+      `ALTER TABLE "ddl_shape_probe" ADD CONSTRAINT "ddl_shape_probe_company_check" CHECK ("company_id" IS NOT NULL)`,
+    );
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe" ADD CONSTRAINT "ddl_shape_probe_company_check" CHECK ("id" IS NOT NULL);',
+    );
+    expect(state).toBe("unrecognized");
+  });
+
+  it("a matching ADD CONSTRAINT CHECK statement reads as applied despite Postgres re-serializing it with extra parens", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe" ADD CONSTRAINT "ddl_shape_probe_company_check" CHECK ("company_id" IS NOT NULL);',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("a matching ADD CONSTRAINT FOREIGN KEY statement reads as applied despite default ON DELETE/UPDATE actions being omitted on read", async () => {
+    await sql.unsafe(`CREATE TABLE "ddl_shape_probe_child" ("id" uuid PRIMARY KEY, "probe_id" uuid)`);
+    await sql.unsafe(`
+      ALTER TABLE "ddl_shape_probe_child" ADD CONSTRAINT "ddl_shape_probe_child_probe_id_fk"
+      FOREIGN KEY ("probe_id") REFERENCES "public"."ddl_shape_probe"("id") ON DELETE cascade ON UPDATE no action
+    `);
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe_child" ADD CONSTRAINT "ddl_shape_probe_child_probe_id_fk" FOREIGN KEY ("probe_id") REFERENCES "public"."ddl_shape_probe"("id") ON DELETE cascade ON UPDATE no action;',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("a statement bundling more than one top-level SQL statement is unrecognized (Blocker 2)", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE TABLE "ddl_shape_never_created_a" ("id" uuid PRIMARY KEY); CREATE TABLE "ddl_shape_never_created_b" ("id" uuid PRIMARY KEY);',
+    );
+    expect(state).toBe("unrecognized");
+
+    const tables = await sql.unsafe<{ table_name: string }[]>(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name LIKE 'ddl_shape_never_created_%'
+    `);
+    expect(tables).toEqual([]);
+  });
+
+  it("heartbeatNextEventSequencesAreCurrent maps a missing heartbeat_runs table to unrecognized instead of throwing (Minor 11)", async () => {
+    const isolatedSql = postgres(connectionString, { max: 1, onnotice: () => {} });
+    try {
+      // A schema with no `heartbeat_runs` table at all -- distinct from
+      // "genuinely not caught up", which every other test in this block
+      // would otherwise also exercise against the real, fully migrated
+      // `public` schema.
+      await isolatedSql.unsafe(`CREATE SCHEMA IF NOT EXISTS "ddl_shape_no_heartbeat"`);
+      await isolatedSql.unsafe(`SET search_path TO "ddl_shape_no_heartbeat"`);
+      const state = await __migrationStatementAlreadyAppliedForTests(
+        isolatedSql,
+        'UPDATE "heartbeat_runs" AS run SET "next_event_seq" = COALESCE((SELECT 1), 1) WHERE true;',
+      );
+      expect(state).toBe("unrecognized");
+    } finally {
+      await isolatedSql.end();
+    }
+  });
+});
+
+describeEmbeddedPostgres("applyPendingMigrations regression coverage", () => {
+  it("a fresh empty database bootstrap never enters the statement-skip path", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    let connectionString: string;
+    try {
+      connectionString = await createTempDatabase();
+    } finally {
+      infoSpy.mockRestore();
+    }
+
+    const state = await inspectMigrations(connectionString);
+    expect(state.status).toBe("upToDate");
+
+    const skipLogged = infoSpy.mock.calls.some(
+      ([message]) => typeof message === "string" && message.includes("Skipped statement"),
+    );
+    expect(skipLogged).toBe(false);
+  });
+
+  it("still throws when tables exist but there is no migration journal", async () => {
+    const connectionString = await createTempDatabase();
+    const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+    try {
+      await sql.unsafe(`DROP TABLE "drizzle"."__drizzle_migrations"`);
+    } finally {
+      await sql.end();
+    }
+
+    await expect(applyPendingMigrations(connectionString)).rejects.toThrow(
+      /no migration journal; automatic migration is unsafe/,
+    );
+  });
 });
