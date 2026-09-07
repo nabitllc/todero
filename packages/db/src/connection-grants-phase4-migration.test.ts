@@ -263,7 +263,7 @@ describeEmbeddedPostgres("connection grants phase 4 executable migration", () =>
 
       const ambiguous = await seedLegacyCredential({ ownerUserIds: ["alice", "bob"] });
       await rewindMigration();
-      await expect(applyPendingMigrations(database.connectionString)).resolves.toBeUndefined();
+      await expect(applyPendingMigrations(database.connectionString)).resolves.toEqual(expect.any(Array));
       expect(await sql<{
         status: string;
         is_default: boolean;
@@ -290,7 +290,7 @@ describeEmbeddedPostgres("connection grants phase 4 executable migration", () =>
         includeConnectionReference: true,
       });
       await rewindMigration();
-      await expect(applyPendingMigrations(database.connectionString)).resolves.toBeUndefined();
+      await expect(applyPendingMigrations(database.connectionString)).resolves.toEqual(expect.any(Array));
       expect(await sql<{
         status: string;
         enabled: boolean;

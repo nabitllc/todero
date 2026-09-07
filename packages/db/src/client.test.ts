@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import postgres from "postgres";
 import {
   applyPendingMigrations,
+  ensurePostgresDatabase,
   inspectMigrations,
+  migratePostgresIfEmpty,
+  reconcilePendingMigrationHistory,
   resetPostgresDatabase,
+  splitMigrationStatements,
+  statementContainsMultipleTopLevelStatements,
+  __migrationStatementAlreadyAppliedForTests,
+  __replayUnrecognizedStatementForTests,
+  __splitTopLevelStatementsForTests,
 } from "./client.js";
 import {
   getEmbeddedPostgresTestSupport,
@@ -1819,7 +1827,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await verifySql.end();
       }
 
-      await expect(applyPendingMigrations(connectionString)).resolves.toBeUndefined();
+      // PR #48 round 4 Important 1: `applyPendingMigrations` now resolves
+      // with the list of skipped statements instead of `void`.
+      await expect(applyPendingMigrations(connectionString)).resolves.toEqual(expect.any(Array));
       await expect(inspectMigrations(connectionString)).resolves.toMatchObject({
         status: "upToDate",
       });
@@ -1866,5 +1876,1015 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
       }
     },
     60_000,
+  );
+});
+
+// PR #48 Blocker 2 / round 4 Blocker: `filesWithNoBreakpointAtAll` counts, out
+// of all 232 migration files, how many contain no literal
+// `--> statement-breakpoint` marker anywhere (a plain substring check, so it
+// does not care whether the file is really one statement or several).
+// `filesBundlingMultipleStatements` counts, out of those same 232 files, how
+// many have at least one `splitMigrationStatements` element for which
+// `statementContainsMultipleTopLevelStatements` is true after the
+// comment-aware scan added in round 4 -- i.e. an element with more than one
+// *real* top-level `;` once `--` line comments are skipped. That is the shape
+// that let `migrationStatementAlreadyApplied` verify only the first statement
+// in the blob and decide the fate of the whole file (see
+// `0182_connections_v3_schema_core.sql`, 10 statements, no markers).
+// Before the comment-aware fix this second count was 20 and included files
+// that do have a marker between every real statement but also have a `;`
+// inside a `--` comment (`0196_drop_cloud_upstream_tables.sql`,
+// `0224_unified_adapter_auth_sessions.sql`) -- those files split correctly at
+// runtime today and drop out of this count entirely, which is why it is now
+// a true subset of `filesWithNoBreakpointAtAll` (verified below) instead of a
+// mislabeled "20 of those". This fix does not rewrite the 232 existing
+// migration files (out of scope; the runtime fix is
+// `statementContainsMultipleTopLevelStatements` and `splitTopLevelStatements`,
+// exercised directly in the unit cases below) -- this lint test only makes
+// the corpus's current shape visible and pins the counts so a newly authored
+// migration cannot silently grow the list.
+describe("migration statement-breakpoint lint", () => {
+  it("reports how many migration files bundle more than one statement without a --> statement-breakpoint marker", async () => {
+    const entries = await fs.promises.readdir(new URL("./migrations", import.meta.url), {
+      withFileTypes: true,
+    });
+    const sqlFiles = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".sql"));
+
+    const filesWithNoBreakpointAtAll: string[] = [];
+    const filesBundlingMultipleStatements: string[] = [];
+
+    for (const entry of sqlFiles) {
+      const content = await fs.promises.readFile(
+        new URL(`./migrations/${entry.name}`, import.meta.url),
+        "utf8",
+      );
+      if (!content.includes("--> statement-breakpoint")) {
+        filesWithNoBreakpointAtAll.push(entry.name);
+      }
+      const statements = splitMigrationStatements(content);
+      if (statements.some((statement) => statementContainsMultipleTopLevelStatements(statement))) {
+        filesBundlingMultipleStatements.push(entry.name);
+      }
+    }
+
+    console.info(
+      `[migration lint] ${filesWithNoBreakpointAtAll.length} of ${sqlFiles.length} migration files contain no --> statement-breakpoint marker at all; ` +
+        `${filesBundlingMultipleStatements.length} of those actually bundle more than one statement without one.`,
+    );
+
+    // Baseline as of the round-4 comment-aware scan fix (2026-09-06): do not
+    // increase either number by adding a new marker-less multi-statement
+    // migration. A decrease (an existing file gaining markers) is welcome and
+    // should lower these. `filesBundlingMultipleStatements` was 20 before
+    // this fix; 9 of those were files whose only "extra" `;` lived inside a
+    // `--` comment (`0196`, `0224`) and now correctly read as one statement.
+    expect(filesWithNoBreakpointAtAll.length).toBe(64);
+    expect(filesBundlingMultipleStatements.length).toBe(11);
+
+    // `filesBundlingMultipleStatements` is now a true subset of
+    // `filesWithNoBreakpointAtAll`: every file this lint flags as bundling
+    // more than one real statement is also a file with no marker at all.
+    // Before the comment-aware fix this did not hold -- `0196` and `0224` do
+    // have a marker between every real statement but were still flagged,
+    // purely because of a `;` inside a `--` comment.
+    for (const file of filesBundlingMultipleStatements) {
+      expect(filesWithNoBreakpointAtAll).toContain(file);
+    }
+  });
+});
+
+// PR #48 round 4 Blocker: `countTopLevelStatementSeparators` and
+// `splitTopLevelStatements` did not skip `--` line comments, so a `;` inside
+// prose was miscounted as a statement separator. `0196_drop_cloud_upstream_tables.sql`
+// is the real reproduction: its leading comment block mentions "from 0089;",
+// and its first `--> statement-breakpoint`-delimited chunk (the comment plus
+// `DROP TABLE IF EXISTS "cloud_upstream_runs";`) has no dedicated DDL check
+// (there is no `tableExists`-based `DROP TABLE` case), so it always fell
+// through to `"unrecognized"`. Before the fix, that chunk's *own* `;` and the
+// comment's `;` both counted, `statementContainsMultipleTopLevelStatements`
+// read `true`, and `applyMigrationStatement` called `splitTopLevelStatements`
+// on it during replay -- splitting right after "0089;" and handing
+// `sql.unsafe` a fragment that begins mid-comment ("the receiver-side tables
+// ... DROP TABLE ...;"), a 42601 syntax error.
+describe("comment-aware top-level statement scanning (round 4 Blocker)", () => {
+  it("splitTopLevelStatements(0196's first statement-breakpoint chunk) returns exactly one statement", async () => {
+    const content = await fs.promises.readFile(
+      new URL("./migrations/0196_drop_cloud_upstream_tables.sql", import.meta.url),
+      "utf8",
+    );
+    const firstChunk = splitMigrationStatements(content)[0];
+    expect(firstChunk).toBeDefined();
+    expect(firstChunk).toContain("0089;");
+
+    // The root cause: before the fix this chunk's own comment-embedded `;`
+    // made it look like more than one statement.
+    expect(statementContainsMultipleTopLevelStatements(firstChunk as string)).toBe(false);
+
+    const split = __splitTopLevelStatementsForTests(firstChunk as string);
+    expect(split).toHaveLength(1);
+    expect(split[0]).toBe((firstChunk as string).trim());
+  });
+
+  it("splitTopLevelStatements(0224's first statement-breakpoint chunk) returns exactly one statement", async () => {
+    const content = await fs.promises.readFile(
+      new URL("./migrations/0224_unified_adapter_auth_sessions.sql", import.meta.url),
+      "utf8",
+    );
+    const firstChunk = splitMigrationStatements(content)[0];
+    expect(firstChunk).toBeDefined();
+    expect(firstChunk).toContain('"claude_setup_token_sessions";');
+
+    expect(statementContainsMultipleTopLevelStatements(firstChunk as string)).toBe(false);
+
+    const split = __splitTopLevelStatementsForTests(firstChunk as string);
+    expect(split).toHaveLength(1);
+    expect(split[0]).toBe((firstChunk as string).trim());
+  });
+});
+
+describeEmbeddedPostgres("marker-less-file-style replay of a comment-only semicolon (round 4 Blocker)", () => {
+  it(
+    "replays 0196 (DROP TABLE, comment mentions \"0089;\") against a database where it already ran without throwing, and re-stamps it",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const dropCloudUpstreamHash = await migrationHash("0196_drop_cloud_upstream_tables.sql");
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${dropCloudUpstreamHash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: ["0196_drop_cloud_upstream_tables.sql"],
+        reason: "pending-migrations",
+      });
+
+      // Before the fix: `applyMigrationStatement` sees this chunk as
+      // (falsely) bundling multiple statements, splits it at the comment's
+      // "0089;", and hands `sql.unsafe` a fragment beginning mid-comment --
+      // 42601. The whole migration transaction rolls back and the file is
+      // never re-stamped.
+      await expect(applyPendingMigrations(connectionString)).resolves.toEqual(expect.any(Array));
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+      expect(finalState.appliedMigrations).toContain("0196_drop_cloud_upstream_tables.sql");
+    },
+    30_000,
+  );
+});
+
+describeEmbeddedPostgres("reconcilePendingMigrationHistory", () => {
+  it(
+    "does not stamp migration 0229 while migration 0073 (earlier in journal order) is still unresolved",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const shinySaloHash = await migrationHash("0073_shiny_salo.sql");
+      const dropAttachmentHash = await migrationHash(
+        "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+      );
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash IN ('${shinySaloHash}', '${dropAttachmentHash}')`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        reason: "pending-migrations",
+        pendingMigrations: expect.arrayContaining([
+          "0073_shiny_salo.sql",
+          "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+        ]),
+      });
+
+      const reconcileResult = await reconcilePendingMigrationHistory(connectionString);
+      // 0073's ADD COLUMN cannot be verified applied (the column is
+      // genuinely absent -- 0229 already dropped it) -- 0229 must not be
+      // stamped ahead of it just because its own DROP COLUMN IF EXISTS
+      // check independently reads "applied" (the column it targets is also
+      // absent). Real case from PR #48, commit 1fe8112c.
+      expect(reconcileResult.repairedMigrations).not.toContain(
+        "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+      );
+      expect(reconcileResult.remainingMigrations).toEqual(
+        expect.arrayContaining([
+          "0073_shiny_salo.sql",
+          "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+        ]),
+      );
+      expect(reconcileResult.skippedStatements.map((skipped) => skipped.migrationFile)).toEqual(
+        expect.arrayContaining([
+          "0073_shiny_salo.sql",
+          "0229_drop_company_brand_color_and_attachment_max_bytes.sql",
+        ]),
+      );
+
+      // Left pending together, `applyPendingMigrationsManually` (journal-
+      // ordered, per-statement, idempotent) replays 0073 then 0229 back to
+      // back and converges on the correct end state instead of permanently
+      // re-adding a column 0229 already retired.
+      await applyPendingMigrations(connectionString);
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const columns = await verifySql.unsafe<{ column_name: string }[]>(`
+          SELECT column_name FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'companies'
+            AND column_name IN ('attachment_max_bytes', 'brand_color')
+        `);
+        expect(columns).toEqual([]);
+      } finally {
+        await verifySql.end();
+      }
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+    },
+    40_000,
+  );
+});
+
+describeEmbeddedPostgres("applyPendingMigrationsManually savepoint recovery", () => {
+  it(
+    "treats a unique violation on a replayed backfill as already applied instead of failing the whole migration (Critical 3)",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const prettyDoctorOctopusHash = await migrationHash("0032_pretty_doctor_octopus.sql");
+      const companyId = "00000000-0000-0000-0000-0000000a0032";
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        // A company with a monthly budget already set -- exactly the shape
+        // migration 0032's company-scope backfill (`INSERT ... SELECT ...
+        // FROM companies WHERE budget_monthly_cents > 0`, no `ON CONFLICT`)
+        // targets.
+        await sql.unsafe(`
+          INSERT INTO "companies" ("id", "name", "issue_prefix", "budget_monthly_cents", "created_at", "updated_at")
+          VALUES ('${companyId}', 'Replay Conflict Co', 'RPC032', 500, now(), now())
+        `);
+        // Simulate the backfill having already run once for this company:
+        // the row the statement would insert already exists, and
+        // `budget_policies_company_scope_metric_unique_idx` (0032's own
+        // unique index on company_id/scope_type/scope_id/metric/window_kind)
+        // makes a second attempt a 23505, not a duplicate.
+        await sql.unsafe(`
+          INSERT INTO "budget_policies" (
+            "company_id", "scope_type", "scope_id", "metric", "window_kind", "amount"
+          ) VALUES (
+            '${companyId}', 'company', '${companyId}', 'billed_cents', 'calendar_month_utc', 500
+          )
+        `);
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${prettyDoctorOctopusHash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: ["0032_pretty_doctor_octopus.sql"],
+        reason: "pending-migrations",
+      });
+
+      // Migration 0034 later drops and replaces 0032's own
+      // "budget_incidents_policy_window_threshold_idx" with a partial
+      // (WHERE-clause) version -- left untouched here (PR #48 round 3
+      // Important 2: no fixture hand-repair). The live index no longer
+      // matches 0032's own CREATE UNIQUE INDEX statement, which correctly
+      // reads as "definition-differs" (Blocker 1), not a false-positive
+      // "applied" -- and, critically, must not be blind-replayed into that
+      // same index name, which would abort with 42P07. Before Critical 3's
+      // fix this throws for a second, independent reason: the replayed
+      // INSERT hits the unique index and the uncaught 23505 fails the whole
+      // migration.
+      //
+      // Captured via direct reassignment, not `vi.spyOn` -- `vi.spyOn`'s
+      // call history was observed to be cleared partway through this
+      // `await`-heavy call in this suite, for reasons unrelated to this fix.
+      // Both `console.info` and `console.warn` are captured: PR #48 round 4
+      // Important 1 moved `definition-differs-skipped-not-replayed` to
+      // `console.warn` specifically, so it must not be buried at the same
+      // level as routine already-applied skips.
+      const originalInfo = console.info;
+      const originalWarn = console.warn;
+      const capturedLogs: string[] = [];
+      const capturedWarnLogs: string[] = [];
+      console.info = ((...args: unknown[]) => {
+        capturedLogs.push(args.map(String).join(" "));
+      }) as typeof console.info;
+      console.warn = ((...args: unknown[]) => {
+        capturedWarnLogs.push(args.map(String).join(" "));
+      }) as typeof console.warn;
+      let manuallySkipped: Awaited<ReturnType<typeof applyPendingMigrations>>;
+      try {
+        manuallySkipped = await applyPendingMigrations(connectionString);
+      } finally {
+        console.info = originalInfo;
+        console.warn = originalWarn;
+      }
+
+      // Never logged at info: this skip reason is audible specifically
+      // because it is a `console.warn`, not folded in with the rest.
+      const definitionDiffersSkipLoggedAtInfo = capturedLogs.some(
+        (message) =>
+          message.includes("definition-differs-skipped-not-replayed") &&
+          message.includes("budget_incidents_policy_window_threshold_idx"),
+      );
+      expect(definitionDiffersSkipLoggedAtInfo).toBe(false);
+
+      const definitionDiffersSkipLoggedAtWarn = capturedWarnLogs.some(
+        (message) =>
+          message.includes("definition-differs-skipped-not-replayed") &&
+          message.includes("budget_incidents_policy_window_threshold_idx"),
+      );
+      expect(definitionDiffersSkipLoggedAtWarn).toBe(true);
+
+      // PR #48 round 4 Important 1: the returned skip list carries the same
+      // entry, so a caller does not have to scrape console output to find it.
+      const definitionDiffersEntry = manuallySkipped.find(
+        (skipped) =>
+          skipped.reason === "definition-differs-skipped-not-replayed" &&
+          skipped.statementPreview.includes("budget_incidents_policy_window_threshold_idx"),
+      );
+      expect(definitionDiffersEntry).toBeDefined();
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const rows = await verifySql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count
+          FROM "budget_policies"
+          WHERE "company_id" = '${companyId}' AND "scope_type" = 'company'
+        `);
+        // No duplicate row -- the conflicting statement was rolled back to
+        // its savepoint, not partially applied.
+        expect(rows[0]?.count).toBe(1);
+
+        // 0034's own (later, partial) version of the index survives
+        // untouched -- 0032's replay skipped it rather than dropping and
+        // recreating it.
+        const indexRows = await verifySql.unsafe<{ indexdef: string }[]>(`
+          SELECT indexdef FROM pg_indexes
+          WHERE indexname = 'budget_incidents_policy_window_threshold_idx'
+        `);
+        expect(indexRows[0]?.indexdef).toContain("WHERE");
+      } finally {
+        await verifySql.end();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "still fails the whole migration loudly on a non-unique-violation error mid-file, and does not stamp it (regression)",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const prettyDoctorOctopusHash = await migrationHash("0032_pretty_doctor_octopus.sql");
+      const companyId = "00000000-0000-0000-0000-0000000b0032";
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(`
+          INSERT INTO "companies" ("id", "name", "issue_prefix", "budget_monthly_cents", "created_at", "updated_at")
+          VALUES ('${companyId}', 'Mid-File Failure Co', 'MFF032', 500, now(), now())
+        `);
+        // Force 0032's agent-scope backfill statement to fail with
+        // something other than a unique violation (an undefined-column
+        // error, not 23505) -- the savepoint added for Critical 3 must not
+        // swallow this.
+        await sql.unsafe(`ALTER TABLE "agents" DROP COLUMN "budget_monthly_cents"`);
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${prettyDoctorOctopusHash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      await expect(applyPendingMigrations(connectionString)).rejects.toThrow();
+
+      const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        const policyRows = await verifySql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count FROM "budget_policies" WHERE "company_id" = '${companyId}'
+        `);
+        // The company-scope INSERT ran inside the same transaction as the
+        // statement that then failed -- it must roll back with everything
+        // else in the file, not persist as a partial apply.
+        expect(policyRows[0]?.count).toBe(0);
+
+        const journalRows = await verifySql.unsafe<{ count: number }[]>(
+          `SELECT count(*)::int AS count FROM "drizzle"."__drizzle_migrations" WHERE hash = '${prettyDoctorOctopusHash}'`,
+        );
+        expect(journalRows[0]?.count).toBe(0);
+      } finally {
+        await verifySql.end();
+      }
+    },
+    30_000,
+  );
+});
+
+describeEmbeddedPostgres("migrationStatementAlreadyApplied DDL shape checks", () => {
+  let connectionString: string;
+  let sql: ReturnType<typeof postgres>;
+  let cleanupDb: (() => Promise<void>) | undefined;
+
+  // Deliberately calls `startEmbeddedPostgresTestDatabase` directly instead
+  // of the module's `createTempDatabase` helper: that helper pushes its
+  // cleanup onto the shared, module-level `cleanups` array that the global
+  // `afterEach` above drains after *every* `it` in this file. These unit
+  // cases share one database across many lightweight `it`s on purpose (each
+  // just checks one DDL shape) — going through `createTempDatabase` would
+  // have the first `it`'s `afterEach` tear the shared cluster down out from
+  // under every case after it.
+  beforeAll(async () => {
+    const db = await startEmbeddedPostgresTestDatabase("todero-db-client-ddl-shape-");
+    connectionString = db.connectionString;
+    cleanupDb = db.cleanup;
+    sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+    await sql.unsafe(`
+      CREATE TABLE "ddl_shape_probe" (
+        "id" uuid PRIMARY KEY,
+        "company_id" uuid NOT NULL,
+        "created_at" timestamptz NOT NULL
+      )
+    `);
+    await sql.unsafe(
+      `CREATE INDEX "ddl_shape_probe_company_idx" ON "ddl_shape_probe" USING btree ("company_id")`,
+    );
+  }, 90_000);
+
+  afterAll(async () => {
+    await sql?.end();
+    await cleanupDb?.();
+  }, 30_000);
+
+  it("CREATE TABLE with a schema-qualified name resolves the real table, not \"public\" itself (Minor 12)", async () => {
+    // Before the fix, the single greedy `"([^"]+)"` capture matched
+    // "public" (the schema token) as if it were the table name, so this
+    // schema-qualified statement -- whose real table already fully exists
+    // -- misread as "not-applied".
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE TABLE "public"."ddl_shape_probe" ("id" uuid PRIMARY KEY, "company_id" uuid NOT NULL, "created_at" timestamptz NOT NULL);',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("DROP INDEX IF EXISTS on an index that still exists is not-applied", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'DROP INDEX IF EXISTS "ddl_shape_probe_company_idx";',
+    );
+    expect(state).toBe("not-applied");
+  });
+
+  it("DROP INDEX IF EXISTS with lowercase keyword casing is still recognized", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'drop index if exists "ddl_shape_probe_company_idx";',
+    );
+    expect(state).toBe("not-applied");
+  });
+
+  it("DROP INDEX with an unquoted identifier falls back to unrecognized", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      "DROP INDEX IF EXISTS ddl_shape_probe_company_idx;",
+    );
+    expect(state).toBe("unrecognized");
+  });
+
+  it("DROP INDEX with a schema-qualified name resolves the real index, not \"public\" itself (Critical 4/5, Minor 12)", async () => {
+    // Before the fix this misread "public" as the index name, found no
+    // index called "public", and reported "applied" (already dropped) even
+    // though the real index is still there.
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'DROP INDEX IF EXISTS "public"."ddl_shape_probe_company_idx";',
+    );
+    expect(state).toBe("not-applied");
+  });
+
+  it("a dropped index that genuinely no longer exists reads as applied", async () => {
+    await sql.unsafe(`CREATE INDEX "ddl_shape_probe_temp_idx" ON "ddl_shape_probe" USING btree ("id")`);
+    await sql.unsafe(`DROP INDEX "ddl_shape_probe_temp_idx"`);
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'DROP INDEX IF EXISTS "ddl_shape_probe_temp_idx";',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("a same-named index with a different definition is definition-differs, not a false-positive applied (Critical 4, Blocker 1)", async () => {
+    // Round 3 Blocker 1: this used to read "unrecognized" (blind-replay,
+    // aborting a real database with 42P07 on an already-present name).
+    // Present-but-mismatched is now its own state so it is skipped instead.
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE INDEX "ddl_shape_probe_company_idx" ON "ddl_shape_probe" USING btree ("company_id","created_at");',
+    );
+    expect(state).toBe("definition-differs");
+  });
+
+  it("a matching CREATE INDEX statement reads as applied", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE INDEX "ddl_shape_probe_company_idx" ON "ddl_shape_probe" USING btree ("company_id");',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("multi-clause ALTER TABLE ... DROP COLUMN a, DROP COLUMN b is unrecognized, not verified from the first clause alone", async () => {
+    await sql.unsafe(`ALTER TABLE "ddl_shape_probe" ADD COLUMN IF NOT EXISTS "extra_a" text`);
+    await sql.unsafe(`ALTER TABLE "ddl_shape_probe" ADD COLUMN IF NOT EXISTS "extra_b" text`);
+    await sql.unsafe(`ALTER TABLE "ddl_shape_probe" DROP COLUMN "extra_a"`);
+    // "extra_a" is already gone but "extra_b" still exists -- a regex
+    // anchored only at the start of the statement would match the first
+    // DROP COLUMN clause, see it satisfied, and misreport the whole
+    // statement as applied while "extra_b" survives.
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe" DROP COLUMN "extra_a", DROP COLUMN "extra_b";',
+    );
+    expect(state).toBe("unrecognized");
+  });
+
+  it("a constraint with the same name but a different definition is definition-differs, not a false-positive applied (Critical 4, Blocker 1)", async () => {
+    // Round 3 Blocker 1: this used to read "unrecognized" (blind-replay,
+    // aborting a real database with 42710 on an already-present name).
+    await sql.unsafe(
+      `ALTER TABLE "ddl_shape_probe" ADD CONSTRAINT "ddl_shape_probe_company_check" CHECK ("company_id" IS NOT NULL)`,
+    );
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe" ADD CONSTRAINT "ddl_shape_probe_company_check" CHECK ("id" IS NOT NULL);',
+    );
+    expect(state).toBe("definition-differs");
+  });
+
+  it("a matching ADD CONSTRAINT CHECK statement reads as applied despite Postgres re-serializing it with extra parens", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe" ADD CONSTRAINT "ddl_shape_probe_company_check" CHECK ("company_id" IS NOT NULL);',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("a matching ADD CONSTRAINT FOREIGN KEY statement reads as applied despite default ON DELETE/UPDATE actions being omitted on read", async () => {
+    await sql.unsafe(`CREATE TABLE "ddl_shape_probe_child" ("id" uuid PRIMARY KEY, "probe_id" uuid)`);
+    await sql.unsafe(`
+      ALTER TABLE "ddl_shape_probe_child" ADD CONSTRAINT "ddl_shape_probe_child_probe_id_fk"
+      FOREIGN KEY ("probe_id") REFERENCES "public"."ddl_shape_probe"("id") ON DELETE cascade ON UPDATE no action
+    `);
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'ALTER TABLE "ddl_shape_probe_child" ADD CONSTRAINT "ddl_shape_probe_child_probe_id_fk" FOREIGN KEY ("probe_id") REFERENCES "public"."ddl_shape_probe"("id") ON DELETE cascade ON UPDATE no action;',
+    );
+    expect(state).toBe("applied");
+  });
+
+  it("a statement bundling more than one top-level SQL statement is unrecognized (Blocker 2)", async () => {
+    const state = await __migrationStatementAlreadyAppliedForTests(
+      sql,
+      'CREATE TABLE "ddl_shape_never_created_a" ("id" uuid PRIMARY KEY); CREATE TABLE "ddl_shape_never_created_b" ("id" uuid PRIMARY KEY);',
+    );
+    expect(state).toBe("unrecognized");
+
+    const tables = await sql.unsafe<{ table_name: string }[]>(`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name LIKE 'ddl_shape_never_created_%'
+    `);
+    expect(tables).toEqual([]);
+  });
+
+  it("heartbeatNextEventSequencesAreCurrent maps a missing heartbeat_runs table to unrecognized instead of throwing (Minor 11)", async () => {
+    const isolatedSql = postgres(connectionString, { max: 1, onnotice: () => {} });
+    try {
+      // A schema with no `heartbeat_runs` table at all -- distinct from
+      // "genuinely not caught up", which every other test in this block
+      // would otherwise also exercise against the real, fully migrated
+      // `public` schema.
+      await isolatedSql.unsafe(`CREATE SCHEMA IF NOT EXISTS "ddl_shape_no_heartbeat"`);
+      await isolatedSql.unsafe(`SET search_path TO "ddl_shape_no_heartbeat"`);
+      const state = await __migrationStatementAlreadyAppliedForTests(
+        isolatedSql,
+        'UPDATE "heartbeat_runs" AS run SET "next_event_seq" = COALESCE((SELECT 1), 1) WHERE true;',
+      );
+      expect(state).toBe("unrecognized");
+    } finally {
+      await isolatedSql.end();
+    }
+  });
+
+  it(
+    "a table-qualified partial index predicate that round-trips cleanly after cast/qualifier normalization reads as applied (Blocker 1, 0092 shape)",
+    async () => {
+      await sql.unsafe(
+        `CREATE TABLE "ddl_shape_partial_index_simple" ("id" uuid PRIMARY KEY, "status" text NOT NULL)`,
+      );
+      await sql.unsafe(`
+        CREATE INDEX "ddl_shape_partial_index_simple_active_idx"
+        ON "ddl_shape_partial_index_simple" USING btree ("id")
+        WHERE "ddl_shape_partial_index_simple"."status" = 'in_flight'
+      `);
+      // Postgres re-serializes this as `WHERE (status = 'in_flight'::text)`
+      // -- no table qualifier, an added `::text` cast. Before the widened
+      // `normalizeDdlText` (Blocker 1), that textual mismatch alone made
+      // this read as a false-positive "unrecognized" (blind-replay,
+      // aborting with 42P07 on a database where it already ran).
+      const state = await __migrationStatementAlreadyAppliedForTests(
+        sql,
+        'CREATE INDEX "ddl_shape_partial_index_simple_active_idx" ON "ddl_shape_partial_index_simple" USING btree ("id") WHERE "ddl_shape_partial_index_simple"."status" = \'in_flight\';',
+      );
+      expect(state).toBe("applied");
+    },
+  );
+
+  it(
+    "a table-qualified partial index predicate using NOT IN does not round-trip and reads as definition-differs, not a blind-replay unrecognized (Blocker 1, 0074 shape)",
+    async () => {
+      await sql.unsafe(
+        `CREATE TABLE "ddl_shape_partial_index_notin" ("id" uuid PRIMARY KEY, "status" text NOT NULL)`,
+      );
+      await sql.unsafe(`
+        CREATE UNIQUE INDEX "ddl_shape_partial_index_notin_open_uq"
+        ON "ddl_shape_partial_index_notin" USING btree ("id")
+        WHERE "ddl_shape_partial_index_notin"."status" NOT IN ('done', 'cancelled')
+      `);
+      // Postgres re-serializes `NOT IN (...)` as `<> ALL (ARRAY[...])` -- a
+      // different token stream no amount of cast/qualifier normalization
+      // reconciles. This must read "definition-differs" (present, shape
+      // recognised, text does not match), never "unrecognized": the old
+      // "unrecognized" classification for this exact mismatch is what let a
+      // real `0074_striped_genesis.sql` replay blind-recreate an index that
+      // already exists and abort with 42P07.
+      const state = await __migrationStatementAlreadyAppliedForTests(
+        sql,
+        'CREATE UNIQUE INDEX "ddl_shape_partial_index_notin_open_uq" ON "ddl_shape_partial_index_notin" USING btree ("id") WHERE "ddl_shape_partial_index_notin"."status" NOT IN (\'done\', \'cancelled\');',
+      );
+      expect(state).toBe("definition-differs");
+    },
+  );
+
+  it(
+    "a CHECK (... IN (...)) constraint with a single value is definition-differs, not a false-positive applied or a blind-replay unrecognized (Blocker 1, 0049 shape)",
+    async () => {
+      await sql.unsafe(`CREATE TABLE "ddl_shape_check_in_single" ("id" uuid PRIMARY KEY, "kind" text NOT NULL)`);
+      await sql.unsafe(
+        `ALTER TABLE "ddl_shape_check_in_single" ADD CONSTRAINT "ddl_shape_check_in_single_kind_check" CHECK ("kind" IN ('blocks'))`,
+      );
+      // Postgres re-serializes a single-value `IN` as `= ANY (ARRAY[...])`,
+      // not `= 'blocks'` and not `IN (...)` -- neither the pre-fix nor the
+      // widened normalizer can match this textually, so it must land on
+      // "definition-differs" (constraint present, shape recognised) and be
+      // skipped rather than replayed into a duplicate-constraint abort.
+      const state = await __migrationStatementAlreadyAppliedForTests(
+        sql,
+        'ALTER TABLE "ddl_shape_check_in_single" ADD CONSTRAINT "ddl_shape_check_in_single_kind_check" CHECK ("kind" IN (\'blocks\'));',
+      );
+      expect(state).toBe("definition-differs");
+    },
+  );
+
+  it(
+    "a gin index with an operator class (gin_trgm_ops) reads as applied (Important 1, 0051 shape)",
+    async () => {
+      await sql.unsafe(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+      await sql.unsafe(`CREATE TABLE "ddl_shape_gin_probe" ("id" uuid PRIMARY KEY, "body" text NOT NULL)`);
+      await sql.unsafe(
+        `CREATE INDEX "ddl_shape_gin_probe_body_idx" ON "ddl_shape_gin_probe" USING gin ("body" gin_trgm_ops)`,
+      );
+      const state = await __migrationStatementAlreadyAppliedForTests(
+        sql,
+        'CREATE INDEX "ddl_shape_gin_probe_body_idx" ON "ddl_shape_gin_probe" USING gin ("body" gin_trgm_ops);',
+      );
+      expect(state).toBe("applied");
+    },
+  );
+
+  it(
+    "a bare DROP CONSTRAINT (no IF EXISTS) gets a shape check: presence is not-applied, absence is applied (Important 4, 0093 shape)",
+    async () => {
+      await sql.unsafe(`CREATE TABLE "ddl_shape_drop_constraint_probe" ("id" uuid PRIMARY KEY, "ref_id" uuid)`);
+      await sql.unsafe(`
+        ALTER TABLE "ddl_shape_drop_constraint_probe" ADD CONSTRAINT "ddl_shape_drop_constraint_probe_ref_fk"
+        FOREIGN KEY ("ref_id") REFERENCES "ddl_shape_probe"("id")
+      `);
+
+      // Before Important 4's fix this fell through to "unrecognized"
+      // regardless of whether the constraint was still present, so an
+      // already-applied bare DROP CONSTRAINT got blind-replayed into
+      // 42704 (undefined_object) on a database where it already ran.
+      const presentState = await __migrationStatementAlreadyAppliedForTests(
+        sql,
+        'ALTER TABLE "ddl_shape_drop_constraint_probe" DROP CONSTRAINT "ddl_shape_drop_constraint_probe_ref_fk";',
+      );
+      expect(presentState).toBe("not-applied");
+
+      await sql.unsafe(
+        `ALTER TABLE "ddl_shape_drop_constraint_probe" DROP CONSTRAINT "ddl_shape_drop_constraint_probe_ref_fk"`,
+      );
+      const absentState = await __migrationStatementAlreadyAppliedForTests(
+        sql,
+        'ALTER TABLE "ddl_shape_drop_constraint_probe" DROP CONSTRAINT "ddl_shape_drop_constraint_probe_ref_fk";',
+      );
+      expect(absentState).toBe("applied");
+    },
+  );
+});
+
+describeEmbeddedPostgres("applyPendingMigrations regression coverage", () => {
+  it("a fresh empty database bootstrap never enters the statement-skip path", async () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    let connectionString: string;
+    try {
+      connectionString = await createTempDatabase();
+    } finally {
+      infoSpy.mockRestore();
+    }
+
+    const state = await inspectMigrations(connectionString);
+    expect(state.status).toBe("upToDate");
+
+    const skipLogged = infoSpy.mock.calls.some(
+      ([message]) => typeof message === "string" && message.includes("Skipped statement"),
+    );
+    expect(skipLogged).toBe(false);
+  });
+
+  it("still throws when tables exist but there is no migration journal", async () => {
+    const connectionString = await createTempDatabase();
+    const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+    try {
+      await sql.unsafe(`DROP TABLE "drizzle"."__drizzle_migrations"`);
+    } finally {
+      await sql.end();
+    }
+
+    await expect(applyPendingMigrations(connectionString)).rejects.toThrow(
+      /no migration journal; automatic migration is unsafe/,
+    );
+  });
+});
+
+// PR #48 round 3 Blocker 1: 64 of 232 migration files carry no
+// `--> statement-breakpoint` marker at all, so `splitMigrationStatements`
+// hands the entire file to `migrationStatementAlreadyApplied` as one blob,
+// which the multi-statement guard correctly classifies "unrecognized" for
+// the strict reconciliation gate -- but blindly replaying that whole blob in
+// a single savepoint is itself unsafe: its first statement being
+// already-applied aborts the entire file before ever reaching its own
+// idempotent backfill.
+describeEmbeddedPostgres("marker-less multi-statement migration replay (Blocker 1)", () => {
+  it(
+    "replays 0182 (no --> statement-breakpoint markers, 10+ bundled statements) against a database where it already ran without throwing, and re-stamps it",
+    async () => {
+      const connectionString = await createTempDatabase();
+      await applyPendingMigrations(connectionString);
+
+      const connectionsV3Hash = await migrationHash("0182_connections_v3_schema_core.sql");
+
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `DELETE FROM "drizzle"."__drizzle_migrations" WHERE hash = '${connectionsV3Hash}'`,
+        );
+      } finally {
+        await sql.end();
+      }
+
+      const pendingState = await inspectMigrations(connectionString);
+      expect(pendingState).toMatchObject({
+        status: "needsMigrations",
+        pendingMigrations: ["0182_connections_v3_schema_core.sql"],
+        reason: "pending-migrations",
+      });
+
+      // Before the fix, `sql.unsafe(entireFileText)` runs every bundled
+      // statement front-to-back in one savepoint; the very first
+      // (`ADD COLUMN "uid"`, already applied) aborts with 42701
+      // (duplicate_column) -- not a 23505, so Critical 3's savepoint catch
+      // never even applies. The fix gives marker-less files the same
+      // per-statement granularity a properly marked file already has.
+      //
+      // Captured via direct reassignment, not `vi.spyOn` -- `vi.spyOn`'s
+      // call history was observed to be cleared partway through this
+      // `await`-heavy call in this suite, for reasons unrelated to this fix.
+      // `console.warn` is captured too: PR #48 round 4 Important 1 moved
+      // `definition-differs-skipped-not-replayed` there specifically.
+      const originalInfo = console.info;
+      const originalWarn = console.warn;
+      const capturedWarnLogs: string[] = [];
+      console.info = ((..._args: unknown[]) => {}) as typeof console.info;
+      console.warn = ((...args: unknown[]) => {
+        capturedWarnLogs.push(args.map(String).join(" "));
+      }) as typeof console.warn;
+      let manuallySkipped: Awaited<ReturnType<typeof applyPendingMigrations>>;
+      try {
+        manuallySkipped = await applyPendingMigrations(connectionString);
+      } finally {
+        console.info = originalInfo;
+        console.warn = originalWarn;
+      }
+
+      const finalState = await inspectMigrations(connectionString);
+      expect(finalState.status).toBe("upToDate");
+      expect(finalState.appliedMigrations).toContain("0182_connections_v3_schema_core.sql");
+
+      // At least one of 0182's own bundled statements has since been
+      // superseded by a later migration's edit (the "organization"/"workspace"
+      // enum rename) and correctly reads "definition-differs" rather than
+      // being blind-replayed into a duplicate-object abort.
+      const definitionDiffersSkipLogged = capturedWarnLogs.some(
+        (message) =>
+          message.includes("0182_connections_v3_schema_core.sql") &&
+          message.includes("definition-differs-skipped-not-replayed"),
+      );
+      expect(definitionDiffersSkipLogged).toBe(true);
+
+      // PR #48 round 4 Important 1: the returned skip list carries the same
+      // entry.
+      const definitionDiffersEntry = manuallySkipped.find(
+        (skipped) =>
+          skipped.reason === "definition-differs-skipped-not-replayed" &&
+          skipped.migrationFile === "0182_connections_v3_schema_core.sql",
+      );
+      expect(definitionDiffersEntry).toBeDefined();
+    },
+    30_000,
+  );
+});
+
+describeEmbeddedPostgres("unrecognized-statement replay savepoint gating (Critical 1)", () => {
+  it(
+    "a 23505 raised by DDL (CREATE UNIQUE INDEX) is never swallowed, even though the statement is unrecognized",
+    async () => {
+      const connectionString = await createTempDatabase();
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(`CREATE TABLE "crit1_ddl_probe" ("id" uuid PRIMARY KEY, "email" text NOT NULL)`);
+        // Seeded duplicate data -- the exact shape PR #48 round 3 Critical 1
+        // names (0182:29-30, `CREATE UNIQUE INDEX` / `ADD CONSTRAINT ...
+        // UNIQUE` against live data that violates it).
+        await sql.unsafe(`
+          INSERT INTO "crit1_ddl_probe" ("id", "email")
+          VALUES (gen_random_uuid(), 'dup@example.com'), (gen_random_uuid(), 'dup@example.com')
+        `);
+
+        // An index-name shape our regexes do not parse (unquoted
+        // identifier) -- genuinely "unrecognized" on its own merits, not as
+        // an artifact of a marker-less multi-statement blob.
+        const state = await __migrationStatementAlreadyAppliedForTests(
+          sql,
+          'CREATE UNIQUE INDEX crit1_ddl_probe_email_uq ON "crit1_ddl_probe" ("email");',
+        );
+        expect(state).toBe("unrecognized");
+
+        await sql.unsafe("BEGIN");
+        try {
+          // Before the fix, any 23505 on an "unrecognized" statement is
+          // swallowed and treated as already-applied -- an instance would
+          // boot believing this unique index exists when it does not.
+          await expect(
+            __replayUnrecognizedStatementForTests(
+              sql,
+              'CREATE UNIQUE INDEX crit1_ddl_probe_email_uq ON "crit1_ddl_probe" ("email");',
+            ),
+          ).rejects.toMatchObject({ code: "23505" });
+        } finally {
+          await sql.unsafe("ROLLBACK");
+        }
+
+        const indexRows = await sql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count FROM pg_indexes WHERE indexname = 'crit1_ddl_probe_email_uq'
+        `);
+        expect(indexRows[0]?.count).toBe(0);
+      } finally {
+        await sql.end();
+      }
+    },
+    30_000,
+  );
+
+  it(
+    "a 23505 raised by a DML head (INSERT) is still treated as already applied (regression)",
+    async () => {
+      const connectionString = await createTempDatabase();
+      const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
+      try {
+        await sql.unsafe(
+          `CREATE TABLE "crit1_dml_probe" ("id" uuid PRIMARY KEY, "email" text UNIQUE NOT NULL)`,
+        );
+        await sql.unsafe(
+          `INSERT INTO "crit1_dml_probe" ("id", "email") VALUES (gen_random_uuid(), 'seed@example.com')`,
+        );
+
+        await sql.unsafe("BEGIN");
+        try {
+          const outcome = await __replayUnrecognizedStatementForTests(
+            sql,
+            `INSERT INTO "crit1_dml_probe" ("id", "email") VALUES (gen_random_uuid(), 'seed@example.com')`,
+          );
+          expect(outcome).toBe("unique-violation-treated-as-already-applied");
+          await sql.unsafe("COMMIT");
+        } catch (error) {
+          await sql.unsafe("ROLLBACK");
+          throw error;
+        }
+
+        const rows = await sql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count FROM "crit1_dml_probe" WHERE "email" = 'seed@example.com'
+        `);
+        expect(rows[0]?.count).toBe(1);
+      } finally {
+        await sql.end();
+      }
+    },
+    30_000,
+  );
+});
+
+describeEmbeddedPostgres("inspectMigrations / migratePostgresIfEmpty schema resolution (Critical 2)", () => {
+  it(
+    "a non-empty database on a non-public default schema, with no migration journal, is never classified empty",
+    async () => {
+      const connectionString = await createTempDatabase();
+      const adminUrl = new URL(connectionString);
+      const databaseName = adminUrl.pathname.replace(/^\//, "");
+      adminUrl.pathname = "/postgres";
+
+      const secondDatabaseName = `${databaseName}_crit2`;
+      await ensurePostgresDatabase(adminUrl.toString(), secondDatabaseName);
+
+      const secondDbUrl = new URL(connectionString);
+      secondDbUrl.pathname = `/${secondDatabaseName}`;
+      const secondConnectionString = secondDbUrl.toString();
+
+      const roleSql = postgres(secondConnectionString, { max: 1, onnotice: () => {} });
+      try {
+        await roleSql.unsafe(`CREATE SCHEMA "crit2_schema"`);
+        // Every new connection to this database resolves `current_schema()`
+        // to "crit2_schema" -- the shape of a self-hosted deployment or a
+        // per-plugin schema (`plugin_database.ts`'s `namespace_mode:
+        // "schema"`), not the special-cased `public`.
+        await roleSql.unsafe(
+          `ALTER ROLE "todero" IN DATABASE "${secondDatabaseName}" SET search_path TO "crit2_schema"`,
+        );
+      } finally {
+        await roleSql.end();
+      }
+
+      const setupSql = postgres(secondConnectionString, { max: 1, onnotice: () => {} });
+      try {
+        // Non-empty (one table), no migration journal -- no migration was
+        // ever run against this database.
+        await setupSql.unsafe(`CREATE TABLE "crit2_table" ("id" uuid PRIMARY KEY)`);
+      } finally {
+        await setupSql.end();
+      }
+
+      // Before the fix, `inspectMigrations` counted tables in the
+      // hardcoded `'public'` schema (zero, since the one real table lives
+      // in "crit2_schema"), so this non-empty database read as an empty
+      // one.
+      const state = await inspectMigrations(secondConnectionString);
+      expect(state).toMatchObject({
+        status: "needsMigrations",
+        reason: "no-migration-journal-non-empty-db",
+        tableCount: 1,
+      });
+
+      const bootstrap = await migratePostgresIfEmpty(secondConnectionString);
+      expect(bootstrap).toEqual({
+        migrated: false,
+        reason: "not-empty-no-migration-journal",
+        tableCount: 1,
+      });
+    },
+    30_000,
   );
 });

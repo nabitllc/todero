@@ -37,7 +37,7 @@ describeEmbeddedPostgres("company secret proposals migration", () => {
 
     await sql`DELETE FROM "drizzle"."__drizzle_migrations" WHERE "hash" = ${await migrationHash()}`;
 
-    await expect(applyPendingMigrations(database.connectionString)).resolves.toBeUndefined();
+    await expect(applyPendingMigrations(database.connectionString)).resolves.toEqual(expect.any(Array));
 
     const [result] = await sql<{ constraints: number; indexes: number }[]>`
       SELECT
