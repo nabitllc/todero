@@ -112,6 +112,8 @@ If your change adds, removes, or modifies emitted telemetry events, update the [
 
 All Todero CI gates (lint, typecheck, tests, build, and any other required checks) must be satisfied before a PR can be merged. Don't ask for a merge while gates are red — fix them first.
 
+**Two lanes.** Every pull request runs the cheap lane: policy checks, typecheck, and build, about 8 runner minutes. The full matrix (general tests, serialized server suites, e2e shards, about 100 minutes) runs only when the pull request carries the `full-ci` label. Add the label before merge on any change that touches code under `server/`, `ui/`, `cli/`, or `packages/`. Docs, config, and comment-only changes do not need it. Run the tests locally either way (`pnpm test`).
+
 ### Greptile Review
 
 We use [Greptile](https://greptile.com) for automated code review. Your PR must achieve a **5/5 Greptile score** before it can be merged, with:

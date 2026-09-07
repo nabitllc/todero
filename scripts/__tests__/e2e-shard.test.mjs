@@ -64,7 +64,7 @@ function readWorkflowJobs(workflow) {
   return jobs;
 }
 
-function runStackScope(stack, prBaseRef) {
+function runStackScope(stack, prBaseRef, labels = ["full-ci"]) {
   const workflow = readFileSync(trustedPrWorkflow, "utf8");
   const match = workflow.match(
     /      - name: Select stacked PR CI scope[\s\S]*?        run: \|\n([\s\S]*?)\n\n  policy:/,
@@ -84,6 +84,7 @@ function runStackScope(stack, prBaseRef) {
         ...process.env,
         GITHUB_OUTPUT: output,
         PR_BASE_REF: prBaseRef,
+        PR_LABELS: JSON.stringify(labels),
         STACK_JSON: JSON.stringify(stack),
       },
     });
@@ -218,20 +219,21 @@ test("the trusted PR workflow keeps a stable aggregate check named e2e over the 
   }
 });
 
-test("the trusted PR workflow limits full CI to merge-relevant stack layers", () => {
+test("the trusted PR workflow runs the full matrix only behind the full-ci label", () => {
   const workflow = readFileSync(trustedPrWorkflow, "utf8");
   const jobs = readWorkflowJobs(workflow);
   const gate = jobs.get("gate");
 
   assert.match(gate, /^ {6}full_ci: \$\{\{ steps\.scope\.outputs\.full_ci \}\}$/m);
+  assert.match(gate, /PR_LABELS: \$\{\{ toJSON\(github\.event\.pull_request\.labels\.\*\.name\) \}\}/);
+  assert.match(gate, /index\("full-ci"\) != null/);
   assert.match(gate, /STACK_JSON: \$\{\{ toJSON\(github\.event\.pull_request\.stack\) \}\}/);
   assert.match(gate, /stack_position == stack_size/);
   assert.match(gate, /"\$stack_base_ref" == "\$PR_BASE_REF"/);
 
+  // The expensive lanes wait for the label.
   for (const jobId of [
-    "typecheck_release_registry",
     "general_tests",
-    "build",
     "verify_serialized_server",
     // "canary_dry_run" removed for this fork with the job (see pr-trusted.yml).
     "e2e_shards",
@@ -243,23 +245,32 @@ test("the trusted PR workflow limits full CI to merge-relevant stack layers", ()
     );
   }
 
-  assert.doesNotMatch(
-    jobs.get("policy"),
-    /needs\.gate\.outputs\.full_ci/,
-    "the policy job must run on every PR layer",
-  );
+  // The cheap lane runs on every pull request.
+  for (const jobId of ["policy", "typecheck_release_registry", "build"]) {
+    assert.doesNotMatch(
+      jobs.get(jobId),
+      /needs\.gate\.outputs\.full_ci/,
+      `the ${jobId} job must run on every pull request`,
+    );
+  }
 
   const verify = jobs.get("verify");
   assert.match(verify, /^ {4}needs: \[gate, policy, typecheck_release_registry, general_tests, build\]$/m);
   assert.match(verify, /POLICY_RESULT: \$\{\{ needs\.policy\.result \}\}/);
-  assert.match(verify, /test "\$TYPECHECK_RELEASE_REGISTRY_RESULT" = "skipped"/);
+  assert.match(verify, /test "\$TYPECHECK_RELEASE_REGISTRY_RESULT" = "success"/);
   assert.match(verify, /test "\$GENERAL_TESTS_RESULT" = "skipped"/);
-  assert.match(verify, /test "\$BUILD_RESULT" = "skipped"/);
+  assert.match(verify, /test "\$BUILD_RESULT" = "success"/);
 
   const e2e = jobs.get("e2e");
   assert.match(e2e, /^ {4}needs: \[gate, policy, e2e_shards\]$/m);
   assert.match(e2e, /POLICY_RESULT: \$\{\{ needs\.policy\.result \}\}/);
   assert.match(e2e, /false\) test "\$E2E_SHARDS_RESULT" = "skipped"/);
+});
+
+test("the scope selector runs the cheap lane unless the full-ci label is present", () => {
+  assert.equal(runStackScope(null, "master", []).full_ci, "false");
+  assert.equal(runStackScope(null, "master", ["dependencies"]).full_ci, "false");
+  assert.equal(runStackScope({ position: 11, size: 11, base: { ref: "master" } }, "stack-10", []).full_ci, "false");
 });
 
 test("the stacked PR scope selector runs full CI only where intended", () => {
