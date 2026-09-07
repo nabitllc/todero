@@ -6,12 +6,20 @@ updates:
       interval: weekly
       day: monday
       time: "06:00"
-    # Each dependency update gets its own pull request, including major
-    # version bumps. A grouped major PR cannot merge when one member has
-    # a blocked upgrade, so it hides the other ready majors. Separate PRs
-    # let each major land on its own. The limit holds the initial burst
-    # of pending majors plus the regular minor and patch updates.
-    open-pull-requests-limit: 20
+    # One grouped pull request per week for minor and patch updates, and a
+    # separate pull request per major update. Every pull request here runs
+    # the full 22-job check matrix, so the count of pull requests is the CI
+    # bill: twenty separate bumps in one morning consumed the month's free
+    # runner minutes and stopped every check from starting. Majors stay
+    # separate because a grouped major cannot merge while one member is
+    # blocked, which hides the other ready majors.
+    groups:
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
     # Dependabot's npm parser reads only dependencies, devDependencies, and
@@ -36,4 +44,9 @@ updates:
       interval: weekly
       day: monday
       time: "06:00"
-    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
+    open-pull-requests-limit: 2
