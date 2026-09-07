@@ -191,3 +191,47 @@ instead of guessing.
 - **Source:** this branch; `Playbooks/Project_Bootstrap_Standard.md`,
   `Playbooks/Verify_Project_Bootstrap.md` and `Playbooks/Propagate_Standard.md` in the
   Mich-Brain2 vault.
+
+## ADR-010 — AGENTS.md is an entry point again; its rules live in docs/ai_context/
+
+- **Date:** 2026-09-06
+- **Status:** Accepted. Supersedes ADR-001.
+- **Context:** ADR-001 exempted `AGENTS.md` from the 30-100 line pointer-style entry-point rule and
+  told sessions to leave the file byte-identical. The exemption rested on one claim: that a roster
+  table inside `AGENTS.md` is parsed at request time by `loadAgentRoster()` in
+  `lib/agent-roster.ts`. ADR-001 raised that as an open question on 2026-09-06. It is now answered.
+  Grepped the whole repo on 2026-09-06: `loadAgentRoster` returns zero matches, `agent-roster`
+  returns zero matches, and no `lib/agent-roster.ts` exists. Nothing in `scripts/`, `server/`,
+  `ui/`, `cli/` or `packages/` reads the repo-root `AGENTS.md`. The `"AGENTS.md"` string literals in
+  `server/src/services/agent-instructions.ts`, `server/src/services/built-in-agents.ts` and
+  `server/src/services/company-portability.ts` name the entry file of an *agent instructions
+  bundle* inside a company package — a different file at a different path, and unrelated to the
+  repo-root contributor guide. So `AGENTS.md` is documentation after all, and it was 224 lines that
+  every AI session in every clone of this open-source repo loaded eagerly.
+- **Decision:** Withdraw the exemption. Factor `AGENTS.md` down to a pointer-style entry point of
+  under 100 lines: the purpose statement, the read order, a table that names where each rule lives,
+  the design-system rule, and the pull-request rule. Move every rule out of it, verbatim in meaning,
+  into the file that already owns that subject:
+  - repo map and contract synchronization to `architecture.md`
+  - control-plane invariants, the database change workflow and the three data paths to
+    `data_model.md`
+  - verification policy, the definition of done and the progress-log rule to `session_gates.md`
+  - UI expectations to `ui_standards.md`
+  - strategic docs, plan documents and generated artifacts to this folder's `README.md`
+- **Consequences:**
+  - One rule has one home. A rule that lived in two files can no longer drift between them.
+  - `AGENTS.md` and `CLAUDE.md` now have the same job and the same shape. Neither holds rule text.
+  - Live cross-references of the form `AGENTS.md` § N are gone. Those numbers were brittle: a
+    section number changes whenever a section is added. What remains are provenance notes — the
+    "moved here from § N" lines, and the `Source:` lines of ADR-002 through ADR-006, which record
+    where a rule came from and are not edited because this log is append-only.
+  - Contributors who cloned this repo read a shorter entry point that stands on its own. It points
+    only at files in this repository.
+  - Anyone who trims `AGENTS.md` further must move the content, not delete it.
+  - One stale gate result was corrected on the way through. ADR-009 and `session_gates.md` recorded
+    `pnpm check:token-gates` as a standing failure on `main`. Re-run on `origin/main` at `d9132fe5`
+    on 2026-09-06: all four gates clean, 34 allowlist entries loaded. Commit `fb75d94c` (PR #45)
+    had already allowlisted the four `LocalLlmPicker.test.tsx` literals at `ui/src/index.css:2496`,
+    and `fb75d94c` is an ancestor of `main`. ADR-009 is not edited, because this log is append-only;
+    this entry supersedes that one observation only.
+- **Source:** this branch; `AGENTS.md` at commit `d9132fe5` (224 lines) for the content moved.

@@ -122,6 +122,11 @@ a design comp contains them.
 
 ## Working rules
 
+The first three rules moved here from `AGENTS.md` § 9 on 2026-09-06 (ADR-010).
+
+- Keep routes and nav aligned with the available API surface.
+- Use the company selection context for company-scoped pages.
+- Surface failures clearly; do not silently ignore API errors.
 - Component library first: shadcn primitives in `ui/src/components/ui/`. Prove no existing component
   covers the job before adding one (`DESIGN.md` principle 1).
 - Every interactive surface defines loading, empty, error and success states; AI surfaces also
@@ -131,7 +136,7 @@ a design comp contains them.
   (`DESIGN.md` § Enforcement).
 - No UI surface is done without rendered visual evidence viewed at legible scale, region by region
   (`UI_UX_Standards` § Rendered-visual verification gate). A full-page thumbnail is not evidence.
-- Run `pnpm check:token-gates` before committing UI changes. Note it currently fails on `main` for
-  four pre-existing hex literals in a test file — see `session_gates.md`.
+- Run `pnpm check:token-gates` before committing UI changes. It is clean on `main` — see
+  `session_gates.md` § Cheap deterministic checks.
 - **Never write an AI-slop tell into this file as a project pattern**, even if a shipped screen
   contains one. Record it as a carried defect (`critique-frontend` Mode 2).

@@ -1,8 +1,8 @@
 # Architecture
 
 Project layer for Todero (Mission Control). Universal standards live in the Mich-Brain2 vault;
-this file holds only what is true of this repo. Read alongside `AGENTS.md` § 3 (Repo Map) — that
-table is the canonical repo map and this file does not restate it in full.
+this file holds only what is true of this repo. It also carries the canonical repo map, which
+`AGENTS.md` points at.
 
 ## What this is
 
@@ -17,7 +17,7 @@ concrete build contract is `doc/SPEC-implementation.md`; `doc/SPEC.md` is long-h
 | Runtime | Node.js `>=24.11.0` | `package.json` § `engines` |
 | Package manager | pnpm `9.15.4`, workspaces | `package.json` § `packageManager`, `pnpm-workspace.yaml` |
 | Language | TypeScript `^7.0.2`, ESM (`"type": "module"`) | root `package.json` |
-| API | Express REST under `/api` | `server/`, `AGENTS.md` § 8 |
+| API | Express REST under `/api` | `server/`, `decisions.md` ADR-003 |
 | UI | React 19 + Vite, Tailwind v4, shadcn primitives | `ui/`, `ui/src/index.css` |
 | Database | PostgreSQL via Drizzle ORM `^0.45.2` | `packages/db/`, `packages/db/drizzle.config.ts` |
 | Embedded DB | `embedded-postgres` (dev, zero-config) | `packages/db/package.json`, `doc/DATABASE.md` |
@@ -29,6 +29,38 @@ There is **no ESLint and no Prettier** in this repo — no config file exists an
 a `lint` script. What plays the lint role is a set of deterministic check scripts; see
 `session_gates.md`.
 
+## Repo map
+
+Moved here from `AGENTS.md` § 3 on 2026-09-06 (ADR-010). This is the canonical map.
+
+- `server/`: Express REST API and orchestration services
+- `ui/`: React + Vite board UI
+- `packages/db/`: Drizzle schema, migrations, DB clients
+- `packages/shared/`: shared types, constants, validators, API path constants
+- `packages/adapters/`: agent adapter implementations (Claude, Codex, Cursor, etc.)
+- `packages/adapter-utils/`: shared adapter utilities
+- `packages/plugins/`: plugin system packages
+- `packages/skills-catalog/`: app-shipped skills catalog (`@todero/skills-catalog`)
+- `packages/teams-catalog/`: app-shipped teams catalog (`@todero/teams-catalog`)
+- `cli/`: `todero` CLI package (published bin, agent-facing commands)
+- `skills/`: Todero runtime/operational skills (not part of the app catalog)
+- `doc/`: operational and product docs
+
+## Contract synchronization
+
+Moved here from `AGENTS.md` § 5.2 on 2026-09-06 (ADR-010).
+
+**Keep contracts synchronized.** If you change schema or API behavior, update all impacted layers
+in the same change:
+
+- `packages/db` schema and exports
+- `packages/shared` types/constants/validators
+- `server` routes/services
+- `ui` API clients and pages
+
+A change that stops at one layer is incomplete. The schema-specific form of this rule is in
+`data_model.md` § Changing the schema.
+
 ## Workspaces
 
 `pnpm-workspace.yaml` includes `packages/*`, `packages/adapters/*`, `packages/plugins/*`,
@@ -36,7 +68,7 @@ a `lint` script. What plays the lint role is a set of deterministic check script
 and `packages/plugins/examples/plugin-orchestration-smoke-example` deliberately excluded so they
 stay installable standalone without churning the root lockfile.
 
-Beyond the map in `AGENTS.md` § 3, worth knowing:
+Beyond the repo map above, worth knowing:
 
 - `packages/adapters/*` — one package per agent runtime (`claude-local`, `codex-local`,
   `cursor-local`, `cursor-cloud`, `gemini-local`, `grok-local`, `kimi-local`, `opencode-local`,
@@ -67,7 +99,7 @@ pnpm dev
 ```
 
 Both the API and the UI are served from `http://localhost:3100` — in dev the API server hosts the
-UI through Vite middleware (`AGENTS.md` § 4). Health check: `GET /api/health`.
+UI through Vite middleware. Health check: `GET /api/health`.
 
 Data persists in `~/.todero/instances/default/db/`; deleting that directory resets local dev
 (`doc/DATABASE.md` § 1). Two other modes exist: local PostgreSQL 17 via `docker compose up -d`, and
@@ -96,7 +128,8 @@ change; the other two are separate checkouts with separate review.
 - `doc/DEPLOYMENT-MODES.md` — `local_trusted` / `authenticated`, private vs public exposure
 - `doc/plugins/PLUGIN_SPEC.md` — the extension surface; the preferred path for new capability
 - `doc/connections/CONNECTOR-PLAYBOOK.md` — canonical runbook for Apps catalog connections
-- `doc/observability.md`, `doc/run-log-events.md` — two of the three data paths (`AGENTS.md` § 5.7)
+- `doc/observability.md`, `doc/run-log-events.md` — two of the three data paths
+  (`data_model.md` § The three data paths)
 - `doc/AGENT-ARTIFACTS.md` — how generated deliverables are attached
 - `docs/agents-runtime.md`, `docs/built-in-agents.md` — heartbeat runtime and first-party agents
 - `docs/docs.json` — the published Mintlify site index

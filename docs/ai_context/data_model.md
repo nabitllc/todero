@@ -1,7 +1,7 @@
 # Data Model
 
-Deep reference is `doc/DATABASE.md`; the change workflow is `AGENTS.md` § 6. This file records the
-invariants and the facts a session most often gets wrong.
+Deep reference is `doc/DATABASE.md`. This file records the invariants, the schema change workflow,
+and the facts a session most often gets wrong.
 
 ## What the database actually is
 
@@ -36,11 +36,12 @@ migrations.
 
 ## Invariants
 
-These are control-plane invariants, listed in `AGENTS.md` § 5.3 and enforced in schema and services.
-Preserve them; a change that breaks one is a product change, not a refactor.
+These are the control-plane invariants, enforced in schema and services. Preserve them; a change
+that breaks one is a product change, not a refactor. Invariants 1 to 6 moved here from
+`AGENTS.md` § 5.1 and § 5.3 on 2026-09-06 (ADR-010).
 
 **1. Everything is company-scoped.** Every domain entity carries a company id and boundaries are
-enforced in routes and services (`AGENTS.md` § 5.1). In `packages/db/src/schema/issues.ts`:
+enforced in routes and services. In `packages/db/src/schema/issues.ts`:
 
 ```ts
 companyId: uuid("company_id").notNull().references(() => companies.id),
@@ -48,8 +49,8 @@ companyId: uuid("company_id").notNull().references(() => companies.id),
 
 `notNull` on the reference is the schema-level half of the invariant. The route-level half is the
 access check — see `server/src/services/access.ts` and `server/src/services/authorization.ts`.
-Agent API keys must never reach another company (`AGENTS.md` § 8); keys live in `agent_api_keys` and
-are hashed at rest.
+Agent API keys must never reach another company (`decisions.md` ADR-003); keys live in
+`agent_api_keys` and are hashed at rest.
 
 **2. Single-assignee task model.** `issues` carries `assigneeAgentId` (FK to `agents`) and
 `assigneeUserId` — one assignee, not a join table.
@@ -71,7 +72,7 @@ Enforcement lives in `server/src/services/budgets.ts`. Company pause state is on
 
 **6. Activity logging for mutating actions.** `activity_log`, written via
 `server/src/services/activity-log.ts`. New mutating endpoints write an entry
-(`AGENTS.md` § 8).
+(`decisions.md` ADR-003).
 
 **7. Human-facing issue identifiers are company-local.** `companies.issuePrefix` (default `"PAP"`)
 and `companies.issueCounter` produce `issues.issueNumber` / `issues.identifier`. These are
@@ -80,7 +81,7 @@ PR, branch, commit or comment.
 
 ## Changing the schema
 
-From `AGENTS.md` § 6:
+Moved here from `AGENTS.md` § 6 on 2026-09-06 (ADR-010).
 
 1. Edit `packages/db/src/schema/*.ts`.
 2. Export any new table from `packages/db/src/schema/index.ts`.
@@ -89,7 +90,8 @@ From `AGENTS.md` § 6:
 4. `pnpm -r typecheck`.
 
 Then sync the contracts across all four layers — `packages/db`, `packages/shared`, `server`, `ui`
-(`AGENTS.md` § 5.2). A schema change that stops at the database is incomplete.
+(`architecture.md` § Contract synchronization). A schema change that stops at the database is
+incomplete.
 
 Two guards run inside `@todero/db`'s `build`, `typecheck` and `generate` scripts:
 `src/check-migration-numbering.ts` and `src/check-migration-safety.ts`. CI additionally validates
@@ -100,13 +102,43 @@ targets the embedded instance for the active Todero config.
 
 ## The three data paths — do not merge them
 
-`AGENTS.md` § 5.7 is required reading before touching anything that emits data. Match by file path,
-never by the words "observability" or "telemetry":
+Read this section before you touch anything that emits data. Moved here from `AGENTS.md` § 5.7 on
+2026-09-06 (ADR-010); `CONTRIBUTING.md` § Telemetry Changes points at it.
 
-- **Telemetry** — first-party, opt-out, ships to a Todero endpoint by default. Strict review plus a
-  privacy review. `packages/shared/src/telemetry/`.
-- **Observability** — OpenTelemetry traces, no-op until an operator sets an OTLP endpoint. Lighter
-  review. `server/src/instrumentation.ts`, `doc/observability.md`.
-- **Run log** — rows in `heartbeat_run_events`, never leaves the instance database. No extra review.
-  `packages/db/src/schema/heartbeat_run_events.ts`, appended by `appendRunEvent` in
-  `server/src/services/heartbeat.ts`, documented in `doc/run-log-events.md`.
+This repo has three separate data paths. Do not confuse them. Match a change to a path by its file
+path, not by the word "observability" or "telemetry" alone.
+
+- **Telemetry** is the Todero first-party event system. It is opt-out and it sends data to a Todero
+  endpoint by default. Its paths are:
+  - `packages/shared/src/telemetry/`
+  - the generated contract `packages/shared/src/telemetry/generated/paperclip-telemetry.ts`
+  - each caller of `packages/shared/src/telemetry/events.ts` or
+    `packages/shared/src/telemetry/client.ts`
+- **Observability** is the OpenTelemetry trace path. An operator must set an OTLP endpoint. Until an
+  operator sets the endpoint, the tracer is a no-operation. Its paths are:
+  - `server/src/instrumentation.ts`
+  - `doc/observability.md`
+  - `packages/adapter-utils/src/duplex-observability.ts`
+  - `server/src/services/duplex-observability-recorder.ts`
+  - the span attributes in `packages/adapter-utils/src/acpx-engine/startup-timing.ts`
+- **The run log** holds rows in the local `heartbeat_run_events` table. The data stays in the
+  instance database. Its paths are:
+  - `doc/run-log-events.md`
+  - `packages/db/src/schema/heartbeat_run_events.ts`
+  - the append path `appendRunEvent` in `server/src/services/heartbeat.ts`
+
+Apply a review level that matches the path:
+
+- **Telemetry change (strict review).** The author updates the generated contract first. The author
+  updates `packages/shared/src/telemetry/README.md` in the same pull request. The author requests a
+  privacy review. Reason: a Telemetry event goes to a Todero endpoint by default, so a mistake sends
+  data immediately.
+- **Observability change (lighter review).** The operator endpoint gate stays in place. The
+  no-operation behaviour stays when no endpoint is set. A privacy review is not necessary while the
+  change stays inside the closed span-attribute allowlist.
+- **Run-log change (no extra review).** A run-log change needs neither review level above, because
+  the data stays in the instance database.
+
+**Exclusion.** The word "observability" in a file such as
+`server/src/services/recovery-observability.ts` names a different concept. Apply this rule by path,
+not by word match.

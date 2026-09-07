@@ -6,17 +6,18 @@ Express API, React + Vite UI, Postgres via Drizzle. A pnpm monorepo — `server/
 
 ## Read these, in this order
 
-1. **`AGENTS.md`** (repo root) — the contributor contract: repo map, core engineering rules, the
-   three data paths (telemetry / observability / run log), database workflow, verification, API and
-   auth expectations, definition of done. Read it before any change. **Do not edit it** — see below.
-2. **`docs/ai_context/`** — the AI-facing project layer added by this bootstrap:
-   - `architecture.md` — stack, workspaces, entry points, how it runs, the three-repo map
-   - `session_gates.md` — the real lint / typecheck / test / build commands, and which ones do not
-     run on Windows
+1. **`AGENTS.md`** (repo root) — the runtime-neutral entry point: purpose, read order, and a table
+   that names where each rule lives. Like this file, it is a pointer and holds no rule text.
+2. **`docs/ai_context/`** — the AI-facing project layer, and where the rules actually live:
+   - `architecture.md` — stack, repo map, workspaces, entry points, how it runs, contract
+     synchronization, the three-repo map
+   - `session_gates.md` — the real lint / typecheck / test / build commands, which ones do not run
+     on Windows, when to run what, and the definition of done
    - `file_size_limits.md` — per-file thresholds
    - `decisions.md` — **append-only ADR log; write architectural decisions here**
-   - `data_model.md` — Postgres schema invariants
-   - `ui_standards.md` — design intent; defers to `DESIGN.md`
+   - `data_model.md` — Postgres schema invariants, the schema change workflow, the three data paths
+   - `ui_standards.md` — design intent and UI working rules; defers to `DESIGN.md`
+   - `README.md` — the three layers and the write surfaces
 3. **`doc/`** — the deep reference layer (`GOAL.md`, `PRODUCT.md`, `SPEC-implementation.md`,
    `DEVELOPING.md`, `DATABASE.md`, `plans/`, `design/`). `docs/` is the published Mintlify site.
 4. **`DESIGN.md`** (repo root) — source of truth for UI design decisions and the token-only rule.
@@ -57,9 +58,9 @@ Work stays inside whichever repo you were asked to change.
 Writable by an AI session: `docs/ai_context/decisions.md` (append-only), source and tests under
 `server/`, `ui/`, `cli/`, `packages/`, and `doc/plans/` (`YYYY-MM-DD-slug.md`).
 
-**`AGENTS.md` is not documentation — treat it as data.** The vault waived it from the entry-point
-rewrite rule on 2026-08-26 (`Wiring/projects.json`, `entry_point_exempt`). Leave it byte-identical
-unless a task is explicitly about its content.
+**`AGENTS.md` is an entry point, not a rulebook** (ADR-010, which supersedes ADR-001). Keep it
+pointer-style and under 100 lines. To change a rule, edit the `docs/ai_context/` file that owns it
+and leave the pointer alone.
 
 Everything under `docs/ai_context/` other than `decisions.md` is curated: propose a diff rather than
 editing in place.
