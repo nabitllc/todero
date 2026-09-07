@@ -408,7 +408,28 @@ async function applyPendingMigrationsManually(
       if (existingEntry) continue;
 
       await runInTransaction(sql, async () => {
-        for (const statement of splitMigrationStatements(migrationContent)) {
+        const statements = splitMigrationStatements(migrationContent);
+        // A migration this codebase could not reconcile wholesale (see
+        // `migrationContentAlreadyApplied`) can still be *partially*
+        // applied — its DDL ran in a prior attempt but a later statement in
+        // the same file failed, or drizzle's journal simply lost track of
+        // an already-applied file (the drift this whole reconciliation
+        // path exists for). Replaying every statement unconditionally is
+        // what turns that into a crash (`relation already exists`) instead
+        // of a repair, so DDL statements independently verified as already
+        // applied are skipped. Statements this file's own author could not
+        // make independently verifiable (data backfills, `DO $$ ... $$`
+        // blocks) still run every time, exactly as before this function
+        // gained per-statement granularity: this codebase's migrations are
+        // written to tolerate that (`WHERE x IS NULL` guards, `IF NOT
+        // EXISTS` checks inside the block, deterministic recomputation) —
+        // see `client.test.ts`'s "replays migration 0134 ..." and "replays
+        // the built-in managed resources migration ..." cases, both of
+        // which depend on an unrecognized statement running unconditionally
+        // even when other statements in the same file are already applied.
+        for (const statement of statements) {
+          const state = await migrationStatementAlreadyApplied(sql, statement);
+          if (state === "applied") continue;
           await sql.unsafe(statement);
         }
 
@@ -471,6 +492,104 @@ async function tableExists(
   return rows[0]?.exists ?? false;
 }
 
+/**
+ * Extracts the column names declared directly inside a `CREATE TABLE "x" (
+ * ... )` statement — a paren/quote-aware scan of the column-list body, not a
+ * regex over the whole statement, because column definitions can themselves
+ * contain parens and commas (`numeric(10,2)`, `gen_random_uuid()`, a
+ * `DEFAULT` string literal with a comma in it) that a naive split would
+ * mistake for the top-level separators between columns.
+ */
+function extractTopLevelColumnNames(createTableStatement: string): string[] {
+  const openIndex = createTableStatement.indexOf("(");
+  if (openIndex === -1) return [];
+
+  let depth = 0;
+  let inSingleQuote = false;
+  let bodyStart = -1;
+  let bodyEnd = -1;
+  for (let i = openIndex; i < createTableStatement.length; i += 1) {
+    const ch = createTableStatement[i];
+    if (inSingleQuote) {
+      if (ch === "'") inSingleQuote = false;
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+    if (ch === "(") {
+      depth += 1;
+      if (depth === 1) bodyStart = i + 1;
+      continue;
+    }
+    if (ch === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        bodyEnd = i;
+        break;
+      }
+    }
+  }
+  if (bodyStart === -1 || bodyEnd === -1) return [];
+
+  const body = createTableStatement.slice(bodyStart, bodyEnd);
+  const segments: string[] = [];
+  let segmentStart = 0;
+  let segmentDepth = 0;
+  let segmentInSingleQuote = false;
+  for (let i = 0; i < body.length; i += 1) {
+    const ch = body[i];
+    if (segmentInSingleQuote) {
+      if (ch === "'") segmentInSingleQuote = false;
+      continue;
+    }
+    if (ch === "'") {
+      segmentInSingleQuote = true;
+      continue;
+    }
+    if (ch === "(") segmentDepth += 1;
+    else if (ch === ")") segmentDepth -= 1;
+    else if (ch === "," && segmentDepth === 0) {
+      segments.push(body.slice(segmentStart, i));
+      segmentStart = i + 1;
+    }
+  }
+  segments.push(body.slice(segmentStart));
+
+  const columnNames: string[] = [];
+  for (const segment of segments) {
+    const match = segment.trim().match(/^"([^"]+)"/);
+    if (match) columnNames.push(match[1]);
+  }
+  return columnNames;
+}
+
+/**
+ * Existence is not enough for `CREATE TABLE`: a table of the same name can
+ * already exist with a materially different shape (the exact drift this
+ * whole reconciliation path exists to detect — see `environments`, which
+ * predates a `company_id` column the current migration's `CREATE TABLE`
+ * declares). Verify every column the statement declares is present, not just
+ * that a table with this name is present.
+ */
+async function tableExistsWithColumns(
+  sql: ReturnType<typeof postgres>,
+  tableName: string,
+  createTableStatement: string,
+): Promise<boolean> {
+  if (!(await tableExists(sql, tableName))) return false;
+
+  const declaredColumns = extractTopLevelColumnNames(createTableStatement);
+  if (declaredColumns.length === 0) return true;
+
+  const rows = await sql.unsafe<{ column_name: string }[]>(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${quoteLiteral(tableName)}`,
+  );
+  const existingColumns = new Set(rows.map((row) => row.column_name));
+  return declaredColumns.every((column) => existingColumns.has(column));
+}
+
 async function columnExists(
   sql: ReturnType<typeof postgres>,
   tableName: string,
@@ -505,6 +624,29 @@ async function columnHasDataType(
   return rows.some((row) => (
     row.dataType.toLowerCase() === expected || row.udtName.toLowerCase() === expected
   ));
+}
+
+/**
+ * Existence-only check, matching the philosophy of `indexExists` /
+ * `constraintExists` / `functionExists` below: we verify a default has been
+ * set on the column at all, not that its expression text matches the
+ * migration byte-for-byte. Postgres re-serializes default expressions (adds
+ * casts, reorders parens) on read, so exact-text comparison would reject
+ * defaults that are semantically identical to what the migration set.
+ */
+async function columnHasDefault(
+  sql: ReturnType<typeof postgres>,
+  tableName: string,
+  columnName: string,
+): Promise<boolean> {
+  const rows = await sql<{ columnDefault: string | null }[]>`
+    SELECT column_default AS "columnDefault"
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = ${tableName}
+      AND column_name = ${columnName}
+  `;
+  return rows.some((row) => row.columnDefault !== null);
 }
 
 async function indexExists(
@@ -591,61 +733,94 @@ async function heartbeatNextEventSequencesAreCurrent(
   return rows[0]?.current ?? false;
 }
 
+/**
+ * Tri-state rather than boolean: `"unrecognized"` (a statement shape we have
+ * no read-only check for, e.g. a data backfill `UPDATE`) is a distinct
+ * outcome from `"not-applied"` (a statement shape we understand, checked
+ * against the live schema, and it has genuinely not run yet). Collapsing
+ * these to a single `false` is what let a legacy migration containing one
+ * unrecognized statement fall back to a full, destructive replay even when
+ * every DDL effect in that same file was already present. See
+ * `migrationContentAlreadyApplied` for how the two are told apart.
+ */
+type StatementApplyState = "applied" | "not-applied" | "unrecognized";
+
 async function migrationStatementAlreadyApplied(
   sql: ReturnType<typeof postgres>,
   statement: string,
-): Promise<boolean> {
+): Promise<StatementApplyState> {
   const normalized = statement
     .replace(/^\s*--.*$/gm, "")
     .replace(/\s+/g, " ")
     .trim();
 
+  const applied = (value: boolean): StatementApplyState => (value ? "applied" : "not-applied");
+
   const createTableMatch = normalized.match(/^CREATE TABLE(?: IF NOT EXISTS)? "([^"]+)"/i);
   if (createTableMatch) {
-    return tableExists(sql, createTableMatch[1]);
+    return applied(await tableExistsWithColumns(sql, createTableMatch[1], normalized));
   }
 
   const addColumnMatch = normalized.match(
     /^ALTER TABLE "([^"]+)" ADD COLUMN(?: IF NOT EXISTS)? "([^"]+)"/i,
   );
   if (addColumnMatch) {
-    return columnExists(sql, addColumnMatch[1], addColumnMatch[2]);
+    return applied(await columnExists(sql, addColumnMatch[1], addColumnMatch[2]));
+  }
+
+  const dropColumnMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" DROP COLUMN(?: IF EXISTS)? "([^"]+)"/i,
+  );
+  if (dropColumnMatch) {
+    return applied(!(await columnExists(sql, dropColumnMatch[1], dropColumnMatch[2])));
   }
 
   const alterColumnTypeMatch = normalized.match(
     /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" SET DATA TYPE ([A-Za-z0-9_]+)/i,
   );
   if (alterColumnTypeMatch) {
-    return columnHasDataType(
+    return applied(await columnHasDataType(
       sql,
       alterColumnTypeMatch[1],
       alterColumnTypeMatch[2],
       alterColumnTypeMatch[3],
-    );
+    ));
+  }
+
+  const alterColumnDefaultMatch = normalized.match(
+    /^ALTER TABLE "([^"]+)" ALTER COLUMN "([^"]+)" SET DEFAULT /i,
+  );
+  if (alterColumnDefaultMatch) {
+    return applied(await columnHasDefault(sql, alterColumnDefaultMatch[1], alterColumnDefaultMatch[2]));
   }
 
   const createIndexMatch = normalized.match(/^CREATE (?:UNIQUE )?INDEX(?: IF NOT EXISTS)? "([^"]+)"/i);
   if (createIndexMatch) {
-    return indexExists(sql, createIndexMatch[1]);
+    return applied(await indexExists(sql, createIndexMatch[1]));
+  }
+
+  const dropIndexMatch = normalized.match(/^DROP INDEX(?: IF EXISTS)? "([^"]+)"/i);
+  if (dropIndexMatch) {
+    return applied(!(await indexExists(sql, dropIndexMatch[1])));
   }
 
   const addConstraintMatch = normalized.match(/^ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)"/i);
   if (addConstraintMatch) {
-    return constraintExists(sql, addConstraintMatch[2]);
+    return applied(await constraintExists(sql, addConstraintMatch[2]));
   }
 
   const createFunctionMatch = normalized.match(
     /^CREATE OR REPLACE FUNCTION "?([A-Za-z_][A-Za-z0-9_]*)"?\s*\(/i,
   );
   if (createFunctionMatch) {
-    return functionExists(sql, createFunctionMatch[1]);
+    return applied(await functionExists(sql, createFunctionMatch[1]));
   }
 
   const createTriggerMatch = normalized.match(
     /^CREATE TRIGGER "?([A-Za-z_][A-Za-z0-9_]*)"?/i,
   );
   if (createTriggerMatch) {
-    return triggerExists(sql, createTriggerMatch[1]);
+    return applied(await triggerExists(sql, createTriggerMatch[1]));
   }
 
   // This native-runner cursor backfill has a persistent postcondition. Verify it
@@ -655,13 +830,36 @@ async function migrationStatementAlreadyApplied(
     normalized.startsWith('UPDATE "heartbeat_runs" AS run')
     && normalized.includes('SET "next_event_seq" = COALESCE')
   ) {
-    return heartbeatNextEventSequencesAreCurrent(sql);
+    return applied(await heartbeatNextEventSequencesAreCurrent(sql));
   }
 
-  // If we cannot reason about a statement safely, require manual migration.
-  return false;
+  // A statement shape with no read-only check (typically a data backfill
+  // `UPDATE`/`INSERT`/`WITH ... UPDATE`). Not proof the migration ran, but
+  // not proof it didn't either — `migrationContentAlreadyApplied` decides
+  // what to do with that absence of signal.
+  return "unrecognized";
 }
 
+/**
+ * Whole-file reconciliation gate for `reconcilePendingMigrationHistory`: this
+ * must stay strict, requiring *every* statement to be independently
+ * verified `"applied"`, because it is the path that records a migration as
+ * done *without running anything*. A migration whose backfill/repair DML
+ * cannot be verified (an `"unrecognized"` statement — see
+ * `migrationStatementAlreadyApplied`) must not be waved through on the
+ * strength of some unrelated, already-applied DDL statement elsewhere in
+ * the same file: the DDL being present does not prove the DML's effect
+ * still holds for every row, since rows can be inserted after the DDL ran
+ * and before this reconciliation runs (`client.test.ts`'s "replays
+ * migration 0134" case is exactly this — a fresh row inserted after the
+ * initial migration, needing the backfill re-applied to it). Such files
+ * correctly report `false` here and fall through to
+ * `applyPendingMigrationsManually`, whose per-statement loop skips only the
+ * independently-verified-applied statements and always (re-)runs the rest —
+ * safe, because this codebase's data migrations are written to tolerate
+ * replay (`WHERE x IS NULL` guards, `IF NOT EXISTS` checks, deterministic
+ * recomputation).
+ */
 async function migrationContentAlreadyApplied(
   sql: ReturnType<typeof postgres>,
   migrationContent: string,
@@ -670,8 +868,8 @@ async function migrationContentAlreadyApplied(
   if (statements.length === 0) return false;
 
   for (const statement of statements) {
-    const applied = await migrationStatementAlreadyApplied(sql, statement);
-    if (!applied) return false;
+    const state = await migrationStatementAlreadyApplied(sql, statement);
+    if (state !== "applied") return false;
   }
 
   return true;
@@ -765,7 +963,13 @@ export async function reconcilePendingMigrationHistory(
     for (const migrationFile of state.pendingMigrations) {
       const migrationContent = await readMigrationFileContent(migrationFile);
       const alreadyApplied = await migrationContentAlreadyApplied(sql, migrationContent);
-      if (!alreadyApplied) break;
+      // Each pending migration is verified independently: one migration this
+      // process cannot prove is already applied (an unrecognized statement
+      // shape) must not block reconciliation of every migration after it.
+      // `applyPendingMigrationsManually` re-sorts whatever remains pending
+      // into original journal order before replaying DDL, so skipping ahead
+      // here does not risk applying migrations out of order.
+      if (!alreadyApplied) continue;
 
       const hash = createHash("sha256").update(migrationContent).digest("hex");
       const folderMillis = folderMillisByFile.get(migrationFile) ?? Date.now();
