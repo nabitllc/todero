@@ -62,7 +62,7 @@
     "@todero/plugin-sdk": "workspace:*",
     "@todero/shared": "workspace:*",
     "@todero/skills-catalog": "workspace:*",
-    "@vercel/connect": "0.6.1",
+    "@vercel/connect": "2.0.2",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "better-auth": "1.7.0",
