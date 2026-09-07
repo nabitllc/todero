@@ -224,11 +224,26 @@ jobs:
         env:
           STACK_JSON: ${{ toJSON(github.event.pull_request.stack) }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
 
+          # Cost control for this fork. The full matrix (general tests,
+          # serialized server suites, e2e shards) costs about 100 runner
+          # minutes per push against 2,000 free minutes a month on a private
+          # repository. Every pull request runs the cheap lane: policy,
+          # typecheck and build, about 8 minutes. The full matrix runs only
+          # when the pull request carries the `full-ci` label. Add the label
+          # before merge on any change that touches server, ui, cli or
+          # packages code; docs, config and comment changes do not need it.
+          if ! jq -e 'index("full-ci") != null' <<< "$PR_LABELS" >/dev/null 2>&1; then
+            echo "full_ci=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=CI scope::cheap lane (policy, typecheck, build); add the full-ci label to run the full matrix"
+            exit 0
+          fi
+
           full_ci='true'
-          reason='ordinary pull request'
+          reason='ordinary pull request with the full-ci label'
 
           if jq -e 'type == "object"' <<< "$STACK_JSON" >/dev/null 2>&1; then
             stack_position="$(jq -r '.position // empty' <<< "$STACK_JSON")"
@@ -354,7 +369,6 @@ jobs:
   typecheck_release_registry:
     name: Typecheck + Release Registry
     needs: [gate, policy]
-    if: ${{ needs.gate.outputs.full_ci == 'true' }}
     runs-on: ${{ needs.gate.outputs.runner }}
     timeout-minutes: 20
 
@@ -508,9 +522,9 @@ jobs:
               test "$BUILD_RESULT" = "success"
               ;;
             false)
-              test "$TYPECHECK_RELEASE_REGISTRY_RESULT" = "skipped"
+              test "$TYPECHECK_RELEASE_REGISTRY_RESULT" = "success"
               test "$GENERAL_TESTS_RESULT" = "skipped"
-              test "$BUILD_RESULT" = "skipped"
+              test "$BUILD_RESULT" = "success"
               ;;
             *)
               echo "Invalid full_ci decision: $FULL_CI" >&2
@@ -521,7 +535,6 @@ jobs:
   build:
     name: Build
     needs: [gate, policy]
-    if: ${{ needs.gate.outputs.full_ci == 'true' }}
     runs-on: ${{ needs.gate.outputs.runner }}
     timeout-minutes: 20
 

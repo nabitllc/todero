@@ -235,3 +235,35 @@ instead of guessing.
     and `fb75d94c` is an ancestor of `main`. ADR-009 is not edited, because this log is append-only;
     this entry supersedes that one observation only.
 - **Source:** this branch; `AGENTS.md` at commit `d9132fe5` (224 lines) for the content moved.
+
+## ADR-011 — Pull request checks run a cheap lane by default; the full matrix needs the `full-ci` label
+
+- **Date:** 2026-09-07
+- **Status:** Accepted
+- **Context:** `pr-trusted.yml` runs 22 jobs per push, about 100 runner minutes, on a private
+  repository with 2,000 free minutes a month. Nine pull requests and their re-pushes after the
+  2026-08-29 fresh start used the whole allowance by 2026-09-07; GitHub then refused to start any
+  job ("spending limit needs to be increased"), and PR #48, a 2,000-line change to migration
+  reconciliation, merged with no check run at all. Twenty Dependabot pull requests arrived the same
+  morning (grouped by PR #72). Measured on the last green run (34076033605): general tests 8 shards
+  at 6-8 min, serialized server suites 5 at 5 min, e2e 3 at 4-5 min, build 4 min, typecheck 3 min,
+  policy under 1 min.
+- **Decision:** The scope step in the `gate` job sets `full_ci=false` unless the pull request
+  carries the `full-ci` label. `policy`, `typecheck_release_registry` and `build` run on every pull
+  request (about 8 minutes). `general_tests`, `verify_serialized_server` and `e2e_shards` run only
+  with the label. `pr.yml` adds the `labeled` event type so applying the label starts the run
+  without a new push. The `verify` aggregate requires typecheck and build to succeed on both lanes
+  and general tests only on the full lane. The stacked-PR scope logic is kept, behind the label.
+  The rule for contributors is in `CONTRIBUTING.md` § Todero Gates Must Pass: label any change
+  under `server/`, `ui/`, `cli/` or `packages/` before merge.
+- **Consequences:**
+  - About 200 cheap-lane runs a month fit in the free allowance, against 20 full runs before.
+  - A code change merged without the label has no test evidence from CI. The label is a human
+    step, so the PR template checklist and the reviewer are the enforcement. Making the repository
+    public would remove the cost problem entirely (Actions minutes are free on public
+    repositories) and is the intended end state; it waits on rotating an old service key that
+    still sits in the history of `origin/archive/2026-08-29-carcass`.
+  - `scripts/__tests__/e2e-shard.test.mjs` asserts the new shape: typecheck and build ungated,
+    tests and e2e gated, `verify` expecting success from typecheck and build on the cheap lane.
+- **Source:** this branch; billing page of the `nabitllc` organization on 2026-09-07 (2,000 of
+  2,000 minutes used, reset in 24 days); PR #72 for the Dependabot half of the fix.
