@@ -72,30 +72,30 @@ Start the server:
 pnpm dev
 ```
 
-## 3. Hosted PostgreSQL (Supabase)
+## 3. Hosted PostgreSQL (Neon)
 
-For production, use a hosted PostgreSQL provider. [Supabase](https://supabase.com/) is a good option with a free tier.
+For production, use a hosted PostgreSQL provider. [Neon](https://neon.tech/) is a good option with a free tier, and it is also available through the Vercel Marketplace.
 
 ### Setup
 
-1. Create a project at [database.new](https://database.new)
-2. Go to **Project Settings > Database > Connection string**
-3. Copy the URI and replace the password placeholder with your database password
+1. Create a project in the Neon console
+2. Open **Connection Details** and copy the connection string
+3. Replace the password placeholder with your database password
 
 ### Connection string
 
-Supabase offers two connection modes:
+Neon offers two connection modes:
 
-**Direct connection** (port 5432) — use for migrations and one-off scripts:
-
-```
-postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
-```
-
-**Connection pooling via Supavisor** (port 6543) — use for the application:
+**Direct connection** — use for migrations and one-off scripts:
 
 ```
-postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+postgres://[USER]:[PASSWORD]@[ENDPOINT].[REGION].aws.neon.tech/[DATABASE]?sslmode=require
+```
+
+**Pooled connection** (the same host with a `-pooler` suffix) — use for the application:
+
+```
+postgres://[USER]:[PASSWORD]@[ENDPOINT]-pooler.[REGION].aws.neon.tech/[DATABASE]?sslmode=require
 ```
 
 ### Configure
@@ -103,17 +103,17 @@ postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:
 For the application runtime, use a direct PostgreSQL connection unless the database client has explicit prepared-statement configuration for your pooling mode:
 
 ```sh
-DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
+DATABASE_URL=postgres://[USER]:[PASSWORD]@[ENDPOINT].[REGION].aws.neon.tech/[DATABASE]?sslmode=require
 ```
 
 If you later run the app with a pooled runtime URL, set `DATABASE_MIGRATION_URL` to the direct connection URL. Todero uses it for startup schema checks/migrations and plugin namespace migrations, while the app continues to use `DATABASE_URL` for runtime queries:
 
 ```sh
-DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
-DATABASE_MIGRATION_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
+DATABASE_URL=postgres://[USER]:[PASSWORD]@[ENDPOINT]-pooler.[REGION].aws.neon.tech/[DATABASE]?sslmode=require
+DATABASE_MIGRATION_URL=postgres://[USER]:[PASSWORD]@[ENDPOINT].[REGION].aws.neon.tech/[DATABASE]?sslmode=require
 ```
 
-If your hosted database requires transaction-pooling-only connections (pgbouncer transaction mode, Supavisor port 6543, Neon `-pooler` endpoints), set `DATABASE_PREPARED_STATEMENTS=false` so the client does not rely on session-scoped prepared statements, and keep `DATABASE_MIGRATION_URL` on a direct connection. Do not edit database client source files as part of deployment setup.
+If your hosted database requires transaction-pooling-only connections (pgbouncer transaction mode, Neon `-pooler` endpoints), set `DATABASE_PREPARED_STATEMENTS=false` so the client does not rely on session-scoped prepared statements, and keep `DATABASE_MIGRATION_URL` on a direct connection. Do not edit database client source files as part of deployment setup.
 
 ### Client tuning (optional)
 
@@ -129,18 +129,13 @@ DATABASE_CONNECT_TIMEOUT_SECONDS=10  # default: 30
 ### Push the schema
 
 ```sh
-# Use the direct connection (port 5432) for schema changes
-DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@...5432/postgres \
-  pnpm db:migrate
+# Use the direct connection for schema changes
+DATABASE_URL=postgres://[USER]:[PASSWORD]@[ENDPOINT].[REGION].aws.neon.tech/[DATABASE]?sslmode=require   pnpm db:migrate
 ```
 
 ### Free tier limits
 
-- 500 MB database storage
-- 200 concurrent connections
-- Projects pause after 1 week of inactivity
-
-See [Supabase pricing](https://supabase.com/pricing) for current details.
+Neon's free plan caps storage and scales compute to zero after a period of inactivity, so the first request after a pause is slower. See [Neon pricing](https://neon.tech/pricing) for current details.
 
 ## Switching between modes
 
@@ -150,7 +145,7 @@ The database mode is controlled by `DATABASE_URL`:
 |---|---|
 | Not set | Embedded PostgreSQL (`~/.todero/instances/default/db/`) |
 | `postgres://...localhost...` | Local Docker PostgreSQL |
-| `postgres://...supabase.com...` | Hosted Supabase |
+| `postgres://...neon.tech...` | Hosted PostgreSQL (Neon or any provider) |
 
 Your Drizzle schema (`packages/db/src/schema/`) stays the same regardless of mode.
 

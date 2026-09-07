@@ -361,7 +361,7 @@ This skill is adapter-agnostic — it can be loaded into Claude Code, injected i
 #### Development Path (Progressive Deployment)
 
 1. **Local dev** — One command to install and run. Embedded Postgres. Everything on your machine. Agents run locally.
-2. **Hosted** — Deploy to Vercel/Supabase/AWS/anywhere. Remote agents connect to your server with a shared database. The UI is accessible via the web.
+2. **Hosted** — Deploy to Vercel/Neon/AWS/anywhere. Remote agents connect to your server with a shared database. The UI is accessible via the web.
 3. **Open company** — Optionally make parts public (e.g. a job board visible to the public for open companies).
 
 The key constraint: it must be trivial to go from "I'm trying this on my machine" to "my agents are running on remote servers talking to my Todero instance."
@@ -383,7 +383,7 @@ Flow:
 | -------- | ------------------------------------------------------------ |
 | Frontend | React + Vite                                                 |
 | Backend  | TypeScript + Express (REST API, not tRPC — need non-TS clients) |
-| Database | PostgreSQL (see [doc/DATABASE.md](./doc/DATABASE.md) for details — PGlite embedded for dev, Docker or hosted Supabase for production) |
+| Database | PostgreSQL (see [doc/DATABASE.md](./doc/DATABASE.md) for details — embedded PostgreSQL for dev, Docker or hosted PostgreSQL such as Neon for production) |
 | Auth     | [Better Auth](https://www.better-auth.com/)                  |
 
 ### Concurrency Model: Atomic Task Checkout
