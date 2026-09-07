@@ -221,13 +221,27 @@ async function resolveDefaultSchema(sql: ReturnType<typeof postgres>): Promise<s
  * `client.test.ts`'s DDL-comparison unit cases). Schema-qualification is
  * stripped for the resolved default schema only, so a same-schema comparison
  * is qualifier-insensitive without erasing a genuinely different schema.
+ *
+ * Two further transforms (PR #48 round 3 Blocker 1) close false-mismatch
+ * gaps that used to fall through to `"unrecognized"` (blind replay) instead
+ * of a genuine `"applied"`: Postgres adds an explicit `::type` cast to every
+ * literal it re-serializes (`'x'` round-trips as `'x'::text`), and it drops
+ * the table qualifier from a bare column reference inside a predicate
+ * (`"issues"."origin_kind"` round-trips as just `origin_kind`) — the
+ * migration source still has it, since it was written to be
+ * table-qualified. `tableName`, when given, strips only *that* table's own
+ * qualifier (the statement's own target), not an arbitrary one, so a
+ * genuinely different table reference is never silently erased.
  */
-function normalizeDdlText(text: string, schemaName: string): string {
+function normalizeDdlText(text: string, schemaName: string, tableName?: string): string {
   const schemaPrefix = new RegExp(`\\b${escapeRegExp(schemaName.toLowerCase())}\\.`, "g");
-  return text
-    .toLowerCase()
-    .replace(/"/g, "")
-    .replace(schemaPrefix, "")
+  let normalized = text.toLowerCase().replace(/"/g, "").replace(schemaPrefix, "");
+  if (tableName) {
+    const tablePrefix = new RegExp(`\\b${escapeRegExp(tableName.toLowerCase())}\\.`, "g");
+    normalized = normalized.replace(tablePrefix, "");
+  }
+  return normalized
+    .replace(/::[a-z_][a-z0-9_]*(?:\([^()]*\))?(?:\[\])*/g, "")
     .replace(/\bif not exists\b/g, "")
     .replace(/\bon update no action\b/g, "")
     .replace(/\bon delete no action\b/g, "")
@@ -532,12 +546,219 @@ export type SkippedMigrationStatement = {
   migrationFile: string;
   statementPreview: string;
   reason: string;
+  /**
+   * Present for `"definition-differs-skipped-not-replayed"`: both DDL texts
+   * (the live definition and the statement's own), so the audited warning
+   * PR #48 round 3 Blocker 1 requires carries enough to compare by eye —
+   * console logging alone would truncate to `statementPreview`.
+   */
+  detail?: string;
 };
 
 function logSkippedStatement(skipped: SkippedMigrationStatement): void {
+  const detailSuffix = skipped.detail ? ` | ${skipped.detail}` : "";
   console.info(
-    `[todero-db] Skipped statement in ${skipped.migrationFile} (${skipped.reason}): ${skipped.statementPreview}`,
+    `[todero-db] Skipped statement in ${skipped.migrationFile} (${skipped.reason}): ${skipped.statementPreview}${detailSuffix}`,
   );
+}
+
+/**
+ * `true` when `statement`'s own first keyword (skipping leading whitespace
+ * and `--` line comments) is a DML form — `INSERT`, `UPDATE`, `MERGE`, or a
+ * `WITH ... ` CTE head. Used to gate which statements may have a 23505
+ * (unique_violation) treated as "already applied" during replay — see
+ * `replayUnrecognizedStatement` and PR #48 round 3 Critical 1. A DDL
+ * statement (`CREATE UNIQUE INDEX`, `ADD CONSTRAINT ... UNIQUE` / `PRIMARY
+ * KEY`) can also raise 23505 when live data violates it, but that is a
+ * *failed* migration, not an already-applied one: swallowing it boots an
+ * instance believing a constraint exists which does not.
+ */
+function statementStartsWithDml(statement: string): boolean {
+  return /^(?:\s*--[^\n]*\n)*\s*\(?\s*(?:INSERT|UPDATE|MERGE|WITH)\b/i.test(statement);
+}
+
+/**
+ * Splits `text` into its individual top-level SQL statements, each ending at
+ * a `;` that is not inside a single-quoted string literal or a
+ * dollar-quoted block — the same quote/dollar-tag-aware scan
+ * `countTopLevelStatementSeparators` uses to *count* separators, but
+ * collecting the spans between them instead. Replay-time fallback for a
+ * `splitMigrationStatements` element that bundles more than one statement
+ * because its migration file never got a `--> statement-breakpoint` between
+ * them (see `statementContainsMultipleTopLevelStatements`): the strict
+ * whole-file reconciliation gate (`migrationContentAlreadyApplied`) still
+ * treats such a blob as one opaque `"unrecognized"` unit — correctly, since
+ * it must never verify-then-skip a blob it cannot fully account for — but
+ * blindly *replaying* that whole blob in a single savepoint is itself
+ * unsafe (PR #48 round 3 Blocker 1: `0182_connections_v3_schema_core.sql`,
+ * no markers, its first statement already applied, aborts the entire file
+ * with 42701 before ever reaching its own idempotent backfill). Splitting
+ * lets `applyMigrationStatement` apply the same per-statement
+ * applied / not-applied / definition-differs / unrecognized judgement to
+ * each piece instead.
+ */
+function splitTopLevelStatements(text: string): string[] {
+  const statements: string[] = [];
+  let start = 0;
+  let inSingleQuote = false;
+  let dollarTag: string | null = null;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+    if (dollarTag) {
+      if (text.startsWith(dollarTag, i)) {
+        i += dollarTag.length;
+        dollarTag = null;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    if (inSingleQuote) {
+      if (ch === "'") inSingleQuote = false;
+      i += 1;
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "$") {
+      const tagMatch = /^\$[A-Za-z_]*\$/.exec(text.slice(i));
+      if (tagMatch) {
+        dollarTag = tagMatch[0];
+        i += dollarTag.length;
+        continue;
+      }
+    }
+    if (ch === ";") {
+      statements.push(text.slice(start, i + 1));
+      start = i + 1;
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  const tail = text.slice(start);
+  statements.push(tail);
+  return statements.map((statement) => statement.trim()).filter((statement) => statement.length > 0);
+}
+
+/**
+ * Runs one `"unrecognized"` statement (no independent read-only check for
+ * its shape — a data backfill, a `DO $$ ... $$` block) inside a `SAVEPOINT`
+ * of the caller's already-open transaction. A 23505 is treated as "this
+ * statement's effect is already present" and rolled back to the savepoint —
+ * but only when `statementStartsWithDml(statement)` — see PR #48 round 3
+ * Critical 1. Any other error, or a 23505 on a non-DML head, always
+ * propagates and fails the whole migration.
+ */
+async function replayUnrecognizedStatement(
+  sql: ReturnType<typeof postgres>,
+  statement: string,
+): Promise<"executed" | "unique-violation-treated-as-already-applied"> {
+  const savepoint = "todero_unrecognized_statement_replay";
+  await sql.unsafe(`SAVEPOINT ${savepoint}`);
+  try {
+    await sql.unsafe(statement);
+    await sql.unsafe(`RELEASE SAVEPOINT ${savepoint}`);
+    return "executed";
+  } catch (error) {
+    if (!isUniqueViolationError(error) || !statementStartsWithDml(statement)) throw error;
+    await sql.unsafe(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+    await sql.unsafe(`RELEASE SAVEPOINT ${savepoint}`);
+    return "unique-violation-treated-as-already-applied";
+  }
+}
+
+// Test-only accessor: exercises the savepoint/DML-gate logic directly
+// against a real connection and an arbitrary statement, without needing a
+// real migration file on disk. See `client.test.ts`'s Critical 1 case.
+export const __replayUnrecognizedStatementForTests = replayUnrecognizedStatement;
+
+/**
+ * Applies (or verifiably skips) one statement from a migration file, inside
+ * the caller's already-open transaction. Recurses when the statement is
+ * itself a marker-less multi-statement blob (see `splitTopLevelStatements`),
+ * so a file with no `--> statement-breakpoint` at all still gets
+ * per-statement granularity during replay instead of one all-or-nothing
+ * unit.
+ */
+async function applyMigrationStatement(
+  sql: ReturnType<typeof postgres>,
+  migrationFile: string,
+  statement: string,
+  skippedStatements: SkippedMigrationStatement[],
+): Promise<void> {
+  const detail: DdlDefinitionDifference = {};
+  const state = await migrationStatementAlreadyApplied(sql, statement, detail);
+
+  if (state === "applied") {
+    const skipped: SkippedMigrationStatement = {
+      migrationFile,
+      statementPreview: statementPreview(statement),
+      reason: "already-applied",
+    };
+    skippedStatements.push(skipped);
+    logSkippedStatement(skipped);
+    return;
+  }
+
+  if (state === "definition-differs") {
+    // Shape recognised, an object with this name is present, but its live
+    // definition text does not match the statement's — see PR #48 round 3
+    // Blocker 1. Never replayed: `CREATE INDEX` / `ADD CONSTRAINT` against
+    // an existing name aborts with 42P07 / 42710 regardless of whether the
+    // definitions agree. Skipped with an audited warning carrying both
+    // texts instead.
+    const skipped: SkippedMigrationStatement = {
+      migrationFile,
+      statementPreview: statementPreview(statement),
+      reason: "definition-differs-skipped-not-replayed",
+      detail:
+        `expected: ${statementPreview(detail.expectedDefinition ?? statement)} ` +
+        `| actual: ${statementPreview(detail.actualDefinition ?? "(unavailable)")}`,
+    };
+    skippedStatements.push(skipped);
+    logSkippedStatement(skipped);
+    return;
+  }
+
+  if (state === "unrecognized") {
+    if (statementContainsMultipleTopLevelStatements(statement)) {
+      const subStatements = splitTopLevelStatements(statement);
+      if (subStatements.length > 1) {
+        for (const subStatement of subStatements) {
+          await applyMigrationStatement(sql, migrationFile, subStatement, skippedStatements);
+        }
+        return;
+      }
+    }
+
+    // A genuinely single statement with no read-only checker (a data
+    // backfill/repair this process cannot verify against the live schema)
+    // reaches DML here that may never have run before — see PR #48
+    // Critical 3. This codebase's own such statements are written to
+    // tolerate replay, but a *non-idempotent* one (an `INSERT ... SELECT`
+    // with no `ON CONFLICT`, replayed against a unique index) can hit a
+    // unique violation on a database where the row it would have inserted
+    // already exists from an earlier, successful run of this same
+    // statement — see `replayUnrecognizedStatement`.
+    const outcome = await replayUnrecognizedStatement(sql, statement);
+    if (outcome === "unique-violation-treated-as-already-applied") {
+      const skipped: SkippedMigrationStatement = {
+        migrationFile,
+        statementPreview: statementPreview(statement),
+        reason: "unique-violation-treated-as-already-applied",
+      };
+      skippedStatements.push(skipped);
+      logSkippedStatement(skipped);
+    }
+    return;
+  }
+
+  await sql.unsafe(statement);
 }
 
 async function applyPendingMigrationsManually(
@@ -591,53 +812,7 @@ async function applyPendingMigrationsManually(
         // which depend on an unrecognized statement running unconditionally
         // even when other statements in the same file are already applied.
         for (const statement of statements) {
-          const state = await migrationStatementAlreadyApplied(sql, statement);
-          if (state === "applied") {
-            const skipped: SkippedMigrationStatement = {
-              migrationFile,
-              statementPreview: statementPreview(statement),
-              reason: "already-applied",
-            };
-            skippedStatements.push(skipped);
-            logSkippedStatement(skipped);
-            continue;
-          }
-
-          if (state === "unrecognized") {
-            // An unrecognized statement (a data backfill/repair this
-            // process cannot verify against the live schema) reaches DML
-            // here that may never have run before — see PR #48 Critical 3.
-            // This codebase's own such statements are written to tolerate
-            // replay, but a *non-idempotent* one (an `INSERT ... SELECT`
-            // with no `ON CONFLICT`, replayed against a unique index) can
-            // hit a unique violation on a database where the row it would
-            // have inserted already exists from an earlier, successful run
-            // of this same statement. A savepoint scopes that possibility:
-            // 23505 rolls back to before the statement and is treated as
-            // "this row's effect is already present" (an audited skip, not
-            // a silent one); any other error still fails the whole
-            // migration loudly, exactly as before.
-            const savepoint = "todero_unrecognized_statement_replay";
-            await sql.unsafe(`SAVEPOINT ${savepoint}`);
-            try {
-              await sql.unsafe(statement);
-              await sql.unsafe(`RELEASE SAVEPOINT ${savepoint}`);
-            } catch (error) {
-              if (!isUniqueViolationError(error)) throw error;
-              await sql.unsafe(`ROLLBACK TO SAVEPOINT ${savepoint}`);
-              await sql.unsafe(`RELEASE SAVEPOINT ${savepoint}`);
-              const skipped: SkippedMigrationStatement = {
-                migrationFile,
-                statementPreview: statementPreview(statement),
-                reason: "unique-violation-treated-as-already-applied",
-              };
-              skippedStatements.push(skipped);
-              logSkippedStatement(skipped);
-            }
-            continue;
-          }
-
-          await sql.unsafe(statement);
+          await applyMigrationStatement(sql, migrationFile, statement, skippedStatements);
         }
 
         await recordMigrationHistoryEntry(
@@ -882,18 +1057,22 @@ async function indexExists(
 }
 
 /**
- * Tri-state: an index of that name existing under a *different* definition
- * (different columns, uniqueness, or predicate) than the statement declares
- * is not proof the migration's effect is present — see PR #48 Critical 4.
- * Comparing `pg_get_indexdef`'s rendering against the statement (both passed
- * through `normalizeDdlText`) tells applied-with-matching-shape apart from
- * merely-same-name.
+ * An index of that name existing under a *different* definition (different
+ * columns, uniqueness, or predicate) than the statement declares is not
+ * proof the migration's effect is present — see PR #48 Critical 4. Comparing
+ * `pg_get_indexdef`'s rendering against the statement (both passed through
+ * `normalizeDdlText`) tells applied-with-matching-shape apart from
+ * merely-same-name; a mismatch is `"definition-differs"`, not
+ * `"unrecognized"` (PR #48 round 3 Blocker 1) — the caller must never blind
+ * replay it, since the name collision alone would abort with 42P07.
  */
 async function indexMatchesStatement(
   sql: ReturnType<typeof postgres>,
   schemaName: string,
   indexName: string,
+  tableName: string,
   statement: string,
+  detailOut?: DdlDefinitionDifference,
 ): Promise<StatementApplyState> {
   const rows = await sql<{ indexdef: string }[]>`
     SELECT pg_get_indexdef(c.oid) AS indexdef
@@ -904,9 +1083,14 @@ async function indexMatchesStatement(
       AND c.relname = ${indexName}
   `;
   if (rows.length === 0) return "not-applied";
-  const actual = normalizeDdlText(rows[0].indexdef, schemaName);
-  const expected = normalizeDdlText(statement, schemaName);
-  return actual === expected ? "applied" : "unrecognized";
+  const actual = normalizeDdlText(rows[0].indexdef, schemaName, tableName);
+  const expected = normalizeDdlText(statement, schemaName, tableName);
+  if (actual === expected) return "applied";
+  if (detailOut) {
+    detailOut.actualDefinition = rows[0].indexdef;
+    detailOut.expectedDefinition = statement;
+  }
+  return "definition-differs";
 }
 
 async function constraintExists(
@@ -930,12 +1114,14 @@ async function constraintExists(
 }
 
 /**
- * Tri-state counterpart of `constraintExists`, scoped by `conrelid` (the
- * owning table), not name alone — see PR #48 Critical 4. A same-named
- * constraint on the same table but a different definition (columns, FK
- * target, `ON DELETE` action, check expression) must not read as "applied":
- * it means the *statement's* effect is not present, only something with the
- * same name is.
+ * Counterpart of `constraintExists`, scoped by `conrelid` (the owning
+ * table), not name alone — see PR #48 Critical 4. A same-named constraint on
+ * the same table but a different definition (columns, FK target, `ON
+ * DELETE` action, check expression) must not read as "applied": it means
+ * the *statement's* effect is not present, only something with the same
+ * name is — and that is `"definition-differs"`, not `"unrecognized"` (PR #48
+ * round 3 Blocker 1), because blindly re-running `ADD CONSTRAINT` against an
+ * existing name aborts with 42710, not a benign no-op.
  */
 async function constraintMatchesStatement(
   sql: ReturnType<typeof postgres>,
@@ -943,6 +1129,7 @@ async function constraintMatchesStatement(
   tableName: string,
   constraintName: string,
   statementConstraintDefinition: string,
+  detailOut?: DdlDefinitionDifference,
 ): Promise<StatementApplyState> {
   const rows = await sql<{ definition: string }[]>`
     SELECT pg_get_constraintdef(c.oid) AS definition
@@ -954,9 +1141,14 @@ async function constraintMatchesStatement(
       AND c.conname = ${constraintName}
   `;
   if (rows.length === 0) return "not-applied";
-  const actual = normalizeDdlText(rows[0].definition, schemaName);
-  const expected = normalizeDdlText(statementConstraintDefinition, schemaName);
-  return actual === expected ? "applied" : "unrecognized";
+  const actual = normalizeDdlText(rows[0].definition, schemaName, tableName);
+  const expected = normalizeDdlText(statementConstraintDefinition, schemaName, tableName);
+  if (actual === expected) return "applied";
+  if (detailOut) {
+    detailOut.actualDefinition = rows[0].definition;
+    detailOut.expectedDefinition = statementConstraintDefinition;
+  }
+  return "definition-differs";
 }
 
 async function functionExists(
@@ -1022,7 +1214,28 @@ async function heartbeatNextEventSequencesAreCurrent(
  * every DDL effect in that same file was already present. See
  * `migrationContentAlreadyApplied` for how the two are told apart.
  */
-type StatementApplyState = "applied" | "not-applied" | "unrecognized";
+// `"definition-differs"` (PR #48 round 3 Blocker 1) is a fourth, distinct
+// outcome from `"unrecognized"`: the statement's *shape* is recognised (we
+// know how to check it) and an object with the right name is present, but
+// its live definition text does not match the statement's after
+// normalization. That is proof the migration's *literal* effect never ran —
+// but also proof blindly replaying the statement is unsafe (`CREATE INDEX` /
+// `ADD CONSTRAINT` on an already-present name aborts with 42P07 / 42710).
+// `"unrecognized"` is reserved for a shape with *no* checker at all (a data
+// backfill); collapsing the two let a same-named-but-different object read
+// as "unrecognized" and get blind-replayed straight into that same abort.
+type StatementApplyState = "applied" | "not-applied" | "unrecognized" | "definition-differs";
+
+// Populated by `indexMatchesStatement` / `constraintMatchesStatement` (via
+// `migrationStatementAlreadyApplied`'s optional `detailOut` parameter) only
+// when the result is `"definition-differs"`, so a caller that skips the
+// statement instead of replaying it can log *both* texts — the live
+// definition and the statement's own — for a human to compare, per PR #48
+// round 3 Blocker 1's "audited warning carrying both texts."
+type DdlDefinitionDifference = {
+  actualDefinition?: string;
+  expectedDefinition?: string;
+};
 
 // Optional schema-qualification prefix on a table/index reference, e.g. the
 // `"myschema".` in `"myschema"."widgets"` — see PR #48 Critical 4 / Minor 12.
@@ -1049,6 +1262,7 @@ function alterTableHasSingleColumnClause(normalized: string): boolean {
 async function migrationStatementAlreadyApplied(
   sql: ReturnType<typeof postgres>,
   statement: string,
+  detailOut?: DdlDefinitionDifference,
 ): Promise<StatementApplyState> {
   const normalized = statement
     .replace(/^\s*--.*$/gm, "")
@@ -1136,7 +1350,7 @@ async function migrationStatementAlreadyApplied(
   );
   if (createIndexMatch) {
     const schemaName = await schemaOrDefault(createIndexMatch[2]);
-    return indexMatchesStatement(sql, schemaName, createIndexMatch[1], normalized);
+    return indexMatchesStatement(sql, schemaName, createIndexMatch[1], createIndexMatch[3], normalized, detailOut);
   }
 
   // Unlike `CREATE INDEX`, `DROP INDEX` syntax does allow schema-qualifying
@@ -1160,7 +1374,22 @@ async function migrationStatementAlreadyApplied(
       addConstraintMatch[2],
       addConstraintMatch[3],
       addConstraintMatch[4],
+      detailOut,
     );
+  }
+
+  // Bare `DROP CONSTRAINT` (no `IF EXISTS`) — see PR #48 round 3 Important 4,
+  // the same root cause as Blocker 1: without this check the statement fell
+  // through to `"unrecognized"` regardless of whether the constraint was
+  // still present, and an already-applied drop got blind-replayed straight
+  // into 42704 (undefined_object) on a database where it already ran (e.g.
+  // `0093_giant_green_goblin.sql:1,3`).
+  const dropConstraintMatch = normalized.match(
+    new RegExp(`^ALTER TABLE ${SCHEMA_PREFIX}"([^"]+)" DROP CONSTRAINT(?: IF EXISTS)? "([^"]+)"\\s*;?\\s*$`, "i"),
+  );
+  if (dropConstraintMatch) {
+    const schemaName = await schemaOrDefault(dropConstraintMatch[1]);
+    return applied(!(await constraintExists(sql, schemaName, dropConstraintMatch[2], dropConstraintMatch[3])));
   }
 
   const createFunctionMatch = normalized.match(
@@ -1468,10 +1697,17 @@ export async function inspectMigrations(url: string): Promise<MigrationState> {
 
   try {
     const availableMigrations = await listMigrationFiles();
+    // PR #48 round 3 Critical 2: this must resolve the connection's actual
+    // default schema, not hardcode `'public'`. A self-hosted deployment or a
+    // per-plugin schema (`plugin_database.ts`'s `namespace_mode: "schema"`)
+    // can run with a different `search_path`; hardcoding `'public'` made a
+    // non-empty non-`public` database read as empty (0 tables in `public`),
+    // bypassing the `no-migration-journal-non-empty-db` guard below.
+    const defaultSchema = await resolveDefaultSchema(sql);
     const tableCountResult = await sql<{ count: number }[]>`
       select count(*)::int as count
       from information_schema.tables
-      where table_schema = 'public'
+      where table_schema = ${defaultSchema}
         and table_type = 'BASE TABLE'
     `;
     const tableCount = tableCountResult[0]?.count ?? 0;
@@ -1626,10 +1862,14 @@ export async function migratePostgresIfEmpty(url: string): Promise<MigrationBoot
   try {
     const migrationTableSchema = await discoverMigrationTableSchema(sql);
 
+    // PR #48 round 3 Critical 2: resolve the real default schema instead of
+    // hardcoding `'public'` — see `inspectMigrations` for the same fix and
+    // why it matters.
+    const defaultSchema = await resolveDefaultSchema(sql);
     const tableCountResult = await sql<{ count: number }[]>`
       select count(*)::int as count
       from information_schema.tables
-      where table_schema = 'public'
+      where table_schema = ${defaultSchema}
         and table_type = 'BASE TABLE'
     `;
 
