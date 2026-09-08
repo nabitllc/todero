@@ -95,10 +95,11 @@ export function summarizeHeartbeatRunResultJson(
 // Heartbeat posts this text via issuesSvc.addComment when a succeeded run
 // has no agent comment yet. Local LLM first-task completions are
 // conversational plans (Let me / I'll / First,) and must land on the
-// ticket — never replaced by a stub because of opener or length. Over-long
-// text is truncated with a visible "continued" marker so the prefix still
-// shows.
-export const MAX_FALLBACK_COMMENT_CHARS = 1200;
+// ticket — never replaced by a stub because of opener or length. For a
+// chat-only agent the reply is the whole deliverable, so the cap has to fit
+// a full plan; only runaway output is truncated, with a visible "continued"
+// marker so the prefix still shows.
+export const MAX_FALLBACK_COMMENT_CHARS = 12_000;
 export const FALLBACK_COMMENT_CONTINUED_MARKER = "\n\n... continued";
 
 function clipFallbackComment(text: string): string {

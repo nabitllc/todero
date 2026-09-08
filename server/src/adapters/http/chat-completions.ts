@@ -5,6 +5,19 @@ export type ChatCompletionsMessage = {
   content: string;
 };
 
+export type ChatCompletionsThreadTurn = {
+  role: "agent" | "user";
+  body: string;
+};
+
+/** What a plain chat model can hand back about the task after replying. */
+export type ChatCompletionsDisposition = "done" | "waiting";
+
+export const CHAT_COMPLETIONS_STATUS_DONE = "STATUS: done";
+export const CHAT_COMPLETIONS_STATUS_WAITING = "STATUS: waiting";
+
+const STATUS_LINE_RE = /^\s*\**\s*status\s*:\s*\**\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*\**\s*\.?\s*$/i;
+
 /**
  * Local LLM hire points the http adapter at `/v1/chat/completions`.
  * That endpoint reads `messages`, not the managed AGENTS.md bundle (http
@@ -72,6 +85,35 @@ export function parseChatCompletionsText(body: unknown): string {
 }
 
 /**
+ * A chat model has no Todero tools, so the only way it can say "I am
+ * finished" is a trailing status line. The line is stripped from what the
+ * user sees. No line at all means the model is waiting on the user — in a
+ * conversation that is the normal case, and the safe one.
+ */
+export function parseChatCompletionsReply(text: string): {
+  body: string;
+  disposition: ChatCompletionsDisposition;
+} {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let disposition: ChatCompletionsDisposition = "waiting";
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1]!;
+    if (!last.trim()) {
+      lines.pop();
+      continue;
+    }
+    const match = last.match(STATUS_LINE_RE);
+    if (!match) break;
+    const word = match[1]!.toLowerCase();
+    if (word === "done" || word === "finished" || word === "complete" || word === "completed") {
+      disposition = "done";
+    }
+    lines.pop();
+  }
+  return { body: lines.join("\n").trim(), disposition };
+}
+
+/**
  * The prompt the heartbeat actually sends: `toderoTaskMarkdown` is the
  * run-context brief (first-task description + title). Issue fields are a
  * fallback when the compact/full markdown was stripped.
@@ -86,27 +128,76 @@ export function buildChatCompletionsPrompt(context: Record<string, unknown>): st
   return [title, description].filter(Boolean).join("\n\n");
 }
 
+export function buildChatCompletionsSystemPrompt(agentName: string): string {
+  const name = agentName.trim() || "the assistant";
+  return [
+    `You are ${name}, an AI teammate working inside Todero. You are talking with the person who hired you, in the thread of one task.`,
+    "You have no tools and cannot call any API, create tasks, or hire anyone. Do the work in plain text: answer, ask, propose, or draft. Never claim to have taken an action you could not take.",
+    "Write for that person: short, direct, no narration of your own process. Use plain prose or a short list. If you need something from them, ask one clear question and stop.",
+    "The first message is the task. Later messages are the conversation so far. Continue it naturally; do not re-introduce yourself or repeat what was already said.",
+    `End every reply with exactly one line: \`${CHAT_COMPLETIONS_STATUS_DONE}\` if the task is finished and nothing more is expected from you, or \`${CHAT_COMPLETIONS_STATUS_WAITING}\` if you need the person to answer, approve, or decide before you can go on.`,
+  ].join("\n\n");
+}
+
+export function readChatCompletionsThread(context: Record<string, unknown>): ChatCompletionsThreadTurn[] {
+  const raw = Array.isArray(context.toderoThread) ? context.toderoThread : [];
+  const turns: ChatCompletionsThreadTurn[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const body = readNonEmptyString(record.body);
+    if (!body) continue;
+    const role = record.role === "agent" ? "agent" : record.role === "user" ? "user" : null;
+    if (!role) continue;
+    turns.push({ role, body });
+  }
+  return turns;
+}
+
+/**
+ * Sent when the thread ends with the agent's own words (a re-opened task, a
+ * status nudge). A chat model given a transcript that ends in its own turn
+ * returns an empty completion; it needs a user turn to answer.
+ */
+export const CHAT_COMPLETIONS_CONTINUE_NUDGE =
+  "(No reply from the person yet. Pick up where you left off in one short message, or restate the one question you most need answered.)";
+
 export function buildChatCompletionsMessages(
   context: Record<string, unknown>,
+  options: { agentName?: string } = {},
 ): ChatCompletionsMessage[] {
-  return [
-    {
-      role: "user",
-      content: buildChatCompletionsPrompt(context),
-    },
+  const messages: ChatCompletionsMessage[] = [
+    { role: "system", content: buildChatCompletionsSystemPrompt(options.agentName ?? "") },
+    { role: "user", content: buildChatCompletionsPrompt(context) },
   ];
+  // Consecutive turns from the same side collapse into one message: chat
+  // templates expect strict alternation and some models go silent otherwise.
+  for (const turn of readChatCompletionsThread(context)) {
+    const role = turn.role === "agent" ? "assistant" : "user";
+    const last = messages[messages.length - 1]!;
+    if (last.role === role && messages.length > 2) {
+      last.content = `${last.content}\n\n${turn.body}`;
+      continue;
+    }
+    messages.push({ role, content: turn.body });
+  }
+  if (messages[messages.length - 1]!.role === "assistant") {
+    messages.push({ role: "user", content: CHAT_COMPLETIONS_CONTINUE_NUDGE });
+  }
+  return messages;
 }
 
 export function buildChatCompletionsBody(input: {
   config: Record<string, unknown>;
   context: Record<string, unknown>;
   payloadTemplate: Record<string, unknown>;
+  agentName?: string;
 }): Record<string, unknown> {
   const model =
     asString(input.config.model, "") || asString(input.payloadTemplate.model, "");
   return {
     ...input.payloadTemplate,
     ...(model ? { model } : {}),
-    messages: buildChatCompletionsMessages(input.context),
+    messages: buildChatCompletionsMessages(input.context, { agentName: input.agentName }),
   };
 }

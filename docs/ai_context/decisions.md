@@ -267,3 +267,48 @@ instead of guessing.
     tests and e2e gated, `verify` expecting success from typecheck and build on the cheap lane.
 - **Source:** this branch; billing page of the `nabitllc` organization on 2026-09-07 (2,000 of
   2,000 minutes used, reset in 24 days); PR #72 for the Dependabot half of the fix.
+
+## ADR-012 — A chat-only local LLM converses through the ticket thread and hands back a status line
+
+- **Date:** 2026-09-08
+- **Status:** Accepted
+- **Context:** The wizard hires a local Ollama model as an `http` agent pointed at an
+  OpenAI-style `/v1/chat/completions` URL. Such an agent has no tools: it cannot check out work,
+  post comments, or set a disposition through the API. Before this decision the heartbeat sent it
+  only the task description, so every reply restarted the conversation; the run then left the
+  issue `in_progress`, so the missing-disposition recovery blocked the task after one attempt;
+  the work-item view hid any reply over 140 characters behind a "summary was N characters" line;
+  and the ticket comment cap cut a plan off at 1,200 characters. The only run on the reference
+  machine (2026-08-30) stalled on exactly this chain. Two pre-existing defects were found on the
+  way: the live dev database still carried four columns the code had dropped (the 2026-09-06
+  migration reconcile stamped them as applied), and the bundled Todero skill check threw when the
+  seeded snapshot differed from the registry after the rebrand, which failed every run.
+- **Decision:** For an `http` agent whose URL ends in `/v1/chat/completions`, the heartbeat loads
+  the last 20 human/agent comments on the issue (system notices excluded) into the run context
+  as `toderoThread`. The adapter sends a system prompt (agent name, no tools, terse, end with a
+  status line), the task markdown, then the thread as alternating user/assistant turns; same-side
+  turns are merged and a user nudge is appended when the thread ends with the agent, because a
+  transcript that ends in the assistant's own turn returns an empty completion. The reply's
+  trailing `STATUS: done` or `STATUS: waiting` line is stripped and stored as
+  `resultJson.toderoDisposition`. After the comment is posted, the heartbeat applies it:
+  `done` closes the issue, `waiting` (also the default) moves it to `blocked` with the
+  `<!-- todero-blocked-by: waiting-on-you -->` description marker, the state the work-item view
+  renders as "Blocked · Waiting on you." and the state a later user comment wakes from. Agent
+  replies render in full in the work-item view. The ticket comment cap is 12,000 characters. The
+  wizard's local LLM timeout is 180 seconds. A drifted bundled skill snapshot is refreshed from
+  the registry with a warning instead of throwing.
+- **Consequences:**
+  - One agent on Ollama now goes from hire to a plan to done with no cloud model, and a user
+    reply on the ticket continues the conversation.
+  - The work-item view's one-line agent summary rule is gone; replies are the conversation. The
+    reply body is shown as plain text, not rendered Markdown, which is a follow-up.
+  - The first-task description still instructs the agent to use `request_checkbox_confirmation`
+    and a plan document it cannot produce; the plan approval card is separate work.
+  - Small models sometimes omit the status line; the default of `waiting` keeps the task in the
+    person's hands rather than silently done.
+  - A dev database seeded before the migration reconcile may need the same four-column repair
+    applied by hand; the reconcile marks it current and will not fix it.
+- **Source:** `server/src/adapters/http/chat-completions.ts`, `server/src/todero/conversation-thread.ts`,
+  `server/src/services/heartbeat.ts` (thread context and disposition), `server/src/services/company-skills.ts`
+  (snapshot refresh), `server/src/services/heartbeat-run-summary.ts` (comment cap),
+  `ui/src/components/work-item/WorkItemView.tsx`, `ui/src/components/OnboardingWizard.tsx`.

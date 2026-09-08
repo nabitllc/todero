@@ -3,6 +3,7 @@ import { asString, asNumber, parseObject } from "../utils.js";
 import {
   buildChatCompletionsBody,
   isChatCompletionsUrl,
+  parseChatCompletionsReply,
   parseChatCompletionsText,
 } from "./chat-completions.js";
 
@@ -17,7 +18,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const payloadTemplate = parseObject(config.payloadTemplate);
   const chatCompletions = isChatCompletionsUrl(url);
   const body = chatCompletions
-    ? buildChatCompletionsBody({ config, context, payloadTemplate })
+    ? buildChatCompletionsBody({ config, context, payloadTemplate, agentName: agent.name })
     : {
         ...payloadTemplate,
         agentId: agent.id,
@@ -66,12 +67,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       throw new Error("HTTP chat completions returned empty assistant text");
     }
     await ctx.onLog("stdout", completion.endsWith("\n") ? completion : `${completion}\n`);
+    // The trailing status line is for Todero, not the user: it tells the
+    // heartbeat whether to close the task or hand the turn back.
+    const reply = parseChatCompletionsReply(completion);
+    const summary = reply.body || completion;
     return {
       exitCode: 0,
       signal: null,
       timedOut: false,
-      summary: completion,
-      resultJson: { summary: completion },
+      summary,
+      resultJson: { summary, toderoDisposition: reply.disposition },
     };
   } catch (err) {
     if (timer && err instanceof Error && err.name === "AbortError") {

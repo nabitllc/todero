@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChatCompletionsBody,
+  buildChatCompletionsMessages,
   buildChatCompletionsPrompt,
+  CHAT_COMPLETIONS_CONTINUE_NUDGE,
+  CHAT_COMPLETIONS_STATUS_WAITING,
   isChatCompletionsUrl,
+  parseChatCompletionsReply,
   parseChatCompletionsText,
 } from "./chat-completions.js";
 
@@ -75,5 +79,75 @@ describe("parseChatCompletionsText", () => {
     expect(parseChatCompletionsText("")).toBe("");
     expect(parseChatCompletionsText("{ not json")).toBe("");
     expect(parseChatCompletionsText({ choices: [{ message: { content: "  " } }] })).toBe("");
+  });
+});
+
+describe("http adapter chat completions conversation", () => {
+  it("opens with a system prompt, then the task, then the thread in order", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoThread: [
+          { role: "agent", body: "Which city first?" },
+          { role: "user", body: "Austin." },
+        ],
+      },
+      { agentName: "Ron" },
+    );
+    expect(messages.map((message) => message.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(messages[0]!.content).toContain("You are Ron");
+    expect(messages[0]!.content).toContain(CHAT_COMPLETIONS_STATUS_WAITING);
+    expect(messages[1]!.content).toContain(MISSION);
+    expect(messages[2]!.content).toBe("Which city first?");
+    expect(messages[3]!.content).toBe("Austin.");
+  });
+
+  it("merges same-side turns and nudges when the thread ends with the agent", () => {
+    const messages = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoThread: [
+        { role: "agent", body: "Welcome." },
+        { role: "agent", body: "Which city first?" },
+      ],
+    });
+    expect(messages.map((message) => message.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(messages[2]!.content).toBe("Welcome.\n\nWhich city first?");
+    expect(messages[3]!.content).toBe(CHAT_COMPLETIONS_CONTINUE_NUDGE);
+  });
+
+  it("does not merge the task into a following user turn", () => {
+    const messages = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoThread: [{ role: "user", body: "Start with downtown." }],
+    });
+    expect(messages.map((message) => message.role)).toEqual(["system", "user", "user"]);
+    expect(messages[2]!.content).toBe("Start with downtown.");
+  });
+
+  it("ignores malformed thread entries", () => {
+    const messages = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoThread: [null, { role: "system", body: "nope" }, { role: "user", body: "   " }, "text"],
+    });
+    expect(messages).toHaveLength(2);
+  });
+
+  it("strips the trailing status line and reads done", () => {
+    const reply = parseChatCompletionsReply("Here is the plan.\n\n1. Do A\n2. Do B\n\nSTATUS: done\n");
+    expect(reply.body).toBe("Here is the plan.\n\n1. Do A\n2. Do B");
+    expect(reply.disposition).toBe("done");
+  });
+
+  it("treats a missing or waiting status line as the user's turn", () => {
+    expect(parseChatCompletionsReply("What is the budget?").disposition).toBe("waiting");
+    const reply = parseChatCompletionsReply("What is the budget?\n**Status: waiting**");
+    expect(reply.body).toBe("What is the budget?");
+    expect(reply.disposition).toBe("waiting");
+  });
+
+  it("does not read a status word from the middle of a reply", () => {
+    const reply = parseChatCompletionsReply("STATUS: done is what I will write when finished.\nNot yet.");
+    expect(reply.body).toContain("Not yet.");
+    expect(reply.disposition).toBe("waiting");
   });
 });
