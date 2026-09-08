@@ -8100,6 +8100,22 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 500: r.serverError },
 });
 
+registry.registerPath({
+  method: "post",
+  path: "/api/todero/local-llm/test",
+  tags: ["todero"],
+  summary: "Send one short message to a detected local LLM model and report whether it answered",
+  request: {
+    body: jsonBody(
+      z.object({
+        baseUrl: z.string().describe("Loopback base URL of the runtime, e.g. http://127.0.0.1:11434"),
+        modelId: z.string(),
+      }),
+    ),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 500: r.serverError },
+});
+
 export function buildOpenApiDocument(): any {
   return applyDocumentFixups({
     openapi: "3.0.0",
