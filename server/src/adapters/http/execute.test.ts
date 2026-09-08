@@ -193,7 +193,7 @@ describe("http adapter execute", () => {
 
   it("posts a long First,/I'll conversational completion truncated with continued, not a stub", async () => {
     const longPlan = (
-      "First, I'll map the checkout flow. Let me keep going. " + "next step. ".repeat(200)
+      "First, I'll map the checkout flow. Let me keep going. " + "next step. ".repeat(1500)
     ).trim();
     expect(longPlan.length).toBeGreaterThan(MAX_FALLBACK_COMMENT_CHARS);
     const fetchMock = vi.fn(async () => chatCompletionsResponse(longPlan));

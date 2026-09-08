@@ -116,6 +116,12 @@ import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 import {
+  isConversationalHttpAgent,
+  loadConversationThread,
+  planConversationDisposition,
+  readConversationDisposition,
+} from "../todero/conversation-thread.js";
+import {
   buildHeartbeatRunIssueComment,
   HEARTBEAT_RUN_RESULT_OUTPUT_MAX_CHARS,
   HEARTBEAT_RUN_RESULT_SUMMARY_MAX_CHARS,
@@ -14799,6 +14805,16 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     };
     const taskMarkdown = buildToderoTaskMarkdown(taskMarkdownInput);
     const taskMarkdownCompact = buildToderoTaskMarkdown({ ...taskMarkdownInput, includeDescription: false });
+    // A wizard-hired local LLM has no tools: the ticket thread is its whole
+    // memory, so hand it the conversation so far alongside the task.
+    if (issueRef && isConversationalHttpAgent(agent)) {
+      context.toderoThread = await loadConversationThread(db, {
+        companyId: agent.companyId,
+        issueId: issueRef.id,
+      });
+    } else {
+      delete context.toderoThread;
+    }
     if (issueRef) {
       context.toderoIssue = {
         id: issueRef.id,
@@ -17090,6 +17106,36 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             await onLog(
               "stderr",
               `[todero] Failed to post run summary comment: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
+        }
+        // A conversational reply carries its own disposition: close the task
+        // or hand the turn back to the person. Without this the run leaves the
+        // issue in_progress and recovery blocks it as "missing disposition".
+        const conversationDisposition = readConversationDisposition(persistedResultJson);
+        if (issueId && outcome === "succeeded" && conversationDisposition) {
+          try {
+            const currentIssue = await issuesSvc.getById(issueId);
+            const plan = currentIssue
+              ? planConversationDisposition({ issue: currentIssue, disposition: conversationDisposition })
+              : null;
+            if (plan) {
+              await issuesSvc.update(issueId, {
+                status: plan.status,
+                description: plan.description,
+                actorAgentId: agent.id,
+              });
+              await onLog(
+                "stdout",
+                plan.status === "done"
+                  ? "[todero] Marked the task done.\n"
+                  : "[todero] Handed the turn back to the user.\n",
+              );
+            }
+          } catch (err) {
+            await onLog(
+              "stderr",
+              `[todero] Failed to apply the reply's disposition: ${err instanceof Error ? err.message : String(err)}\n`,
             );
           }
         }

@@ -98,7 +98,7 @@ describe("buildHeartbeatRunIssueComment", () => {
   });
 
   it("truncates an over-long completion with continued instead of replacing it with a stub", () => {
-    const summary = "x".repeat(1201);
+    const summary = "x".repeat(MAX_FALLBACK_COMMENT_CHARS + 1);
     const comment = buildHeartbeatRunIssueComment({ summary });
     expect(comment).toContain("xxxx");
     expect(comment).toContain(FALLBACK_COMMENT_CONTINUED_MARKER);
@@ -109,7 +109,7 @@ describe("buildHeartbeatRunIssueComment", () => {
   });
 
   it("posts an over-long Let me / I'll / First, plan truncated with continued, not a stub", () => {
-    const plan = "First, I'll map checkout. Let me keep going. " + "next step. ".repeat(200);
+    const plan = "First, I'll map checkout. Let me keep going. " + "next step. ".repeat(1500);
     expect(plan.length).toBeGreaterThan(MAX_FALLBACK_COMMENT_CHARS);
     const comment = buildHeartbeatRunIssueComment({ summary: plan });
     expect(comment).toContain("First, I'll map checkout");
@@ -128,8 +128,8 @@ describe("buildHeartbeatRunIssueComment", () => {
   });
 
   it("posts a summary exactly at the length cap", () => {
-    const summary = "S" + "x".repeat(1199);
-    expect(summary.length).toBe(1200);
+    const summary = "S" + "x".repeat(MAX_FALLBACK_COMMENT_CHARS - 1);
+    expect(summary.length).toBe(MAX_FALLBACK_COMMENT_CHARS);
     expect(buildHeartbeatRunIssueComment({ summary })).toBe(summary);
   });
 });

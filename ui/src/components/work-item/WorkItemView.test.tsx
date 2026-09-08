@@ -16,7 +16,6 @@ import {
   EMPTY_ACTIVITY,
   WAITING_ON_YOU,
   WORK_ITEM_SECTION_TITLES,
-  agentSummaryOverflowLine,
   visibleCopyHasForbiddenWord,
 } from "./work-item-model";
 
@@ -200,21 +199,19 @@ describe("WorkItemView TESA-1", () => {
     expect(visibleText()).not.toContain("$0.00");
   });
 
-  it("uses the exact overflow system line instead of ellipsizing a long agent summary", async () => {
-    const summary = "x".repeat(312);
+  it("renders a long agent reply in full instead of hiding it behind a summary line", async () => {
+    const reply = "x".repeat(312);
     await render(
       fixture({
-        activity: [{ id: "a1", kind: "agent", name: "Ron", body: summary }],
+        activity: [{ id: "a1", kind: "agent", name: "Ron", time: "2m ago", body: reply }],
       }),
     );
-    const expected = agentSummaryOverflowLine("Ron", 312);
-    expect(expected).toBe("Ron\u2019s summary was 312 characters (limit 140).");
-    expect(container.querySelector('[data-testid="work-item-system"]')?.textContent).toBe(expected);
-    expect(container.querySelector('[data-testid="work-item-agent-row"]')).toBeNull();
-    expect(visibleText()).not.toContain("xxx");
+    const row = container.querySelector('[data-testid="work-item-agent-row"]');
+    expect(row?.textContent).toContain("Ron");
+    expect(row?.textContent).toContain(reply);
+    expect(visibleText()).not.toContain("summary was");
     expect(visibleText()).not.toContain("…");
-    expect(visibleText()).not.toContain("...");
-    expect(summary.length).toBeGreaterThan(AGENT_SUMMARY_LIMIT);
+    expect(reply.length).toBeGreaterThan(AGENT_SUMMARY_LIMIT);
   });
 
   it("does not use the words issue or disposition in user-visible copy", async () => {

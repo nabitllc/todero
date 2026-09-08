@@ -19,7 +19,6 @@ import {
   WORK_ITEM_STATUS_LABELS,
   WORK_ITEM_STATUSES,
   WORK_ITEM_TYPES,
-  agentSummaryRow,
   blockedChipLabel,
   commitWorkItemStatus,
   displayPriority,
@@ -157,16 +156,9 @@ export function WorkItemView(props: WorkItemViewProps) {
   const caption = statusCaption ?? staleStatusCaption ?? null;
   const modeMeta = workModeMetaFor(workMode);
 
-  const visibleActivity = useMemo(() => {
-    return activity.flatMap((item) => {
-      if (item.kind !== "agent") return [item];
-      const row = agentSummaryRow(item.name ?? "", item.body ?? item.text ?? "");
-      if (row.kind === "overflow") {
-        return [{ id: item.id, kind: "agent-overflow" as const, text: row.text }];
-      }
-      return [{ ...item, body: row.summary, name: row.name }];
-    });
-  }, [activity]);
+  // An agent reply is the conversation itself, so it renders in full. The
+  // one-line summary rule only ever hid what the agent said.
+  const visibleActivity = useMemo(() => activity, [activity]);
 
   function tryStatus(next: WorkItemStatus) {
     const result = commitWorkItemStatus({
@@ -588,8 +580,12 @@ export function WorkItemView(props: WorkItemViewProps) {
             visibleActivity.map((item) => {
               if (item.kind === "agent") {
                 return (
-                  <div key={item.id} className="work-item-agent-row" data-testid="work-item-agent-row">
-                    {item.name} {item.body}
+                  <div key={item.id} className="work-item-human work-item-agent-reply" data-testid="work-item-agent-row">
+                    <div className="work-item-human-meta">
+                      <span className="work-item-human-name">{item.name}</span>
+                      {item.time ? <span className="work-item-human-time">{item.time}</span> : null}
+                    </div>
+                    <div className="work-item-human-body">{item.body ?? item.text ?? ""}</div>
                   </div>
                 );
               }

@@ -60,6 +60,7 @@ export function buildWorkItemActivity(args: {
         id: comment.id,
         kind: "agent",
         name,
+        time: relativeTime(comment.createdAt),
         body: comment.body ?? "",
         at,
       });

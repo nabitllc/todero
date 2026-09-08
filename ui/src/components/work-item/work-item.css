@@ -404,6 +404,10 @@
   max-width: 65ch;
 }
 
+.work-item-agent-reply .work-item-human-name {
+  color: var(--wi-fg);
+}
+
 .work-item-human-meta {
   display: flex;
   gap: var(--wi-space-8);

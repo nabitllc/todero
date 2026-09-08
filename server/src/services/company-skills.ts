@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { logger } from "../middleware/logger.js";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3017,7 +3018,18 @@ export function companySkillService(db: Db) {
           sha256: sha256Buffer(entry.content),
         })));
         if (existingHash !== registryHash) {
-          throw new Error(`Bundled skill release ${release.id} does not match its seeded snapshot.`);
+          // The registry on disk is the source of truth for a bundled
+          // release. A snapshot seeded from an older checkout (a rebrand, a
+          // pulled update) used to throw here and take every heartbeat run
+          // on the instance down with it. Refresh the snapshot instead.
+          logger.warn(
+            { companyId, releaseId: release.id, skillId: toderoSkill.id },
+            "bundled skill release differs from its seeded snapshot; refreshing the snapshot from the registry",
+          );
+          await db
+            .update(companySkillVersions)
+            .set({ fileInventory })
+            .where(eq(companySkillVersions.id, existing.id));
         }
         continue;
       }

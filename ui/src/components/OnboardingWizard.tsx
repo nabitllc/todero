@@ -1531,7 +1531,8 @@ function OnboardingWizardInner({
         ? {
             url: `${localLlmSelection.baseUrl}/v1/chat/completions`,
             method: "POST",
-            timeoutMs: 15000,
+            // A local model can take a minute to load on its first request.
+            timeoutMs: 180000,
             model: localLlmSelection.modelId,
             localLlm: localLlmSelection,
           }
