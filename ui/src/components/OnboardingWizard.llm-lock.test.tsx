@@ -100,6 +100,11 @@ const mockVaultApi = vi.hoisted(() => ({
 }));
 const mockLocalLlmApi = vi.hoisted(() => ({
   detect: vi.fn(async () => ({ runtimes: [] as Array<Record<string, unknown>> })),
+  test: vi.fn(
+    async (): Promise<
+      { ok: true; reply: string; latencyMs: number } | { ok: false; error: string; latencyMs: number }
+    > => ({ ok: true, reply: "OK", latencyMs: 1200 }),
+  ),
 }));
 const mockAdapterRegistry = vi.hoisted(() => ({
   list: [] as Array<{ type: string }>,
@@ -269,6 +274,8 @@ describe("OnboardingWizard first-run LLM lock", () => {
     mockVaultApi.get.mockClear();
     mockVaultApi.save.mockClear();
     mockLocalLlmApi.detect.mockResolvedValue({ runtimes: [] });
+    mockLocalLlmApi.test.mockReset();
+    mockLocalLlmApi.test.mockResolvedValue({ ok: true, reply: "OK", latencyMs: 1200 });
   });
 
   afterEach(() => {
@@ -502,7 +509,7 @@ describe("OnboardingWizard first-run LLM lock", () => {
     await act(async () => root.unmount());
   });
 
-  it("Connect enables only when live detect currently contains the leftover runtime+model", async () => {
+  function liveDetectForLeftoverPick() {
     mockLocalLlmApi.detect.mockResolvedValue({
       runtimes: [
         {
@@ -514,18 +521,79 @@ describe("OnboardingWizard first-run LLM lock", () => {
         },
       ],
     });
-    const { root } = await openLocalLlmConnectStep();
+  }
+
+  function testButton() {
+    return document.body.querySelector<HTMLButtonElement>('[data-testid="local-llm-test-button"]');
+  }
+
+  function testStatus() {
+    return document.body.querySelector('[data-testid="local-llm-test-status"]')?.textContent ?? "";
+  }
+
+  async function openLiveLocalLlmStep() {
+    liveDetectForLeftoverPick();
+    const ctx = await openLocalLlmConnectStep();
     for (let i = 0; i < 8; i++) {
       await flushReact();
-      const connect = connectButton();
-      if (connect && !connect.disabled) break;
+      if (testButton()) break;
     }
+    return ctx;
+  }
+
+  it("a live pick alone is not enough: Connect stays disabled until the connection test passes", async () => {
+    const { root } = await openLiveLocalLlmStep();
 
     const connect = connectButton();
     expect(connect).not.toBeNull();
-    expect(connect!.disabled).toBe(false);
+    expect(connect!.disabled).toBe(true);
+    expect(testButton()).not.toBeNull();
+    expect(document.body.textContent).toMatch(/Test the connection before you can start/i);
+    expect(mockLocalLlmApi.test).not.toHaveBeenCalled();
     const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY) ?? "{}");
     expect(stored.localLlmSelection).toEqual(leftoverPick);
+
+    await act(async () => root.unmount());
+  });
+
+  it("Connect enables after the picked model answers the test message", async () => {
+    mockLocalLlmApi.test.mockResolvedValue({ ok: true, reply: "OK", latencyMs: 1200 });
+    const { root } = await openLiveLocalLlmStep();
+
+    await clickByText((t) => t === "Test connection");
+    for (let i = 0; i < 8; i++) {
+      await flushReact();
+      if (/Connected/i.test(testStatus())) break;
+    }
+
+    expect(mockLocalLlmApi.test).toHaveBeenCalledWith({
+      baseUrl: leftoverPick.baseUrl,
+      modelId: leftoverPick.modelId,
+    });
+    expect(testStatus()).toMatch(/Connected\. .* answered in 1\.2 s/);
+    expect(connectButton()!.disabled).toBe(false);
+    expect(document.body.textContent).not.toMatch(/Test the connection before you can start/i);
+
+    await act(async () => root.unmount());
+  });
+
+  it("a failed test shows why and keeps Connect disabled", async () => {
+    mockLocalLlmApi.test.mockResolvedValue({
+      ok: false,
+      error: "The model did not answer within two minutes.",
+      latencyMs: 120000,
+    });
+    const { root } = await openLiveLocalLlmStep();
+
+    await clickByText((t) => t === "Test connection");
+    for (let i = 0; i < 8; i++) {
+      await flushReact();
+      if (/No answer/i.test(testStatus())) break;
+    }
+
+    expect(testStatus()).toMatch(/No answer\. The model did not answer within two minutes\./);
+    expect(connectButton()!.disabled).toBe(true);
+    expect(testButton()!.textContent).toMatch(/Test connection/);
 
     await act(async () => root.unmount());
   });

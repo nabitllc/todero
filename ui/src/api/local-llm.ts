@@ -53,6 +53,15 @@ export function liveLocalLlmSelection<T extends { runtimeId: string; modelId: st
   return selection;
 }
 
+export const LOCAL_LLM_TEST_PATH = "/todero/local-llm/test";
+
+export type LocalLlmTestResult =
+  | { ok: true; reply: string; latencyMs: number }
+  | { ok: false; error: string; latencyMs: number };
+
 export const toderoLocalLlmApi = {
   detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>(LOCAL_LLM_DETECT_PATH),
+  /** One short completion against the picked model; proves it answers, not just that it is listed. */
+  test: (input: { baseUrl: string; modelId: string }) =>
+    api.post<LocalLlmTestResult>(LOCAL_LLM_TEST_PATH, input),
 };
