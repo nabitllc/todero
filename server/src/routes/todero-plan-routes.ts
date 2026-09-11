@@ -14,7 +14,7 @@ import {
   buildExtraWorkerName,
   countReadyPlanTasks,
   decideExtraWorker,
-  planFeatureKeys,
+  pickExtraWorkerFeatureKey,
   readAgentParallelism,
 } from "../todero/orchestration-rules.js";
 import {
@@ -52,9 +52,9 @@ function readKeepIds(body: unknown): string[] | null {
  * before it inside its own feature — so separate features run side by side.
  * When the machine can serve more than one model and there is more ready work
  * than one agent can take, a second agent is added and takes the second
- * feature. The parent stays blocked on its children, which is a valid
- * disposition for recovery and what the dependency wake needs to bring the
- * agent back for a summary once the last child closes.
+ * feature that has work ready now. The parent stays blocked on its children,
+ * which is a valid disposition for recovery and what the dependency wake needs
+ * to bring the agent back for a summary once the last child closes.
  */
 export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeupDeps }) {
   const router = Router();
@@ -125,11 +125,12 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
     // that named nothing waits only for the task before it in its own feature,
     // so the first task of every feature can start at the same time.
     const ordered = resolveToderoPlanTaskDependencies(kept);
-    const featureKeys = planFeatureKeys(kept);
 
-    // Does a second agent help? Only if the machine can serve another model
-    // and there is ready work nobody can pick up. Decided before anything is
-    // created, so the tasks can be handed out as they are made.
+    // Does a second agent help? Only if the machine can serve another model,
+    // there is ready work nobody can pick up, and there is a second feature
+    // with work that can start now to hand over. That last check matters: a
+    // feature whose first task waits on another feature would leave the added
+    // agent idle from the moment it is hired.
     const primaryAgent = await agentsSvc.getById(issue.assigneeAgentId).catch(() => null);
     const decision = decideExtraWorker({
       readyTasks: countReadyPlanTasks(ordered),
@@ -138,12 +139,20 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       parallelism: readAgentParallelism(primaryAgent?.runtimeConfig),
       workers: 1,
     });
+    const handoverFeatureKey = pickExtraWorkerFeatureKey(ordered);
     const extraWorker =
-      decision.hire && primaryAgent && featureKeys.length > 1
+      decision.hire && primaryAgent && handoverFeatureKey !== null
         ? await hireExtraWorker(primaryAgent).catch(() => null)
         : null;
-    // The added agent takes the second feature; the first agent keeps the rest.
-    const extraWorkerFeatureKey = extraWorker ? featureKeys[1] ?? null : null;
+    // The added agent takes that feature; the first agent keeps the rest.
+    const extraWorkerFeatureKey = extraWorker ? handoverFeatureKey : null;
+    const extraWorkerReason = !decision.hire
+      ? decision.reason
+      : handoverFeatureKey === null
+        ? "Only one feature can start right now, so a second agent would have nothing to pick up."
+        : extraWorker
+          ? decision.reason
+          : "A second agent could have helped, but this agent's connection cannot be shared with one.";
 
     const children: Array<{
       id: string;
@@ -210,7 +219,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       parent,
       children,
       extraWorker: extraWorker ? { id: extraWorker.id, name: extraWorker.name } : null,
-      extraWorkerReason: decision.reason,
+      extraWorkerReason,
     });
   });
 

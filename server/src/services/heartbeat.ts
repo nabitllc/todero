@@ -478,7 +478,10 @@ const EXECUTION_PATH_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_r
 const CANCELLABLE_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 const HEARTBEAT_RUN_TERMINAL_STATUSES = ["succeeded", "interrupted", "failed", "cancelled", "timed_out"] as const;
 const UNSUCCESSFUL_HEARTBEAT_RUN_TERMINAL_STATUSES = ["failed", "cancelled", "timed_out"] as const;
-const TIMER_ACTIONABLE_CANDIDATE_LIMIT = 50;
+// How many of an agent's open tasks we look at before deciding a timer tick has
+// nothing to do. Wide enough that a real queue fits in one page; when it does
+// not, the check errs towards letting the tick happen.
+const TIMER_ACTIONABLE_CANDIDATE_LIMIT = 200;
 export {
   ACTIVE_RUN_OUTPUT_CONTINUE_REARM_MS,
   ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS,
@@ -12790,15 +12793,21 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       unresolvedByIssueId.set(row.dependentId, (unresolvedByIssueId.get(row.dependentId) ?? 0) + 1);
     }
 
-    return (
+    const actionable =
       selectActionableTimerWork(
         candidateRows.map((row) => ({
           id: row.id,
           status: row.status,
           unresolvedBlockerCount: unresolvedByIssueId.get(row.id) ?? 0,
         })),
-      ) !== null
-    );
+      ) !== null;
+    if (actionable) return true;
+
+    // We only looked at the first page of this agent's open tasks. If every one
+    // of them is waiting, there may still be a task further down that is ready,
+    // so let the tick happen rather than silently skipping real work. Skipping
+    // is only safe when we have seen the whole list.
+    return candidateRows.length >= TIMER_ACTIONABLE_CANDIDATE_LIMIT;
   }
 
   async function markTimerHeartbeatChecked(agentId: string, source: WakeupOptions["source"]) {

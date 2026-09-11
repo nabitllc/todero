@@ -3,9 +3,15 @@ import {
   buildExtraWorkerName,
   countReadyPlanTasks,
   decideExtraWorker,
+  pickExtraWorkerFeatureKey,
   planFeatureKeys,
   readAgentParallelism,
+  readyPlanFeatureKeys,
 } from "./orchestration-rules.js";
+
+function entry(feature: string, blockedByTaskIds: string[] = []) {
+  return { task: { feature }, blockedByTaskIds };
+}
 
 describe("decideExtraWorker", () => {
   it("adds an agent when two features can start and the machine serves two models", () => {
@@ -80,6 +86,45 @@ describe("countReadyPlanTasks", () => {
         { blockedByTaskIds: ["t1"] },
       ]),
     ).toBe(2);
+  });
+});
+
+describe("readyPlanFeatureKeys", () => {
+  it("lists only the features with work that can start now", () => {
+    expect(
+      readyPlanFeatureKeys([
+        entry("Sign up"),
+        entry("Sign up", ["t1"]),
+        entry("Pick a dinner", ["t1"]),
+        entry("Invite a friend"),
+      ]),
+    ).toEqual(["sign up", "invite a friend"]);
+  });
+});
+
+describe("pickExtraWorkerFeatureKey", () => {
+  it("hands over the second feature that can start, not the second one in the plan", () => {
+    // Feature B waits on feature A, so B is not the one to hand over: C is.
+    expect(
+      pickExtraWorkerFeatureKey([
+        entry("A"),
+        entry("B", ["t1"]),
+        entry("C"),
+        entry("C", ["t3"]),
+      ]),
+    ).toBe("c");
+  });
+
+  it("hands over nothing when only one feature can start", () => {
+    expect(pickExtraWorkerFeatureKey([entry("A"), entry("B", ["t1"]), entry("A", ["t1"])])).toBeNull();
+  });
+
+  it("hands over nothing when the two ready tasks are in the same feature", () => {
+    expect(pickExtraWorkerFeatureKey([entry("A"), entry("A"), entry("B", ["t1"])])).toBeNull();
+  });
+
+  it("hands over the second feature when both start at once", () => {
+    expect(pickExtraWorkerFeatureKey([entry("A"), entry("B"), entry("A", ["t1"])])).toBe("b");
   });
 });
 

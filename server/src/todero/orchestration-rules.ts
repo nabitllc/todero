@@ -88,6 +88,30 @@ export function countReadyPlanTasks(
   return ordered.filter((entry) => entry.blockedByTaskIds.length === 0).length;
 }
 
+/**
+ * The features that have work ready the moment the plan is approved, in the
+ * order that work appears. A feature whose first task waits on another feature
+ * is not in this list: nobody can start it yet.
+ */
+export function readyPlanFeatureKeys(
+  ordered: ReadonlyArray<{ task: { feature: string }; blockedByTaskIds: readonly string[] }>,
+): string[] {
+  return planFeatureKeys(ordered.filter((entry) => entry.blockedByTaskIds.length === 0).map((entry) => entry.task));
+}
+
+/**
+ * The feature the added agent should take: the second one that has work ready
+ * now. Picking by plan order instead would hand the new agent a feature whose
+ * first task is still waiting, and it would sit idle from the moment it is
+ * hired. Null means there is no second feature to hand over, so nobody should
+ * be added.
+ */
+export function pickExtraWorkerFeatureKey(
+  ordered: ReadonlyArray<{ task: { feature: string }; blockedByTaskIds: readonly string[] }>,
+): string | null {
+  return readyPlanFeatureKeys(ordered)[1] ?? null;
+}
+
 /** How many runs one agent is allowed to have in flight, read off its saved settings. */
 export function readAgentParallelism(runtimeConfig: unknown): number {
   const config =

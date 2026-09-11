@@ -6,6 +6,15 @@
  * installs, configures or starts anything: it reads a setting if the operator
  * set one, otherwise asks Ollama what it currently holds in memory, otherwise
  * answers 1 — the safe answer on a laptop.
+ *
+ * The Ollama part is a floor, not a measurement. `/api/ps` reports the models
+ * loaded right now, not how many the machine could serve at once, so an idle
+ * machine with one warm model reads 1 even when the card could run two, and the
+ * number can change between probes as models fall out of memory. That only ever
+ * makes us cautious — we never claim more capacity than we have seen in use —
+ * but a machine that really can serve several models should say so: set
+ * TODERO_LOCAL_LLM_PARALLELISM (or OLLAMA_NUM_PARALLEL), which wins over the
+ * probe.
  */
 export const LOCAL_LLM_PARALLELISM_DEFAULT = 1;
 export const LOCAL_LLM_PARALLELISM_MAX = 8;
