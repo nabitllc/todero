@@ -246,7 +246,7 @@ describe("POST /issues/:id/plan/approve", () => {
     const created = createdIssues();
     expect(created.map((row) => [row.input.title, row.input.status])).toEqual([
       ["Draft the sign up screen", "todo"],
-      ["Write the sign up words", "backlog"],
+      ["Write the sign up words", "todo"],
       ["List the dinners", "todo"],
     ]);
     // The second sign-up task waits on the real task that was created for the
@@ -263,6 +263,29 @@ describe("POST /issues/:id/plan/approve", () => {
     );
   });
 
+  it("leaves a task that has to wait in To do, so the wake reaches it when its blocker closes", async () => {
+    mockDocumentService.getIssueDocumentByKey.mockResolvedValue(
+      planDocument(
+        planBlock([
+          { title: "Draft the sign up screen", feature: "Sign up" },
+          { title: "Write the sign up words", feature: "Sign up" },
+        ]),
+      ),
+    );
+
+    const res = await request(buildApp()).post("/api/issues/issue-parent/plan/approve").send({});
+
+    expect(res.status).toBe(201);
+    const waiting = createdIssues()[1]!;
+    // Not "backlog": the wake that fires when a blocker closes skips a task
+    // sitting in the backlog, so a task parked there would never start.
+    expect(waiting.input.status).toBe("todo");
+    expect(waiting.input.blockedByIssueIds).toEqual(["issue-1"]);
+    // It is the blocker chain that holds it back, not the status: only the
+    // task that can start now is woken.
+    expect(wakenIssueIds()).toEqual(["issue-1"]);
+  });
+
   it("keeps a stated order across features, so only the first task starts", async () => {
     mockDocumentService.getIssueDocumentByKey.mockResolvedValue(
       planDocument(
@@ -277,7 +300,7 @@ describe("POST /issues/:id/plan/approve", () => {
 
     expect(res.status).toBe(201);
     const created = createdIssues();
-    expect(created.map((row) => row.input.status)).toEqual(["todo", "backlog"]);
+    expect(created.map((row) => row.input.status)).toEqual(["todo", "todo"]);
     expect(created[1]!.input.blockedByIssueIds).toEqual(["issue-1"]);
     expect(wakenIssueIds()).toEqual(["issue-1"]);
     expect(res.body.extraWorker).toBeNull();
@@ -342,7 +365,7 @@ describe("POST /issues/:id/plan/approve", () => {
     expect(res.body.extraWorker).toEqual({ id: "agent-2", name: "Ash 2" });
     const byTitle = new Map(createdIssues().map((row) => [row.input.title, row.input]));
     expect(byTitle.get("Write the invite")).toMatchObject({ assigneeAgentId: "agent-2", status: "todo" });
-    expect(byTitle.get("List the dinners")).toMatchObject({ assigneeAgentId: "agent-1", status: "backlog" });
+    expect(byTitle.get("List the dinners")).toMatchObject({ assigneeAgentId: "agent-1", status: "todo" });
     // The added agent has work from the first minute.
     expect(wakenAgentIds()).toContain("agent-2");
   });

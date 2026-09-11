@@ -270,6 +270,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       identifier: string | null;
       title: string;
       status: string;
+      canStartNow: boolean;
       assigneeAgentId: string;
     }> = [];
     const issueIdByPlanTaskId = new Map<string, string>();
@@ -286,9 +287,11 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       const child = await issuesSvc.create(issue.companyId, {
         title: entry.task.title,
         description: buildToderoPlanTaskDescription(parsed.plan, entry.task, { personSaid }),
-        // A task with nothing before it starts now; the rest wait in backlog
-        // and are promoted by the dependency wake when their blockers close.
-        status: blockedByIssueIds.length === 0 ? "todo" : "backlog",
+        // Every child is To do from the start, whether or not something has to
+        // finish first. A task parked in the backlog is skipped by the wake that
+        // fires when its blocker closes, so it would sit there for ever; the
+        // blocker chain is what holds it back, not the status.
+        status: "todo",
         parentId: issue.id,
         assigneeAgentId,
         projectId: issue.projectId ?? null,
@@ -300,6 +303,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       children.push({
         id: child.id,
         identifier: child.identifier ?? null,
+        canStartNow: blockedByIssueIds.length === 0,
         title: child.title,
         status: child.status,
         assigneeAgentId,
@@ -316,8 +320,9 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       actorUserId: req.actor.userId ?? null,
     });
 
-    // Wake every task that can start, not only the first one.
-    for (const child of children.filter((row) => row.status === "todo")) {
+    // Wake every task that can start now, not only the first one. The rest are
+    // woken by the dependency wake when the task they wait on closes.
+    for (const child of children.filter((row) => row.canStartNow)) {
       await queueIssueAssignmentWakeup({
         heartbeat: deps.heartbeat,
         issue: { id: child.id, assigneeAgentId: child.assigneeAgentId, status: child.status },
