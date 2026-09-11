@@ -17512,7 +17512,19 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             // stands exactly where Wave C put it.
             let plan = handIn;
             let acceptedByReviewer = false;
+            // Written before the reviewer is asked, so the task already reads
+            // "in review" while a reviewer on a slow local model thinks. This
+            // turn is stamped finished by now; left `in_progress`, the recovery
+            // sweep read it as a turn that ended without a next step and
+            // started a continuation on every task of the wave-3 loop.
+            let handInWritten = false;
             if (currentIssue && handIn?.outcome === "review") {
+              await issuesSvc.update(issueId, {
+                status: handIn.status,
+                description: handIn.description,
+                actorAgentId: agent.id,
+              });
+              handInWritten = true;
               try {
                 const [companyRow] = await db
                   .select({
@@ -17633,11 +17645,15 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               }
             }
             if (plan) {
-              await issuesSvc.update(issueId, {
-                status: plan.status,
-                description: plan.description,
-                actorAgentId: agent.id,
-              });
+              // The hand-in itself is already on the task; only a change of
+              // mind (the reviewer's accept) needs a second write.
+              if (!(handInWritten && plan === handIn)) {
+                await issuesSvc.update(issueId, {
+                  status: plan.status,
+                  description: plan.description,
+                  actorAgentId: agent.id,
+                });
+              }
               conversationDispositionApplied = true;
               await recordConversationDispositionApplied(db, livenessRun.id, onLog);
               await onLog(

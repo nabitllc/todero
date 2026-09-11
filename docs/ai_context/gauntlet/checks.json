@@ -10,7 +10,7 @@
     { "id": "unit_ui", "cmd": "node checks/vitest.mjs ui", "timeout": 900 },
     { "id": "unit_server_core", "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts", "timeout": 1200 },
     { "id": "file_size_caps", "cmd": "node checks/file-size-caps.mjs", "timeout": 120 },
-    { "id": "live_loop_ollama", "cmd": "python checks/live-loop.py", "timeout": 1200 },
+    { "id": "live_loop_ollama", "cmd": "python checks/live-loop.py", "timeout": 2700 },
     { "id": "item0_local_model_timeout", "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts", "timeout": 600 },
     { "id": "item0_recovery_copy", "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts", "timeout": 600 },
     { "id": "item1_skill_rows", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx", "timeout": 600 },
@@ -19,6 +19,7 @@
     { "id": "item4_send_back_one_call", "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts", "timeout": 900 },
     { "id": "item5_task_drain_stable", "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts", "timeout": 1500 },
     { "id": "repro_slow_local_model_turn", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts", "timeout": 300 },
-    { "id": "repro_plan_without_tasks", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts", "timeout": 300 }
+    { "id": "repro_plan_without_tasks", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts", "timeout": 300 },
+    { "id": "repro_review_window", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-window.gauntlet.ts", "timeout": 300 }
   ]
 }
