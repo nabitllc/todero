@@ -183,6 +183,13 @@
   --status-task-icon-cancelled: #52585d;
   --status-task-icon-in_queue: var(--status-task-in_progress);    /* blocked shape, blue */
 
+  /* Text and icons sitting ON a solid `--status-*` fill (the work item stamp,
+     the approve button). The status hues are single saturated values shared by
+     both modes, so this partner stays near-white in both modes too — it must
+     NOT be `--foreground`, which flips to near-black in light mode and leaves
+     dark text on a saturated blue. */
+  --status-on-fill: #ffffff;
+
   --folder-color-indigo: #6366f1;
   --folder-color-violet: #8b5cf6;
   --folder-color-emerald: #10b981;

@@ -72,11 +72,15 @@ export const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 
 /* ---- Primitive components ---- */
 
-export function HintIcon({ text }: { text: string }) {
+export function HintIcon({ text, label }: { text: string; label?: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button type="button" className="inline-flex text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+        <button
+          type="button"
+          aria-label={label ? `What is ${label}?` : "What is this?"}
+          className="inline-flex rounded-sm text-muted-foreground/50 outline-none transition-colors hover:text-muted-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
+        >
           <HelpCircle className="h-3 w-3" />
         </button>
       </TooltipTrigger>
@@ -87,12 +91,23 @@ export function HintIcon({ text }: { text: string }) {
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  hint,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  /** id of the control this labels, so clicking the label focuses it. */
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <div className="flex items-center gap-1.5 mb-1">
-        <label className="text-xs text-muted-foreground">{label}</label>
-        {hint && <HintIcon text={hint} />}
+        <label className="text-xs text-muted-foreground" htmlFor={htmlFor}>{label}</label>
+        {hint && <HintIcon text={hint} label={label} />}
       </div>
       {children}
     </div>
@@ -116,13 +131,14 @@ export function ToggleField({
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-1.5">
         <span className="text-xs text-muted-foreground">{label}</span>
-        {hint && <HintIcon text={hint} />}
+        {hint && <HintIcon text={hint} label={label} />}
       </div>
       {/* Gallery feedback r3: was a hand-rolled h-5 w-9 pill with a bg-green-600
           track — the app's second switch implementation. Converged on the one
           canonical ToggleSwitch (status-green on-state), DESIGN.md principle 1. */}
       <ToggleSwitch
         data-testid={toggleTestId}
+        aria-label={label}
         checked={checked}
         onCheckedChange={onChange}
       />
@@ -158,9 +174,10 @@ export function ToggleWithNumber({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">{label}</span>
-          {hint && <HintIcon text={hint} />}
+          {hint && <HintIcon text={hint} label={label} />}
         </div>
         <ToggleSwitch
+          aria-label={label}
           checked={checked}
           onCheckedChange={onCheckedChange}
         />
@@ -170,12 +187,13 @@ export function ToggleWithNumber({
           {numberPrefix && <span>{numberPrefix}</span>}
           <input
             type="number"
-            className="w-16 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center"
+            aria-label={numberLabel}
+            className="w-16 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
             value={number}
             onChange={(e) => onNumberChange(Number(e.target.value))}
           />
           <span>{numberLabel}</span>
-          {numberHint && <HintIcon text={numberHint} />}
+          {numberHint && <HintIcon text={numberHint} label={numberLabel} />}
         </div>
       )}
     </div>
@@ -242,7 +260,7 @@ export function AutoExpandTextarea({
   return (
     <textarea
       ref={textareaRef}
-      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden"
+      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -323,7 +341,7 @@ export function DraftTextarea({
   return (
     <textarea
       ref={textareaRef}
-      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden"
+      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
       placeholder={placeholder}
       value={draft}
       onChange={(e) => {
@@ -446,12 +464,23 @@ export function ChoosePathButton() {
 /**
  * Label + input rendered on the same line (inline layout for compact fields).
  */
-export function InlineField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+export function InlineField({
+  label,
+  hint,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  /** id of the control this labels, so clicking the label focuses it. */
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-1.5 shrink-0">
-        <label className="text-xs text-muted-foreground">{label}</label>
-        {hint && <HintIcon text={hint} />}
+        <label className="text-xs text-muted-foreground" htmlFor={htmlFor}>{label}</label>
+        {hint && <HintIcon text={hint} label={label} />}
       </div>
       <div className="w-24 ml-auto">{children}</div>
     </div>

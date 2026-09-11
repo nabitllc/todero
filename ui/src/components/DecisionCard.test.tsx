@@ -258,7 +258,7 @@ describe("DecisionCard", () => {
     clickButtonWithText(el, "Cancel the tree");
     expect(onDecide).not.toHaveBeenCalled();
     expect(el.textContent).toContain("to confirm");
-    const confirm = [...el.querySelectorAll("button")].find((b) => b.textContent?.match(/Cancel \d+ issue/));
+    const confirm = [...el.querySelectorAll("button")].find((b) => b.textContent?.match(/Cancel \d+ task/));
     expect(confirm?.disabled).toBe(true);
   });
 
@@ -310,14 +310,14 @@ describe("DecisionCard", () => {
 
     const dismissed = render({ decision: mkDecision({ status: "decided", executionStatus: "succeeded", chosenOptionId: "dismissed", metadata: { dismissed: true } }), executions: [] });
     expect(dismissed.textContent).toContain("Dismissed");
-    expect(dismissed.textContent).toContain("no effects were run");
+    expect(dismissed.textContent).toContain("nothing was changed");
   });
 
   it("explains when a decision expires because its targets completed", () => {
     const expired = render({
       decision: mkDecision({ status: "expired", metadata: { expiredReason: "target_completed" } }),
     });
-    expect(expired.textContent).toContain("target issues were completed");
+    expect(expired.textContent).toContain("target tasks were completed");
     expect(expired.textContent).not.toContain("expiry deadline");
   });
 });

@@ -31,6 +31,20 @@ export function goalStatusLabel(status: string): string {
   return GOAL_STATUS_LABELS[status] ?? status.replace(/[_-]/g, " ");
 }
 
+// The stored level is "company"; everywhere the owner reads it — Settings, the
+// sidebar — it is called an organization. Keep the two words in step.
+const GOAL_LEVEL_LABELS: Record<string, string> = {
+  company: "Organization",
+  team: "Team",
+  feature: "Feature",
+  agent: "Agent",
+  task: "Task",
+};
+
+export function goalLevelLabel(level: string): string {
+  return GOAL_LEVEL_LABELS[level] ?? level.replace(/[_-]/g, " ");
+}
+
 interface GoalTreeProps {
   goals: GoalTreeGoal[];
   goalLink?: (goal: GoalTreeGoal) => string;
@@ -72,8 +86,12 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
       ) : (
         <span className="w-4" />
       )}
-      <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
-      <span className="flex-1 truncate">{goal.title}</span>
+      {/* Stacked on a phone so the title gets the full width instead of
+          truncating to "Fill a…" behind the level and the counts. */}
+      <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-2">
+        <span className="text-xs text-muted-foreground">{goalLevelLabel(goal.level)}</span>
+        <span className="min-w-0 truncate" title={goal.title}>{goal.title}</span>
+      </span>
       {countLabel ? (
         <span className="text-xs text-muted-foreground whitespace-nowrap" data-testid="goal-task-count">
           {countLabel}

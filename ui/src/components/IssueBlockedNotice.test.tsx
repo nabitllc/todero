@@ -145,7 +145,7 @@ describe("IssueBlockedNotice", () => {
     expect(node.querySelector('[data-successful-run-handoff="required"]')).not.toBeNull();
     expect(node.textContent).toContain("This task still needs a next step.");
     expect(node.textContent).toContain(
-      "A run finished successfully, but the task is still open. Todero needs someone to choose what happens next.",
+      "A turn finished successfully, but the task is still open. Todero needs someone to choose what happens next.",
     );
     expect(node.textContent).toContain("Mark it done or cancelled.");
     expect(node.textContent).toContain("Send it for review or ask for input.");
@@ -226,13 +226,13 @@ describe("IssueBlockedNotice", () => {
     expect(calm).not.toBeNull();
     expect(calm!.getAttribute("data-successful-run-handoff")).toBe("in_flight");
     expect(node.textContent).toContain(
-      "A correction run is in progress — the agent is working. This alert returns if the run stops without choosing a next step.",
+      "Todero is fixing this now — the agent is working. This alert comes back if the turn stops without choosing a next step.",
     );
     const runLink = calm!.querySelector("a");
     expect(runLink?.getAttribute("href")).toBe(
       "/agents/agent-1/runs/87654321-dddd-eeee-ffff-123456789abc",
     );
-    expect(runLink?.textContent).toBe("run 87654321");
+    expect(runLink?.textContent).toBe("turn 87654321");
   });
 
   it("shows the calm in-flight line when the live-run set includes this issue", () => {
@@ -261,7 +261,7 @@ describe("IssueBlockedNotice", () => {
     expect(calm).not.toBeNull();
     // No `liveRunId` on the payload — the copy stands alone, with no run link.
     expect(calm!.querySelector("a")).toBeNull();
-    expect(node.textContent).toContain("A correction run is in progress");
+    expect(node.textContent).toContain("Todero is fixing this now");
   });
 
   it("omits the run link but keeps the calm copy when the live run has no known agent", () => {
@@ -286,7 +286,7 @@ describe("IssueBlockedNotice", () => {
     const calm = node.querySelector('[data-testid="issue-next-step-in-flight"]');
     expect(calm).not.toBeNull();
     expect(calm!.querySelector("a")).toBeNull();
-    expect(calm!.textContent).toContain("run 87654321");
+    expect(calm!.textContent).toContain("turn 87654321");
   });
 
   it("stays silent when the handoff is not required at all", () => {

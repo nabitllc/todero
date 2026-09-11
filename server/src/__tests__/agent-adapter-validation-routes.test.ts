@@ -428,7 +428,7 @@ describe("agent routes adapter validation", () => {
     const adapterConfig = patch.adapterConfig as Record<string, unknown>;
     const env = adapterConfig.env as Record<string, unknown>;
     expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    expect(path.normalize(String(env.CODEX_HOME))).toContain(path.normalize(`/companies/company-1/agents/${agentId}/codex-home`));
   });
 
   it("allows codex_local agents to share the host Codex home", async () => {
@@ -477,7 +477,7 @@ describe("agent routes adapter validation", () => {
     const adapterConfig = createInput.adapterConfig as Record<string, unknown>;
     const env = adapterConfig.env as Record<string, unknown>;
     expect(env.OPENAI_API_KEY).toBe("sk-test-key");
-    expect(String(env.CODEX_HOME)).toContain(`/companies/company-1/agents/${agentId}/codex-home`);
+    expect(path.normalize(String(env.CODEX_HOME))).toContain(path.normalize(`/companies/company-1/agents/${agentId}/codex-home`));
   });
 
   it("rejects unknown adapter types even when schema accepts arbitrary strings", async () => {

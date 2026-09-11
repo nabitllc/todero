@@ -88,10 +88,10 @@ function createRun(overrides: Partial<HeartbeatRun> = {}): HeartbeatRun {
 describe("ActivityCharts", () => {
   it("renders empty run charts when dashboard aggregate data is temporarily missing", () => {
     render(<RunActivityChart activity={undefined} />);
-    expect(container.textContent).toContain("No runs yet");
+    expect(container.textContent).toContain("No turns yet");
 
     render(<SuccessRateChart activity={undefined} />);
-    expect(container.textContent).toContain("No runs yet");
+    expect(container.textContent).toContain("No turns yet");
   });
 
   it("still aggregates raw agent runs for detail charts", () => {
@@ -104,9 +104,9 @@ describe("ActivityCharts", () => {
       />,
     );
 
-    expect(container.textContent).not.toContain("No runs yet");
+    expect(container.textContent).not.toContain("No turns yet");
     // Tooltip now carries the per-day breakdown (incl. failure error codes).
-    const dayCell = container.querySelector("[title^='2026-04-20: 2 runs']");
+    const dayCell = container.querySelector("[title^='2026-04-20: 2 turns']");
     expect(dayCell).not.toBeNull();
     expect(dayCell?.getAttribute("title")).toContain("provider_quota: 1");
   });

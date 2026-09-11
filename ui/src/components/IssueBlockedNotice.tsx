@@ -214,8 +214,8 @@ function SuccessfulRunHandoffInFlightNotice({
           <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
         </span>
         <p className="min-w-0 leading-5">
-          A correction run is in progress — the agent is working. This alert returns if the run
-          stops without choosing a next step.
+          Todero is fixing this now — the agent is working. This alert comes back if the turn stops
+          without choosing a next step.
           {shortRunId ? (
             <>
               {" "}
@@ -224,10 +224,10 @@ function SuccessfulRunHandoffInFlightNotice({
                   to={`/agents/${assigneeAgentId}/runs/${liveRunId}`}
                   className="font-mono underline underline-offset-2 hover:text-foreground"
                 >
-                  run {shortRunId}
+                  turn {shortRunId}
                 </Link>
               ) : (
-                <span className="font-mono">run {shortRunId}</span>
+                <span className="font-mono">turn {shortRunId}</span>
               )}
             </>
           ) : null}
@@ -609,7 +609,7 @@ export function IssueBlockedNotice({
             <>
               <p className="font-medium leading-5">This task still needs a next step.</p>
               <p className="leading-5">
-                A run finished successfully, but the task is still open. Todero needs someone to choose
+                A turn finished successfully, but the task is still open. Todero needs someone to choose
                 what happens next.
               </p>
               <ul className="list-disc space-y-1 pl-5 text-xs leading-5 text-amber-900 dark:text-amber-100">

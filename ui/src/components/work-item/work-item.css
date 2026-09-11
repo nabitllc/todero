@@ -1,28 +1,27 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;1,400&display=swap");
-
 .work-item {
-  --wi-ink: oklch(0.16 0.02 172);
-  --wi-surface: oklch(0.22 0.018 172);
-  --wi-fg: oklch(0.93 0.01 172);
-  --wi-muted: oklch(0.68 0.02 172);
-  --wi-mark: oklch(0.52 0.09 172);
-  --wi-alert: oklch(0.62 0.12 25);
-  --wi-border: color-mix(in oklch, var(--wi-fg) 12%, var(--wi-surface));
-  --wi-sans: "IBM Plex Sans", sans-serif;
-  --wi-mono: "IBM Plex Mono", ui-monospace, monospace;
-  --wi-space-4: 4px;
-  --wi-space-8: 8px;
-  --wi-space-12: 12px;
-  --wi-space-16: 16px;
-  --wi-space-24: 24px;
-  --wi-space-32: 32px;
-  --wi-radius-stamp: 4px;
-  --wi-radius-input: 8px;
+  --wi-bg: var(--background);
+  --wi-surface: var(--card);
+  --wi-fg: var(--foreground);
+  --wi-muted: var(--muted-foreground);
+  --wi-mark: var(--status-task-in_progress);
+  --wi-on-mark: var(--status-on-fill);
+  --wi-alert: var(--status-task-blocked);
+  --wi-border: var(--border);
+  --wi-sans: var(--font-sans);
+  --wi-mono: var(--font-mono);
+  --wi-space-4: 0.25rem;
+  --wi-space-8: 0.5rem;
+  --wi-space-12: 0.75rem;
+  --wi-space-16: 1rem;
+  --wi-space-24: 1.5rem;
+  --wi-space-32: 2rem;
+  --wi-radius-stamp: var(--radius-sm);
+  --wi-radius-input: var(--radius-md);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  background: var(--wi-ink);
+  background: var(--wi-bg);
   color: var(--wi-fg);
   font-family: var(--wi-sans);
 }
@@ -53,7 +52,7 @@
   align-items: center;
   justify-content: center;
   background: var(--wi-mark);
-  color: var(--wi-fg);
+  color: var(--wi-on-mark);
   font-family: var(--wi-sans);
   font-size: 12px;
   font-weight: 500;
@@ -339,12 +338,12 @@
 
 .work-item-log-split {
   height: var(--wi-space-8);
-  background: var(--wi-ink);
+  background: var(--wi-bg);
   flex-shrink: 0;
 }
 
 .work-item-log {
-  background: var(--wi-ink);
+  background: var(--wi-bg);
   padding: var(--wi-space-16) var(--wi-space-24);
   min-height: 240px;
   display: flex;
@@ -686,7 +685,7 @@
 .work-item-plan-approve {
   background: var(--wi-mark);
   border-color: var(--wi-mark);
-  color: var(--wi-ink);
+  color: var(--wi-on-mark);
 }
 
 .work-item-plan-approve:disabled {
@@ -763,7 +762,7 @@
   border-radius: var(--wi-radius-stamp);
   border: 1px solid var(--wi-mark);
   background: var(--wi-mark);
-  color: var(--wi-ink);
+  color: var(--wi-on-mark);
   cursor: pointer;
 }
 

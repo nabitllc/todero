@@ -200,6 +200,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Info,
   ScanEye,
   Flag,
   FileCode2,
@@ -903,6 +904,15 @@ function InboxMobileToolbar({
         aria-label="Back to inbox"
       >
         <ArrowLeft className="h-5 w-5" />
+      </Button>
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onProperties}
+        aria-label="Open properties"
+      >
+        <Info className="h-5 w-5" />
       </Button>
 
       <div className="ml-auto flex items-center gap-0.5">

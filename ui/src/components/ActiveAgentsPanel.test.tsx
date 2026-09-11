@@ -153,7 +153,7 @@ describe("ActiveAgentsPanel", () => {
     });
 
     const moreLink = [...container.querySelectorAll("a")].find((anchor) =>
-      anchor.textContent?.includes("more active/recent"),
+      anchor.textContent?.includes("more active or recent"),
     );
     expect(moreLink?.getAttribute("href")).toBe("/dashboard/live");
 

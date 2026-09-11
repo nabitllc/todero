@@ -433,7 +433,7 @@ describe("Inbox toolbar", () => {
     });
     await vi.waitFor(() => {
       expect(container.textContent).toContain("Hire Agent: New teammate");
-      expect(container.textContent).toContain("Failed run");
+      expect(container.textContent).toContain("A turn failed");
       expect(container.textContent).toContain("Jordan Example");
     });
 
@@ -441,7 +441,7 @@ describe("Inbox toolbar", () => {
       [...container.querySelectorAll("[data-inbox-item]")]
         .find((row) => row.textContent?.includes(text));
 
-    for (const text of ["Hire Agent: New teammate", "Failed run", "Jordan Example"]) {
+    for (const text of ["Hire Agent: New teammate", "A turn failed", "Jordan Example"]) {
       const row = rowFor(text);
       expect(row, `missing inbox row for ${text}`).toBeDefined();
       expect(row?.querySelector('button[aria-label="Mark as read"]')).not.toBeNull();

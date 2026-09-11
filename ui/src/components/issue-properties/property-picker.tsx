@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "../../lib/utils";
 import { PropertyRow } from "./primitives";
@@ -32,11 +32,23 @@ export function PropertyPicker({
     triggerClassName,
   );
 
+  // A screen reader reading the trigger alone hears only the value ("Todo"),
+  // never which field it belongs to. Name the button from the row label plus
+  // its own content, so it announces "Status, Todo".
+  const rowLabelId = useId();
+  const triggerId = useId();
+  const triggerNaming = { id: triggerId, "aria-labelledby": `${rowLabelId} ${triggerId}` };
+
   if (inline) {
     return (
       <div>
-        <PropertyRow label={label}>
-          <button className={btnCn} onClick={() => onOpenChange(!open)}>
+        <PropertyRow label={label} labelId={rowLabelId}>
+          <button
+            className={btnCn}
+            onClick={() => onOpenChange(!open)}
+            aria-expanded={open}
+            {...triggerNaming}
+          >
             {triggerContent}
           </button>
           {extra}
@@ -51,10 +63,10 @@ export function PropertyPicker({
   }
 
   return (
-    <PropertyRow label={label}>
+    <PropertyRow label={label} labelId={rowLabelId}>
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
-          <button className={btnCn}>{triggerContent}</button>
+          <button className={btnCn} {...triggerNaming}>{triggerContent}</button>
         </PopoverTrigger>
         <PopoverContent className={cn("p-1", popoverClassName)} align={popoverAlign} collisionPadding={16}>
           {children}

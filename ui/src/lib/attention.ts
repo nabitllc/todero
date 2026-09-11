@@ -56,7 +56,7 @@ const SOURCE_META: Record<AttentionSourceKind, SourceMeta> = {
   productivity_review: { label: "Productivity review" },
   blocker_attention: { label: "Blocked dependency" },
   review: { label: "Review" },
-  failed_run: { label: "Failed run" },
+  failed_run: { label: "Failed turn" },
   budget_alert: { label: "Budget" },
   agent_error_alert: { label: "Agent error" },
 };
