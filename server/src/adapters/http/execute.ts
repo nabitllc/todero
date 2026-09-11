@@ -10,6 +10,7 @@ import {
   parseChatCompletionsText,
   type ChatCompletionsMessage,
 } from "./chat-completions.js";
+import { resolveHttpAdapterTimeoutMs } from "./local-model-timeout.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -17,7 +18,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!url) throw new Error("HTTP adapter missing url");
 
   const method = asString(config.method, "POST");
-  const timeoutMs = asNumber(config.timeoutMs, 0);
+  const timeoutMs = resolveHttpAdapterTimeoutMs(config as Record<string, unknown>);
   const headers = parseObject(config.headers) as Record<string, string>;
   const payloadTemplate = parseObject(config.payloadTemplate);
   const chatCompletions = isChatCompletionsUrl(url);

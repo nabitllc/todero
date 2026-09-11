@@ -9,7 +9,7 @@ import type {
   Environment,
   InstanceSettings,
 } from "@todero/shared";
-import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@todero/shared";
+import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE, LOCAL_MODEL_TIMEOUT_FLOOR_MS } from "@todero/shared";
 import { AdapterLoginPanel } from "./AgentConfigForm";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
@@ -1568,8 +1568,8 @@ function OnboardingWizardInner({
         ? {
             url: `${localLlmSelection.baseUrl}/v1/chat/completions`,
             method: "POST",
-            // A local model can take a minute to load on its first request.
-            timeoutMs: 180000,
+            // A local model can take several minutes per turn; the floor is ten minutes.
+            timeoutMs: LOCAL_MODEL_TIMEOUT_FLOOR_MS,
             model: localLlmSelection.modelId,
             localLlm: localLlmSelection,
           }

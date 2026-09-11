@@ -9,7 +9,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const BANNED = /\b(issue|issues|disposition|handoff|wake|heartbeat|continuation)\b/i;
-const FILES = ["service.ts", "successful-run-handoff.ts"].map((name) => path.resolve(__dirname, name));
+const FILES = ["service.ts", "successful-run-handoff.ts"].map((name) => path.resolve(__dirname, "..", "services", "recovery", name));
 
 /** The source with its comments blanked (line count preserved), so a comment never reads as copy. */
 function withoutComments(source: string): string {

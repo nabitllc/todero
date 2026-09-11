@@ -328,7 +328,7 @@ function summarizeRunFailureForIssueComment(run: LatestIssueRun) {
   if (!run) return null;
 
   if (readNonEmptyString(run.error) || readNonEmptyString(run.errorCode)) {
-    return " Latest retry failure details were withheld from the issue thread; inspect the linked run for evidence.";
+    return " Latest retry failure details were withheld from the task thread; inspect the linked turn for evidence.";
   }
   return null;
 }

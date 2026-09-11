@@ -1735,3 +1735,6 @@ export const PLUGIN_BRIDGE_ERROR_CODES = [
   "UNKNOWN",
 ] as const;
 export type PluginBridgeErrorCode = (typeof PLUGIN_BRIDGE_ERROR_CODES)[number];
+
+/** HTTP adapter timeout floor for local LLM runtimes (Ollama, vLLM, etc). Ten minutes in milliseconds. */
+export const LOCAL_MODEL_TIMEOUT_FLOOR_MS = 600_000;
