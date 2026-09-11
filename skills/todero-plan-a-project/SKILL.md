@@ -12,8 +12,6 @@ metadata:
 
 # Plan a Project
 
-When you understand the goal, propose one plan in this shape and nothing else:
-
 Write the plan inside one fenced block, exactly in this shape and nothing else inside it:
 
 ```todero-plan
@@ -29,21 +27,33 @@ tasks:
     after: The title of the task that has to finish first (leave this line out when nothing has to come first)
 ```
 
+Three to seven features. Four to twelve tasks, each naming one of the features. Use `after` only when a task truly cannot start until another one is handed in — tasks without it go side by side with the other features. Put any words for the person before the block, not inside it.
+
 ## Ordering matters
 
-1. **Foundation first** — migrations, schema, authorization policies, types come before UI and business logic.
-2. **Data before UI** — your data layer and queries come before the pages.
+1. **Foundation first** — data shape, permissions and shared types come before screens and business logic.
+2. **Data before UI** — the data layer comes before the pages that show it.
 3. **Core before edge** — the main path works before you handle errors and unusual cases.
-4. **Shared before specific** — components and infrastructure shared by multiple features come before feature-specific builds.
+4. **Shared before specific** — anything two features both need comes before either of them.
 
-Start a new feature's tasks only after its foundation is done, so workers can start in parallel on unrelated features and land ready work at the same time.
+Start a feature's later tasks only after its foundation is done. The first task of every feature has no `after`, so unrelated features can start at the same time.
 
-## Constraints on the block
+## Every task needs a done-when
 
-- **Three to seven features.** Fewer than three obscures the real work; more than seven is a different kind of decision, not a plan.
-- **Four to twelve tasks.** Each one names a feature. Use `after` only when a task truly cannot start until another one is handed in — tasks without it run side by side.
-- **Every task needs a done-when.** It lives on the feature, not on individual tasks. But when you create a task, you are committing to this definition of done, so state it in the feature's `done_when` line and check it in the task's `output`. If you cannot say what done looks like for one task, the task is not ready.
+- The done-when line lives on the feature. When you write a task you are committing to that line, so say in `output` what you hand in and how it meets the line. If you cannot say what done looks like, the task is not ready.
+- Name the check inside `output`: the one thing a reviewer looks at to see the done-when is met. Example: `output: the list of sources, with a URL on every row`.
+- Split any feature whose done-when line holds four or more separate checks. Four checks is two features wearing one name.
+
+## Questions before the next phase
+
+End with at most three questions, each with your own recommended answer, and only the ones whose answers would change the plan. If nothing is open, say so in one line. Put these before the block, never inside it.
 
 ## What Todero changed
 
-Kept from **PRD_Framework.md**: phase order (foundation first, data before UI, core before edge, shared before specific) and the Phase Report template's gate: `Questions-before-next-phase`. Kept from **addyosmani/agent-skills § planning-and-task-breakdown**: every task carries acceptance criteria and a verification step; split anything with four or more acceptance criteria; the red flag "tasks without acceptance criteria". Dropped from PRD_Framework: the fifteen sections and file-based storage. Dropped from the public skill: five-level checklists and the idea of a separate plan file — Todero parses the fixed block itself. **Must write**: no task without a done-when. The body is `TODERO_PLAN_BLOCK_INSTRUCTIONS` from packages/shared/src/todero-plan.ts verbatim, plus the two ordering rules from the vault's PRD_Framework and the "every task" constraint above.
+Kept from **PRD_Framework.md**: the phase order (foundation first, data before UI, core before edge, shared before specific) and the Phase Report template's questions-before-the-next-phase gate, narrowed to three questions with a recommended answer each.
+
+Kept from **addyosmani/agent-skills § planning-and-task-breakdown**: every task carries a way to tell it is done and names the check that proves it; split anything carrying four or more separate checks; the red flag "tasks without acceptance criteria", which here reads "no task without a done-when".
+
+The block above is `TODERO_PLAN_BLOCK_INSTRUCTIONS` from packages/shared/src/todero-plan.ts, kept whole, including its closing paragraph. One word in that closing paragraph was swapped for a plainer one — it now reads "tasks without it go side by side" — to keep this pack's plain-words rule.
+
+Dropped from PRD_Framework: the fifteen sections and the file on disk. Dropped from the public skill: its own plan file and its multi-level checklists — Todero parses this block itself, and a small model cannot hold the rest.

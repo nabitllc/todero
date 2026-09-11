@@ -1,6 +1,6 @@
 ---
 name: todero-files-with-the-work
-description: Organize the agent's brief and files, and cite what the work drew on — every handoff carries proof.
+description: Organize the agent's brief and files, and cite what the work drew on, so every piece of work handed over carries its proof.
 metadata:
   version: 1
   upstream: C:/Development/Mich-Brain2/Global_Agents/README.md
@@ -61,4 +61,4 @@ Kept from `Global_Agents/README.md` § Agent file specification: the folder shap
 
 Dropped: state.json and evals/ folders. The local agent has no evals and its state is the task thread.
 
-**Added:** the citation half. Every output names the files and conversation lines it used, and marks anything unverified. This rule did not exist in the source; Todero writes it from the principle that work without proof is speculation.
+**Must write:** the citation half. Nothing in the vault or in any public skill catalogue says every piece of work names what it used, so Todero writes it: every handed-in output ends with a short "Used:" list naming the files and the conversation lines it drew on, and anything it could not check is marked as unverified.

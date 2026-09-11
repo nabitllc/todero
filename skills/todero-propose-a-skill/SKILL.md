@@ -48,4 +48,4 @@ No skill ships without first showing the agent failed without it. The two tasks 
 
 Kept from vault sources: the trigger (a pattern done 2+ times is a skill candidate, three observations in the same direction is enough to draft) and the Iron Law (no skill without failing test first).
 
-Changed: Todero does not count observations; it counts task repetitions and review failures. The trigger becomes two countable numbers: same task kind three times, or two reviews failed for the same reason. The skill proposal shape is one fenced block, not a folder in a vault. The person applies it directly in Todero; no `_pending/` review queue.
+Changed: Todero does not count observations; it counts task repetitions and review failures. The trigger becomes two countable numbers: the same kind of task three times, or two reviews failed for the same reason. The skill proposal shape is one fenced block, not a folder in a vault. The person applies it directly in Todero; no `_pending/` review queue.
