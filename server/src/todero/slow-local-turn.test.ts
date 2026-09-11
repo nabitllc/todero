@@ -18,8 +18,15 @@ const localAgent = {
   },
 };
 
-/** A turn that ran out of time, the way the http adapter records one. */
-const timedOutTurn = { outcome: "failed", errorCode: SLOW_LOCAL_TURN_ERROR_CODE };
+/**
+ * A turn that ran out of time, the way the heartbeat records one. `timed_out`,
+ * not `failed`: the http adapter reports `timedOut` and the heartbeat gives the
+ * turn its own outcome for it (services/heartbeat.ts, `outcome = "timed_out"`).
+ * The first cut of this policy only looked at `failed`, so the whole quiet-try
+ * path never ran on a real turn; the live test in
+ * src/__tests__/heartbeat-slow-local-turn.test.ts is what found that.
+ */
+const timedOutTurn = { outcome: "timed_out", errorCode: SLOW_LOCAL_TURN_ERROR_CODE };
 
 describe("isSlowLocalTurnAgent", () => {
   it("knows the agent that talks to a model on this machine", () => {
@@ -55,11 +62,33 @@ describe("planSlowLocalTurnRecovery", () => {
     ).toBe("hold_for_person");
   });
 
+  it("also reads the clock when an adapter calls it a plain failure", () => {
+    expect(
+      planSlowLocalTurnRecovery({
+        outcome: "failed",
+        errorCode: SLOW_LOCAL_TURN_ERROR_CODE,
+        agent: localAgent,
+        scheduledRetryReason: null,
+      }),
+    ).toBe("retry_quietly");
+  });
+
   it("says nothing about a turn that finished", () => {
     expect(
       planSlowLocalTurnRecovery({
         outcome: "succeeded",
         errorCode: null,
+        agent: localAgent,
+        scheduledRetryReason: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("says nothing about a turn the person cancelled", () => {
+    expect(
+      planSlowLocalTurnRecovery({
+        outcome: "cancelled",
+        errorCode: SLOW_LOCAL_TURN_ERROR_CODE,
         agent: localAgent,
         scheduledRetryReason: null,
       }),

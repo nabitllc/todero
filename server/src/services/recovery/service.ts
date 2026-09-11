@@ -1668,7 +1668,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         `- Source task: ${input.sourceIssue.identifier ?? input.sourceIssue.id}`,
         `- Run: \`${input.run.id}\``,
         `- Same-run evidence: \`${input.evidence.kind}:${input.evidence.id}\` at ${input.evidence.createdAt.toISOString()}`,
-        "- Outcome: false positive; the source task already reached a final state from this run.",
+        "- Outcome: false positive; the source task already reached a final state in that same turn.",
       ].join("\n"), { runId: input.run.id });
     }
 
@@ -1680,7 +1680,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         actionId: activeRecoveryAction.id,
         status: "resolved",
         outcome: "false_positive",
-        resolutionNote: "Source task reached a final state through durable same-run activity; watchdog folded as source-resolved.",
+        resolutionNote: "Source task reached a final state through durable activity in that same turn; watchdog folded as source-resolved.",
       });
     }
 
@@ -1691,7 +1691,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         runId: input.run.id,
         evaluationIssueId: input.existingEvaluation?.id ?? null,
         decision: "dismissed_false_positive",
-        reason: "Source task already reached a final state through durable same-run activity.",
+        reason: "Source task already reached a final state through durable activity in that same turn.",
         createdByRunId: input.run.id,
       })
       .returning();
@@ -2154,7 +2154,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         ? {}
         : { routingPolicy: STRANDED_BOARD_ESCALATION_POLICY },
       nextAction: recoveryCause === SUCCESSFUL_RUN_MISSING_STATE_REASON
-        ? "Board operator: inspect the run evidence, then explicitly choose a valid next step, retry the original owner, reassign, or intentionally resolve the task."
+        ? "Board operator: inspect the evidence from that turn, then explicitly choose a valid next step, retry the original owner, reassign, or intentionally resolve the task."
         : recoveryCause === "process_lost"
           ? "Board operator: inspect the retry history, then explicitly retry the original owner, reassign, or intentionally resolve the task."
         : recoveryCause === "provider_quota"
@@ -2168,7 +2168,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
               ? "Board operator: repair the project workspace repository URL or clone access, or configure a local checkout cwd, then explicitly retry or reassign."
               : "Board operator: repair the source task workspace link, project workspace cwd, or git checkout, then explicitly retry or reassign."
         : recoveryCause === "configuration_incomplete"
-          ? "Board operator: bind the missing secret(s) named in the run failure, then explicitly retry the original owner or reassign."
+          ? "Board operator: bind the missing secret(s) named in the failure, then explicitly retry the original owner or reassign."
         : recoveryCause === "execution_review_participant_recovery"
           ? "Board operator: repair the failed review participant path, restore a live reviewer, explicitly reassign, or record an intentional resolution."
         : "Board operator: inspect the evidence, repair the runtime if appropriate, then explicitly retry the original owner, reassign, or intentionally resolve the task.",
@@ -2320,7 +2320,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       failureSummary ? `- Failure: ${failureSummary.trim()}` : "- Failure: none recorded",
       "- Guard: recovery tasks do not create nested `stranded_issue_recovery` tasks.",
       "",
-      "Next action: the current recovery owner should inspect the failed run evidence, restore a live execution path or record the manual resolution, then move this recovery task out of `blocked`.",
+      "Next action: the current recovery owner should inspect the evidence from the failed turn, restore a live execution path or record the manual resolution, then move this recovery task out of `blocked`.",
     ].join("\n");
   }
 
@@ -3997,7 +3997,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
             currentStageId: pendingExecutionState.currentStageId ?? null,
             currentStageType: pendingExecutionState.currentStageType ?? null,
             reviewRecoveryInstruction:
-              "The previous reviewer run ended while this execution-review stage was still pending. Submit the review decision now, or mark the task blocked with the exact unblock action.",
+              "The previous reviewer's turn ended while this execution-review stage was still pending. Submit the review decision now, or mark the task blocked with the exact unblock action.",
           },
         });
         if (queued) {

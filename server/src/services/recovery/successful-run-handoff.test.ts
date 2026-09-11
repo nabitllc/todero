@@ -17,6 +17,7 @@ import {
   noticeMetadataReferencesRecoveryAction,
 } from "./successful-run-handoff.js";
 import { UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON } from "@todero/adapter-utils/server-utils";
+import { markConversationDispositionApplied } from "../../todero/conversation-disposition-applied.js";
 
 const run = {
   id: "run-1",
@@ -407,6 +408,29 @@ describe("successful run handoff decision", () => {
         },
       } as any,
     })).toEqual({
+      kind: "skip",
+      reason: "conversation disposition was already applied",
+    });
+  });
+
+  it("skips on the mark the finalize path actually writes, not a hand-typed one", async () => {
+    // The seam between the two halves of item 4. The test above spells the key
+    // out by hand, so it would still pass if the writer started spelling it
+    // differently. This one stamps a row with the real writer and hands the
+    // stored context to the decision a later sweep makes.
+    const stored: Array<Record<string, unknown>> = [];
+    const fakeDb = {
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ contextSnapshot: { issueId: "issue-1" } }] }) }) }),
+      update: () => ({
+        set: (values: Record<string, unknown>) => {
+          stored.push(values);
+          return { where: async () => undefined };
+        },
+      }),
+    } as never;
+    await markConversationDispositionApplied(fakeDb, "run-1");
+
+    expect(decide({ run: { ...run, contextSnapshot: stored[0]?.contextSnapshot } as any })).toEqual({
       kind: "skip",
       reason: "conversation disposition was already applied",
     });

@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   markConversationDispositionApplied,
+  recordConversationDispositionApplied,
   withConversationDispositionApplied,
 } from "./conversation-disposition-applied.js";
 
@@ -61,6 +62,25 @@ describe("markConversationDispositionApplied", () => {
   });
 });
 
+describe("recordConversationDispositionApplied", () => {
+  it("says so on the turn's log instead of throwing when the write fails", async () => {
+    const said: string[] = [];
+    const brokenDb = {
+      select: () => ({
+        from: () => ({ where: () => ({ limit: async () => { throw new Error("the database went away"); } }) }),
+      }),
+    } as never;
+
+    await expect(
+      recordConversationDispositionApplied(brokenDb, "run-1", async (_stream, chunk) => {
+        said.push(chunk);
+      }),
+    ).resolves.toBeUndefined();
+    expect(said.join("")).toContain("the database went away");
+    expect(said.join("")).not.toMatch(/\b(issue|disposition|handoff|wake|heartbeat|continuation|run)\b/i);
+  });
+});
+
 describe("the finalize path stamps the stored row", () => {
   // Wave 1 saw a second turn asked for after a turn that had already said what
   // happens next. The in-memory flag was passed to the hand-in check, but the
@@ -74,11 +94,11 @@ describe("the finalize path stamps the stored row", () => {
   );
 
   it("marks the row before the hand-in check, for every branch", () => {
-    const mark = source.indexOf("if (conversationDispositionApplied) {");
+    const mark = source.indexOf("if (conversationDispositionApplied) await recordConversationDispositionApplied(");
     const handoff = source.indexOf("await handleSuccessfulRunHandoff(");
     expect(mark).toBeGreaterThan(-1);
     expect(handoff).toBeGreaterThan(-1);
     expect(mark).toBeLessThan(handoff);
-    expect(source.slice(mark, handoff)).toContain("markConversationDispositionApplied(db, livenessRun.id)");
+    expect(source.slice(mark, handoff)).toContain("recordConversationDispositionApplied(db, livenessRun.id, onLog)");
   });
 });

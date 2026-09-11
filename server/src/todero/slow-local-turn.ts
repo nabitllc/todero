@@ -42,6 +42,13 @@ export function isSlowLocalTurnAgent(agent: { adapterType: string; adapterConfig
 }
 
 /**
+ * How a turn that ran out of time ends. The http adapter reports `timedOut`, and
+ * the heartbeat turns that into its own `timed_out` — not `failed`. Both are
+ * listed because an adapter can also report the clock as a plain failure.
+ */
+const SLOW_LOCAL_TURN_OUTCOMES = new Set(["timed_out", "failed"]);
+
+/**
  * What to do about a turn that just ended. `null` means this is not a slow
  * local turn and nothing here applies — every other path is left alone.
  */
@@ -51,7 +58,7 @@ export function planSlowLocalTurnRecovery(input: {
   agent: { adapterType: string; adapterConfig: unknown };
   scheduledRetryReason: string | null;
 }): SlowLocalTurnPlan | null {
-  if (input.outcome !== "failed") return null;
+  if (!SLOW_LOCAL_TURN_OUTCOMES.has(input.outcome)) return null;
   if (input.errorCode !== SLOW_LOCAL_TURN_ERROR_CODE) return null;
   if (!isSlowLocalTurnAgent(input.agent)) return null;
   return input.scheduledRetryReason === SLOW_LOCAL_TURN_RETRY_REASON ? "hold_for_person" : "retry_quietly";
