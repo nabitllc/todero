@@ -86,18 +86,23 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
       ) : (
         <span className="w-4" />
       )}
-      {/* Stacked on a phone so the title gets the full width instead of
-          truncating to "Fill a…" behind the level and the counts. */}
-      <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-2">
-        <span className="text-xs text-muted-foreground">{goalLevelLabel(goal.level)}</span>
-        <span className="min-w-0 truncate" title={goal.title}>{goal.title}</span>
-      </span>
-      {countLabel ? (
-        <span className="text-xs text-muted-foreground whitespace-nowrap" data-testid="goal-task-count">
-          {countLabel}
+      {/* On a phone the title takes the whole first line and the level, the
+          count and the status drop to a second line, so the title never
+          truncates to "Fill a…" behind them. From sm up it is one row. */}
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className="min-w-0 basis-full truncate sm:order-2 sm:basis-auto sm:flex-1" title={goal.title}>
+          {goal.title}
         </span>
-      ) : null}
-      <StatusBadge status={goal.status} label={goalStatusLabel(goal.status)} />
+        <span className="text-xs text-muted-foreground sm:order-1">{goalLevelLabel(goal.level)}</span>
+        {countLabel ? (
+          <span className="text-xs text-muted-foreground whitespace-nowrap sm:order-3" data-testid="goal-task-count">
+            {countLabel}
+          </span>
+        ) : null}
+        <span className="sm:order-4">
+          <StatusBadge status={goal.status} label={goalStatusLabel(goal.status)} />
+        </span>
+      </span>
     </>
   );
 
