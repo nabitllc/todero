@@ -7,6 +7,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ReactNode } from "react";
 import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -430,7 +431,9 @@ describe("step 10 — phone", () => {
   // it is stylesheet work, so the test holds both ends of the contract: the
   // rules exist under the phone width, and the screen really does render the
   // classes those rules select.
-  const css = readFileSync(resolve(process.cwd(), "src/components/work-item/work-item.css"), "utf8");
+  // Resolved from this file, not the working directory: CI runs the suite
+  // from the repo root, the local gates run it from ui/.
+  const css = readFileSync(resolve(fileURLToPath(new URL(".", import.meta.url)), "work-item.css"), "utf8");
 
   /** Everything the stylesheet says under the phone width, as one string. */
   function phoneRules(source: string): string {
