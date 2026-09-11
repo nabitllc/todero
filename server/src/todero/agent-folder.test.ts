@@ -14,6 +14,7 @@ import {
   toAgentFolderFileSlug,
   writeAgentHandIn,
 } from "./agent-folder.js";
+import { resolveToderoInstanceRoot } from "../home-paths.js";
 
 const COMPANY_ID = "company-1";
 const AGENT_ID = "agent-1";
@@ -85,7 +86,10 @@ const AGENT = {
 describe("folder paths", () => {
   it("sits beside the instructions bundle under the instance root", () => {
     const root = resolveAgentFolderRoot(COMPANY_ID, AGENT_ID);
-    expect(root).toBe(path.resolve(homeDir, "instances", "default", "companies", COMPANY_ID, "agents", AGENT_ID));
+    // The instance id comes from the environment (CI runs each shard under its
+    // own), so anchor on the resolved instance root rather than "default".
+    expect(root).toBe(path.resolve(resolveToderoInstanceRoot(), "companies", COMPANY_ID, "agents", AGENT_ID));
+    expect(root.startsWith(path.resolve(homeDir, "instances"))).toBe(true);
     expect(resolveAgentBriefPath(COMPANY_ID, AGENT_ID)).toBe(path.join(root, "brief.md"));
     expect(resolveAgentSkillsDir(COMPANY_ID, AGENT_ID)).toBe(path.join(root, "skills"));
     expect(resolveAgentDocumentsDir(COMPANY_ID, AGENT_ID)).toBe(path.join(root, "documents"));
