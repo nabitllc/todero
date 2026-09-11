@@ -62,6 +62,21 @@ def wait_for(pred, seconds, every=8):
     return None
 
 
+def runs_of(company):
+    _, d = call("GET", f"/companies/{company}/heartbeat-runs?limit=100")
+    return d if isinstance(d, list) else (d or {}).get("runs") or []
+
+
+def turn_settled(company, issue_id, agent_comments_at_least):
+    """True once the agent has replied and no turn is queued or running: the
+    reply's markers are written after the comment, so reading them earlier
+    races the turn's own finalization."""
+    replies = [c for c in comments(issue_id) if c.get("authorAgentId")]
+    if len(replies) < agent_comments_at_least:
+        return False
+    return all(r["status"] not in ("queued", "running") for r in runs_of(company))
+
+
 def issues_of(company):
     _, rows = call("GET", f"/companies/{company}/issues?includeBlockedBy=true")
     return sorted(rows or [], key=lambda r: int(r["identifier"].split("-")[1]))
@@ -116,7 +131,7 @@ def main() -> int:
         # 1) the agent asks, the person answers once, the plan arrives within two rounds
         plan_round = None
         for round_ in range(1, 4):
-            wait_for(lambda: len([c for c in comments(root["id"]) if c.get("authorAgentId")]) >= round_ + 1, 240)
+            wait_for(lambda: turn_settled(C, root["id"], round_ + 1), 240, every=5)
             current = call("GET", f"/issues/{root['id']}")[1] or {}
             m = markers(current.get("description"))
             log(f"round {round_}: status={current.get('status')} markers={m}")
@@ -146,7 +161,15 @@ def main() -> int:
             cid, ident = child["id"], child["identifier"]
             answers = 0
             for _attempt in range(6):
-                got = wait_for(lambda: (lambda r: r if (r["status"] in ("done", "cancelled") or markers(r.get("description"))["review"] or markers(r.get("description"))["waiting"]) else None)(call("GET", f"/issues/{cid}")[1] or {"status": "?"}), 300)
+                def child_state():
+                    # Read the task only once its turn has finished, so the
+                    # markers the turn writes after its comment are in place.
+                    if any(r["status"] in ("queued", "running") for r in runs_of(C)):
+                        return None
+                    r = call("GET", f"/issues/{cid}")[1] or {"status": "?"}
+                    m = markers(r.get("description"))
+                    return r if (r["status"] in ("done", "cancelled") or m["review"] or m["waiting"]) else None
+                got = wait_for(child_state, 300, every=5)
                 if not got:
                     expect(False, f"{ident}: no hand-in or question within 5 minutes")
                     break
