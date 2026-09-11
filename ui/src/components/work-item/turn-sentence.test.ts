@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TIMER_INTERVAL_SEC,
   planApproveLabel,
+  reviewerHasIt,
   timerIntervalText,
   turnSentence,
   type TurnSentenceView,
@@ -110,9 +111,57 @@ describe("turnSentence — paused", () => {
     expect(result.actions).toEqual([]);
   });
 
-  it("beats a live run and a pending review", () => {
-    const result = turnSentence(view({ paused: true, agentWorking: true, reviewPending: true }));
+  it("beats a live turn", () => {
+    const result = turnSentence(view({ paused: true, agentWorking: true }));
     expect(result.text).toBe("Paused");
+  });
+
+  it("does not hide the person's turn: a hand-in still waits for the person while paused", () => {
+    expect(turnSentence(view({ paused: true, reviewPending: true })).text).toBe("Your turn: accept or send back");
+    expect(turnSentence(view({ paused: true, planPending: true })).text).toBe("Your turn: approve the plan");
+    expect(turnSentence(view({ paused: true, waitingOnYou: true })).text).toContain("Your turn");
+  });
+});
+
+describe("turnSentence — the reviewer has it", () => {
+  it("says so, and offers nothing, on handed-over work", () => {
+    const result = turnSentence(view({ status: "in_progress", reviewRunning: true }));
+    expect(result).toEqual({ text: "With the reviewer", actions: [], tone: "waiting" });
+  });
+
+  it("reads a live turn on handed-over work as the reviewer's, not the agent's", () => {
+    expect(turnSentence(view({ reviewRunning: true, agentWorking: true })).text).toBe(
+      "With the reviewer",
+    );
+  });
+
+  it("gives way the moment the person owes something", () => {
+    expect(turnSentence(view({ reviewRunning: true, reviewPending: true })).text).toBe(
+      "Your turn: accept or send back",
+    );
+    expect(turnSentence(view({ reviewRunning: true, planPending: true })).text).toBe(
+      "Your turn: approve the plan",
+    );
+    expect(turnSentence(view({ reviewRunning: true, waitingOnYou: true })).text).toBe(
+      "Your turn: answer Nova",
+    );
+  });
+
+  it("gives way to a pause", () => {
+    expect(turnSentence(view({ reviewRunning: true, paused: true })).text).toBe("Paused");
+  });
+
+  it("says nothing of the sort when the work has not been handed over", () => {
+    expect(turnSentence(view({ status: "in_progress" })).text).toBe("Nova is working on it");
+  });
+});
+
+describe("reviewerHasIt", () => {
+  it("is true only on handed-over work the person owes nothing on", () => {
+    expect(reviewerHasIt(view({ reviewRunning: true }))).toBe(true);
+    expect(reviewerHasIt(view({}))).toBe(false);
+    expect(reviewerHasIt(view({ reviewRunning: true, reviewPending: true }))).toBe(false);
+    expect(reviewerHasIt(view({ reviewRunning: true, blockedBy: { kind: "waiting-on-you" } }))).toBe(false);
   });
 });
 

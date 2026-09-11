@@ -1148,3 +1148,135 @@ API calls used, in order: `GET /api/companies/{id}/skills`, `GET /api/agents/{id
 `POST /api/companies/{id}/skills/{skillId}/reset-to-original`,
 `GET /api/companies/{id}/skills/{skillId}/versions`. Two routes were added by this wave and both are
 registered in `server/src/routes/openapi.ts`.
+
+### Wave: the Board
+
+**What exists.** The Tasks page has a board mode (`ui/src/components/KanbanBoard.tsx`, owned by
+`IssuesList`): one column per raw status, drag and drop with `@dnd-kit`, compact cards, cold lanes
+(backlog, done, cancelled) collapsing into rails, density preferences saved per organization. The
+May 2026 scaled-board design covers volume. What is missing is the product shape: a board that
+reads as the team's production line, reachable from the menu.
+
+**Decisions (Michael, 2026-09-11).** Turn-based columns; one row per feature, because agents own
+steps, not rows; work-in-progress limit per agent from what the machine can serve; a drag does
+exactly what the buttons do.
+
+**Entry.** `Board` is its own item under Work in the sidebar, between Tasks and Goals, at `/board`
+(company-prefixed like the rest). The board mode inside Tasks stays as a view.
+
+**Columns: the steps.** Left to right, computed from the task's state, blockers and markers - the
+same inputs `turnSentence` reads, so the card and the task never disagree:
+
+| Column | Holds | Owner of the step |
+| --- | --- | --- |
+| Queued | To do with an open blocker, paused, hard-blocked, or nobody assigned | nobody; the chain releases it |
+| Agent working | in progress, a live turn, or To do with an assignee (about to start) | the assignee |
+| Review | handed in, the reviewer has it and nothing has passed yet | the reviewer agent |
+| Your turn | plan to approve, output to accept, question to answer | the person |
+| Done | done, cancelled | - |
+
+**Rows: the features.** One swimlane per feature goal in plan order, with the feature's done-when as
+the row's subtitle and a progress fraction ("2 of 4 done"). A row for the Brief sits on top, a row
+named "Mission" at the bottom for tasks that belong to no feature. Rows collapse; a collapsed row
+shows only counts per column. Completed features collapse by default.
+
+**Work-in-progress limit.** Per agent, from `runtimeConfig.heartbeat.maxConcurrentRuns` - what the
+agent was hired with, which is the machine's parallelism the detect step reported. The "Agent
+working" header shows "1 of 1" per agent and turns amber at the limit. The board only reports it;
+the busy timer is what actually refuses to start another task.
+
+**Drag.** A drop calls the same API the buttons call, with the same confirmations:
+Your turn -> Done accepts; Queued -> Agent working clears the blockers and starts the agent
+("Start now, ahead of TAM-3?"); Agent working -> Queued parks it as waiting on you with a note;
+anything -> Your turn is refused; within a column does nothing (the order is the task's priority,
+which this wave does not write - reordering is deferred). A task waiting on its own plan refuses to
+start, and so does a task whose agent, or whose whole organization, is paused: a pause swallows the
+start silently, so the board says so rather than reporting a start that never happens.
+
+**Cards.** Identifier, title, assignee, time on the step ("3 h"), and one glyph: writing, with the
+reviewer, waiting on you, or paused. Compact mode drops the title to one line. Clicking opens the
+task; the card never edits in place.
+
+**Toolbar.** Rows by feature or by agent; show completed features; compact cards; a filter for one
+agent. Saved per organization.
+
+**Phone.** Columns become a horizontal swipe with "Your turn" first; drag is off on touch, and each
+card carries the button its drag would have been, through the same rules.
+
+#### What shipped
+
+- `ui/src/lib/board-model.ts` - the one `columnFor`, taking a `BoardTaskView` that is
+  `TurnSentenceView` plus a `reviewRunning` flag, with `turnSentence`'s precedence verbatim. Also
+  `rowsFor` / `rowIdFor` (Brief, features, Mission), `agentRowsFor` / `agentRowIdFor`, `wipLimitFor`
+  / `wipFor` / `wipBadgeText`, `rowProgressText`, `timeInColumnText`, and the column vocabulary and
+  labels including the phone order.
+- `ui/src/lib/board-view.ts` - `boardViewFor`, the pure assembly of rows, cards, glyphs, per-column
+  totals and the work-in-progress badges from the issues, goals and agents the pages already load,
+  plus `boardTaskViewFor`, `openChildCounts` and `ownersForColumn`.
+- `ui/src/lib/board-drop.ts` - `dropFor`, every allowed drop and every refusal with a one-line
+  reason in plain words.
+- `ui/src/lib/board-prefs.ts` - the four toolbar choices, remembered per organization in
+  `localStorage`.
+- `ui/src/hooks/useIsPhoneWidth.ts` - the phone-width switch.
+- `ui/src/pages/Board.tsx` and `ui/src/components/board/` - the page, the column headers with the
+  WIP badge, the lane, the card, the toolbar and the confirmation dialog.
+- `ui/src/App.tsx` route at `/board`; `ui/src/components/Sidebar.tsx` entry under Work.
+- Tests: `board-model.test.ts` (48), `board-drop.test.ts` (15), `board-view.test.ts` (14),
+  `Board.test.tsx` (10), `BoardDragHandlers.test.tsx` (11), plus one Sidebar case - 99 in all.
+
+No server change. No route added, so `server/src/routes/openapi.ts` is unchanged. No migration.
+
+#### Open
+
+- **Reorder is a no-op.** A drop inside a column returns `{action: "reorder"}` and stops there; the
+  priority write from the drop position is not wired, so the busy timer's order is unchanged.
+- **Phone buttons are missing.** Drag is correctly off on touch, but the spec's "buttons on the card
+  replace it" is not built - a phone can read the board and open a task, not act from the card.
+- **The Review column needs the raw `in_review` status.** `displayStatus` folds `in_review` into
+  `in_progress` on purpose, so `boardTaskViewFor` reads `issue.status` directly. If the reviewer ever
+  stops parking work in `in_review`, the Review column goes empty and nothing else breaks - the work
+  simply shows as Agent working.
+- **Amber is a Tailwind palette class**, matching `KanbanBoard`'s existing lanes rather than a
+  status token. It is the same standing debt DESIGN.md principle 2 schedules for the palette run.
+- **Cold-lane rails and the page-size controls** from the May scaled-board design are not carried
+  over; the Done column is a normal column that a row collapse hides.
+- **"Agent working" does not split per worker** when rows are by agent; the manager wave's split is
+  still the row choice, not a column choice.
+
+#### Live verification
+
+1. Open `/<prefix>/board` on an organization that has a plan. Tampa Supper Club is paused, so it is
+   safe to read - **do not drag anything there.**
+2. Expect **five columns**, left to right: Queued, Agent working, Review, Your turn, Done.
+3. Expect **one row per feature** of the plan, each showing the feature title, its progress
+   ("2 of 4 done") and its done-when line. The **Brief row is on top**; a **Mission** row is at the
+   bottom if any task belongs to no feature.
+4. Expect the **work-in-progress badge** in the Agent working header: "<agent>: 1 of 1" when that
+   agent has one task standing there, amber at the limit. On a paused organization it reads
+   "<agent>: 0 of 1", because pausing puts the work back in Queued - that is itself the check that
+   paused lands in Queued.
+5. Expect the **Your turn column to hold TAM-3** (the task with a plan to approve, output to accept,
+   or a question waiting). Click it: the task page's turn bar must say the same thing the column
+   does.
+6. Collapse a row by its header: the row keeps only its counts per column. A completed feature
+   arrives collapsed, and "Completed features" in the toolbar hides it entirely.
+7. Narrow the window to a **phone width** (under 768px): the columns become a horizontal swipe with
+   **Your turn first**, and cards no longer drag - instead each card carries the button its drag
+   would have been (Accept on a Your turn card, Start now on a Queued one, Park on one the agent is
+   carrying), asking the same question and making the same call.
+8. On a desk width, on an organization that is **not** paused, drag a Your turn card onto Done: a
+   confirmation names the task, and accepting it is the same call the task page's Accept makes.
+   Drag a Queued card onto Agent working: the confirmation says "Start now, ahead of <blocker>?".
+   Drag anything onto Your turn: it is refused with "Only the agent can hand work in." Drag a
+   paused agent's Queued card onto Agent working: it is refused by name ("Nova is paused. Press
+   Play on Nova first."), because a pause swallows the start silently.
+9. Dropping a card back in the column it came from does **nothing** - the order inside a column is
+   the task's priority, which this wave does not write. Reordering is deferred, not shipped.
+
+#### Fixed after the live check (2026-09-11)
+
+- **A pause hid the person's turn.** On the paused Tampa Supper Club, the hand-in waiting for the
+  person's Accept sat in Queued, and the task page said "Paused". A pause stops the agents, not
+  the person: a hand-in to accept, a plan to approve or a question to answer now stays in Your
+  turn and the turn sentence says so, while the organization is paused. `turnSentence` and
+  `columnFor` share the rule, so the card and the page still agree.

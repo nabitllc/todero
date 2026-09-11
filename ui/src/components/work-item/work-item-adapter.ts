@@ -197,6 +197,10 @@ export function toWorkItemViewProps(args: {
     checklist: parsed.checklist,
     trail,
     status,
+    // The chip folds in review into In progress on purpose — there is no
+    // seventh chip. The turn bar still needs the raw state, because "who acts
+    // next" is the reviewer, and the board's Review column reads the same flag.
+    reviewRunning: issue.status === "in_review",
     assigneeId,
     assigneeLabel,
     blockedBy,

@@ -379,8 +379,15 @@ export function closedValue(issue: {
   return null;
 }
 
+/**
+ * The words the product never says out loud: they are the machine's names for
+ * things, not a person's. One list, so every screen's test can check the same
+ * one rather than each remembering half of it.
+ */
+export const FORBIDDEN_VISIBLE_WORDS = /\b(issue|disposition|handoff|run|wake|heartbeat)\b/i;
+
 export function visibleCopyHasForbiddenWord(text: string): boolean {
-  return /\bissue\b/i.test(text) || /\bdisposition\b/i.test(text);
+  return FORBIDDEN_VISIBLE_WORDS.test(text);
 }
 
 export function systemStatusLine(status: WorkItemStatus): string {

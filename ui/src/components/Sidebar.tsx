@@ -233,7 +233,12 @@ export function Sidebar() {
         </div>
 
         <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
+          {/* Tasks, Board and Goals are the three ways to read the same work —
+              the list, the line, and what it is all for — so they sit together,
+              with Board literally between the other two. */}
           <SidebarNavItem to="/issues" label="Tasks" icon={CircleDot} />
+          <SidebarNavItem to="/board" label="Board" icon={LayoutGrid} />
+          {showGoalsLink ? <SidebarNavItem to="/goals" label="Goals" icon={Target} /> : null}
           {showCases ? (
             <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
           ) : null}
@@ -241,7 +246,6 @@ export function Sidebar() {
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
-          {showGoalsLink ? <SidebarNavItem to="/goals" label="Goals" icon={Target} /> : null}
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (

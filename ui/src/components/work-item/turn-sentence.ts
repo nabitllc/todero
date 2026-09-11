@@ -56,6 +56,12 @@ export type TurnSentenceView = {
   waitingOnYou?: boolean;
   /** A run is live on this task right now. */
   agentWorking?: boolean;
+  /**
+   * The work has been handed to the reviewer: the raw status is in review.
+   * The status chip still says In progress — the product vocabulary has no
+   * seventh state — but the bar says who acts next, and that is the reviewer.
+   */
+  reviewRunning?: boolean;
   assigneeName: string | null;
   assigneeId: string | null;
   /** The work is held: the assignee is paused, or a pause sits on the tree. */
@@ -106,16 +112,36 @@ function withOthers(identifier: string, count: number): string {
 }
 
 /**
+ * Whether the reviewer is the one holding the work.
+ *
+ * It is true only when the work has been handed over *and* the person owes
+ * nothing: a hand-in to accept, a plan to approve or a question to answer is
+ * the person's turn whatever the raw status says.
+ *
+ * Exported because the board's `columnFor` reads it too. One function is what
+ * makes the card and the task page agree by construction rather than by
+ * coincidence: whenever the board stands a card in Review, the bar on that
+ * task says the reviewer has it, and never "the agent is working on it".
+ */
+export function reviewerHasIt(view: TurnSentenceView): boolean {
+  if (!view.reviewRunning) return false;
+  if (view.reviewPending || view.planPending || view.waitingOnYou) return false;
+  if (view.blockedBy?.kind === "waiting-on-you") return false;
+  return true;
+}
+
+/**
  * What the bar says, and which buttons it carries.
  *
  * Precedence, highest first:
  *  1. Done and Cancelled — the task is over, nothing else matters.
  *  2. Paused — nothing moves until it resumes, whatever else is pending.
- *  3. The agent is writing right now.
- *  4. The person owes an answer: a hand-in to accept, a plan to approve, a
+ *  3. The reviewer has it — a live turn on handed-over work is the reviewer's.
+ *  4. The agent is writing right now.
+ *  5. The person owes an answer: a hand-in to accept, a plan to approve, a
  *     question to answer.
- *  5. The task is waiting on another task, or on its own children.
- *  6. Nobody owes anything: say when the agent will pick it up.
+ *  6. The task is waiting on another task, or on its own children.
+ *  7. Nobody owes anything: say when the agent will pick it up.
  */
 export function turnSentence(view: TurnSentenceView): TurnSentenceResult {
   if (view.status === "done") {
@@ -125,12 +151,26 @@ export function turnSentence(view: TurnSentenceView): TurnSentenceResult {
     return { text: "Cancelled", actions: [], tone: "done" };
   }
 
-  if (view.paused) {
+  // A pause stops the agents, not the person: a hand-in to accept, a plan to
+  // approve or a question to answer is still the person's move while the
+  // organization is paused, and the buttons still work.
+  const personsTurn =
+    Boolean(view.reviewPending) || Boolean(view.planPending) || Boolean(view.waitingOnYou) ||
+    view.blockedBy?.kind === "waiting-on-you";
+
+  if (view.paused && !personsTurn) {
     return {
       text: "Paused",
       actions: view.canResume ? [{ id: "play", label: "Play" }] : [],
       tone: "info",
     };
+  }
+
+  // Handed over and nothing owed back: whoever is running on it now is
+  // checking it, not writing it. Said before the live-turn line so the two
+  // screens cannot describe the same turn two different ways.
+  if (reviewerHasIt(view)) {
+    return { text: "With the reviewer", actions: [], tone: "waiting" };
   }
 
   if (view.agentWorking) {

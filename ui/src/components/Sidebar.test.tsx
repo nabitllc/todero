@@ -364,6 +364,32 @@ describe("Sidebar", () => {
     });
   });
 
+  it("puts Board in Work, between Tasks and Goals", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    const root = await renderSidebar();
+
+    const boardLink = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Board");
+    expect(boardLink?.getAttribute("href")).toBe("/board");
+
+    const navText = container.querySelector("nav")?.textContent ?? "";
+    expect(navText.indexOf("Tasks")).toBeLessThan(navText.indexOf("Board"));
+    expect(navText.indexOf("Board")).toBeLessThan(navText.indexOf("Goals"));
+
+    // Between them means next to them: nothing sits in the gap on either side.
+    const labels = [...container.querySelectorAll("nav a")].map((anchor) => anchor.textContent?.trim());
+    const board = labels.indexOf("Board");
+    expect(labels[board - 1]).toBe("Tasks");
+    expect(labels[board + 1]).toBe("Goals");
+
+    const sections = [...container.querySelectorAll("nav > div")];
+    const workSection = sections.find((section) => section.textContent?.startsWith("Work"));
+    expect(workSection?.textContent).toContain("Board");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("hides the Goals nav item only when it was turned off", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,

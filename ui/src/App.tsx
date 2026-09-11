@@ -68,6 +68,7 @@ const GoalDetail = lazy(() => import("./pages/GoalDetail").then((module) => ({ d
 const Approvals = lazy(() => import("./pages/Approvals").then((module) => ({ default: module.Approvals })));
 const ApprovalDetail = lazy(() => import("./pages/ApprovalDetail").then((module) => ({ default: module.ApprovalDetail })));
 const Costs = lazy(() => import("./pages/Costs").then((module) => ({ default: module.Costs })));
+const Board = lazy(() => import("./pages/Board").then((module) => ({ default: module.Board })));
 const CompanyActivity = lazy(() => import("./pages/audit/CompanyActivity").then((module) => ({ default: module.CompanyActivity })));
 const Inbox = lazy(() => import("./pages/Inbox").then((module) => ({ default: module.Inbox })));
 const WhatNeedsMe = lazy(() => import("./pages/WhatNeedsMe").then((module) => ({ default: module.WhatNeedsMe })));
@@ -249,6 +250,7 @@ function boardRoutes() {
         <Route path="workspaces" element={<Workspaces />} />
       </Route>
       <Route path="issues" element={<Issues />} />
+      <Route path="board" element={<Board />} />
       <Route path="search" element={<Search />} />
       <Route path="issues/all" element={<Navigate to="/issues" replace />} />
       <Route path="issues/active" element={<Navigate to="/issues" replace />} />
