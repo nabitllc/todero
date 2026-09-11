@@ -4,6 +4,7 @@ import {
   formatToderoPlanBlock,
   parseToderoPlanBlock,
   TODERO_PLAN_BLOCK_INSTRUCTIONS,
+  TODERO_PLAN_TASK_TYPE_MARKER,
 } from "./todero-plan.js";
 
 const REPLY = `Here is what I propose.
@@ -89,6 +90,13 @@ tasks:
     expect(brief).toContain("Done when: A new person can sign up");
     expect(brief).toContain("Hand in: A one-page spec");
     expect(brief).toContain("STATUS: done");
+  });
+
+  it("marks every task it writes as a Task, so nothing has to guess from depth", () => {
+    const plan = parseToderoPlanBlock(REPLY)!.plan;
+    const brief = buildToderoPlanTaskDescription(plan, plan.tasks[0]!);
+    expect(brief.startsWith(TODERO_PLAN_TASK_TYPE_MARKER)).toBe(true);
+    expect(TODERO_PLAN_TASK_TYPE_MARKER).toBe("<!-- todero-type: Task -->");
   });
 
   it("ships instructions the brief can paste that the parser itself accepts", () => {

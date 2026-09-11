@@ -128,11 +128,14 @@ describe("instance settings service", () => {
     ).toBe(false);
   });
 
-  it("defaults enableGoalsSidebarLink to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableGoalsSidebarLink).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableGoalsSidebarLink).toBe(false);
+  it("defaults enableGoalsSidebarLink to true for empty and legacy stored settings", () => {
+    expect(normalizeExperimentalSettings(undefined).enableGoalsSidebarLink).toBe(true);
+    expect(normalizeExperimentalSettings({}).enableGoalsSidebarLink).toBe(true);
     expect(
       normalizeExperimentalSettings({ enableStreamlinedLeftNavigation: true }).enableGoalsSidebarLink,
+    ).toBe(true);
+    expect(
+      normalizeExperimentalSettings({ enableGoalsSidebarLink: false }).enableGoalsSidebarLink,
     ).toBe(false);
   });
 

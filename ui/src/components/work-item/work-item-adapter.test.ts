@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@todero/shared";
-import { isOnboardingFirstTask, missionFromFirstTaskDescription } from "./work-item-adapter";
+import {
+  isOnboardingFirstTask,
+  missionFromFirstTaskDescription,
+  workItemTypeFor,
+} from "./work-item-adapter";
 
 describe("onboarding first task on the work-item view", () => {
   it("recognizes the first task by its origin", () => {
@@ -31,5 +35,47 @@ describe("onboarding first task on the work-item view", () => {
   it("returns nothing when the brief carries no mission", () => {
     expect(missionFromFirstTaskDescription("You are the Todero agent. Ask what they want.")).toBe("");
     expect(missionFromFirstTaskDescription(null)).toBe("");
+  });
+});
+
+describe("the type a work item shows", () => {
+  it("calls the onboarding conversation a Brief", () => {
+    expect(
+      workItemTypeFor({
+        originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND,
+        description: "You are this company's first agent.",
+        ancestors: [],
+      }),
+    ).toBe("Brief");
+  });
+
+  it("calls a task from an approved plan a Task, however deep it sits", () => {
+    expect(
+      workItemTypeFor({
+        originKind: "manual",
+        description: "<!-- todero-type: Task -->\nGoal: Ship it",
+        ancestors: [{ id: "a", identifier: "T-1", title: "Brief" }] as never,
+      }),
+    ).toBe("Task");
+  });
+
+  it("still honours a type somebody chose by hand", () => {
+    expect(
+      workItemTypeFor({
+        originKind: ONBOARDING_FIRST_TASK_ORIGIN_KIND,
+        description: "<!-- todero-type: Feature -->\nDo the thing",
+        ancestors: [],
+      }),
+    ).toBe("Feature");
+  });
+
+  it("falls back to depth for anything unmarked and unplanned", () => {
+    expect(workItemTypeFor({ description: "Plain task", ancestors: [] })).toBe("Task");
+    expect(
+      workItemTypeFor({
+        description: "Plain child",
+        ancestors: [{ id: "a", identifier: "T-1", title: "Parent" }] as never,
+      }),
+    ).toBe("Story");
   });
 });

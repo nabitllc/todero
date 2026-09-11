@@ -33,6 +33,19 @@ describe("http adapter chat completions prompt", () => {
     expect(prompt).toContain("Company mission (from onboarding):");
   });
 
+  it("keeps Todero's own markers out of the prompt", () => {
+    const prompt = buildChatCompletionsPrompt({
+      toderoIssue: {
+        title: "Write the sign-up spec",
+        description: "<!-- todero-type: Task -->\n<!-- todero-blocked-by: waiting-on-you -->\nGoal: Ship it",
+      },
+    });
+    expect(prompt).not.toContain("todero-type");
+    expect(prompt).not.toContain("todero-blocked-by");
+    expect(prompt).toContain("Goal: Ship it");
+    expect(prompt).toContain("Write the sign-up spec");
+  });
+
   it("reads the mission from the issue description when task markdown is missing", () => {
     const prompt = buildChatCompletionsPrompt({
       toderoIssue: {

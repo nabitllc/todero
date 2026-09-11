@@ -1,6 +1,9 @@
 import type { Issue, IssueComment, IssuePriority, IssueStatus } from "@todero/shared";
 
-export const WORK_ITEM_TYPES = ["Feature", "Story", "Task", "Bug"] as const;
+// "Brief" is the conversation an agent starts from: the first task of an
+// onboarding, where the person and the agent agree what the work is. Everything
+// the plan then creates is a Task.
+export const WORK_ITEM_TYPES = ["Brief", "Feature", "Story", "Task", "Bug"] as const;
 export type WorkItemType = (typeof WORK_ITEM_TYPES)[number];
 
 export const WORK_ITEM_STATUSES = [
@@ -51,7 +54,7 @@ export const AGENT_SUMMARY_LIMIT = 140;
 export const WAITING_ON_YOU = "Waiting on you.";
 export const APOSTROPHE = "\u2019";
 
-const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Feature|Story|Task|Bug)\s*-->/i;
+const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Brief|Feature|Story|Task|Bug)\s*-->/i;
 const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
 const SECTION_HEADING_RE = /^(#{1,6}\s+|\*\*)(Acceptance Criteria|In Scope|Out of Scope|Testing Strategies)(\*\*)?\s*$/i;
 const CHECK_ITEM_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/;
