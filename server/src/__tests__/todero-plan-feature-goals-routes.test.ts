@@ -277,7 +277,9 @@ describeEmbeddedPostgres("goals from an approved plan", () => {
 
     const row = listed.body.find((goal: { id: string }) => goal.id === featureGoal.id);
     expect(row).toMatchObject({ taskCount: 2, doneTaskCount: 1 });
+    // The company goal carries everything happening under its features, so the
+    // top of the Goals page never reads "No tasks" while work is underway.
     const company = listed.body.find((goal: { id: string }) => goal.id === companyGoalId);
-    expect(company).toMatchObject({ taskCount: 0, doneTaskCount: 0 });
+    expect(company).toMatchObject({ taskCount: 2, doneTaskCount: 1 });
   });
 });

@@ -6,6 +6,14 @@ import type { Issue, IssueComment, IssuePriority, IssueStatus } from "@todero/sh
 export const WORK_ITEM_TYPES = ["Brief", "Feature", "Story", "Task", "Bug"] as const;
 export type WorkItemType = (typeof WORK_ITEM_TYPES)[number];
 
+/**
+ * The types a person can pick. Brief is not one of them: Todero puts it on the
+ * onboarding conversation itself, and that item's type cannot be changed.
+ */
+export const WORK_ITEM_CHOOSABLE_TYPES = WORK_ITEM_TYPES.filter(
+  (type) => type !== "Brief",
+) as ReadonlyArray<WorkItemType>;
+
 export const WORK_ITEM_STATUSES = [
   "new",
   "todo",

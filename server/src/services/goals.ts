@@ -74,20 +74,57 @@ export async function countTasksByGoal(
   return counts;
 }
 
+/**
+ * Rolls each goal's own task counts up through its parents, so a company goal
+ * reports all the work happening under the features beneath it rather than
+ * reading "No tasks" while its features are busy. A goal whose parent is
+ * missing from the list stops the walk, and a parent loop stops at the first
+ * goal it comes back to.
+ */
+export function rollUpTaskCounts(
+  rows: ReadonlyArray<{ id: string; parentId: string | null }>,
+  direct: ReadonlyMap<string, GoalTaskCounts>,
+): Map<string, GoalTaskCounts> {
+  const parentOf = new Map(rows.map((row) => [row.id, row.parentId ?? null]));
+  const totals = new Map<string, GoalTaskCounts>();
+  for (const row of rows) totals.set(row.id, { taskCount: 0, doneTaskCount: 0 });
+
+  for (const row of rows) {
+    const own = direct.get(row.id);
+    if (!own || (own.taskCount === 0 && own.doneTaskCount === 0)) continue;
+    const seen = new Set<string>();
+    let current: string | null = row.id;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      const total = totals.get(current);
+      if (!total) break;
+      total.taskCount += own.taskCount;
+      total.doneTaskCount += own.doneTaskCount;
+      current = parentOf.get(current) ?? null;
+    }
+  }
+  return totals;
+}
+
 export function goalService(db: Db) {
   return {
     list: (companyId: string) => db.select().from(goals).where(eq(goals.companyId, companyId)),
 
-    /** The Goals page list: every goal plus how many tasks hang off it. */
+    /**
+     * The Goals page list: every goal plus how much of the work under it is
+     * done, counting the tasks linked to the goal itself and to every goal
+     * beneath it.
+     */
     listWithTaskCounts: async (companyId: string) => {
       const [rows, counts] = await Promise.all([
         db.select().from(goals).where(eq(goals.companyId, companyId)),
         countTasksByGoal(db, companyId),
       ]);
+      const totals = rollUpTaskCounts(rows, counts);
       return rows.map((goal) => ({
         ...goal,
-        taskCount: counts.get(goal.id)?.taskCount ?? 0,
-        doneTaskCount: counts.get(goal.id)?.doneTaskCount ?? 0,
+        taskCount: totals.get(goal.id)?.taskCount ?? 0,
+        doneTaskCount: totals.get(goal.id)?.doneTaskCount ?? 0,
       }));
     },
 

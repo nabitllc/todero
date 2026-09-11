@@ -193,6 +193,9 @@ export function toWorkItemViewProps(args: {
     title: issue.title,
     body,
     bodyEditable: !firstTask,
+    // The onboarding conversation is the Brief for the whole thing; its type is
+    // not a choice, so the stamp on it does not open.
+    typeEditable: !firstTask,
     sections: firstTask ? [] : parsed.sections,
     checklist: parsed.checklist,
     trail,
