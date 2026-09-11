@@ -53,6 +53,8 @@ export const APOSTROPHE = "\u2019";
 
 const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Feature|Story|Task|Bug)\s*-->/i;
 const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
+const REVIEW_COMMENT_RE = /<!--\s*todero-review:\s*pending\s*-->/i;
+const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;
 const SECTION_HEADING_RE = /^(#{1,6}\s+|\*\*)(Acceptance Criteria|In Scope|Out of Scope|Testing Strategies)(\*\*)?\s*$/i;
 const CHECK_ITEM_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/;
 
@@ -81,6 +83,10 @@ export type WorkItemChecklistItem = {
 export type ParsedWorkItemDescription = {
   type: WorkItemType;
   waitingOnYou: boolean;
+  /** The agent handed in its output; the person accepts or sends it back. */
+  reviewPending: boolean;
+  /** The agent proposed a plan; the person approves or asks for changes. */
+  planPending: boolean;
   body: string;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
@@ -90,6 +96,8 @@ export function stripWorkItemMeta(description: string | null | undefined): strin
   return (description ?? "")
     .replace(TYPE_COMMENT_RE, "")
     .replace(WAITING_COMMENT_RE, "")
+    .replace(REVIEW_COMMENT_RE, "")
+    .replace(PLAN_COMMENT_RE, "")
     .replace(/^\s+/, "");
 }
 
@@ -112,6 +120,8 @@ export function parseWorkItemDescription(
       ? (parsedType as WorkItemType)
       : fallbackType;
   const waitingOnYou = WAITING_COMMENT_RE.test(raw);
+  const reviewPending = REVIEW_COMMENT_RE.test(raw);
+  const planPending = PLAN_COMMENT_RE.test(raw);
   const stripped = stripWorkItemMeta(raw);
   const lines = stripped.split(/\r?\n/);
 
@@ -155,6 +165,8 @@ export function parseWorkItemDescription(
   return {
     type,
     waitingOnYou,
+    reviewPending,
+    planPending,
     body: bodyLines.join("\n").replace(/^\n+/, "").replace(/\n+$/, ""),
     sections,
     checklist,
@@ -164,12 +176,16 @@ export function parseWorkItemDescription(
 export function serializeWorkItemDescription(args: {
   type: WorkItemType;
   waitingOnYou: boolean;
+  reviewPending?: boolean;
+  planPending?: boolean;
   body: string;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
 }): string {
   const parts: string[] = [`<!-- todero-type: ${args.type} -->`];
   if (args.waitingOnYou) parts.push("<!-- todero-blocked-by: waiting-on-you -->");
+  if (args.reviewPending) parts.push("<!-- todero-review: pending -->");
+  if (args.planPending) parts.push("<!-- todero-plan: pending -->");
   if (args.body.trim()) parts.push(args.body.trim());
   for (const item of args.checklist) {
     parts.push(`- [${item.done ? "x" : " "}] ${item.text}`);
@@ -269,9 +285,10 @@ export function commitWorkItemStatus(args: {
   return { ok: true, apiStatus: apiStatusFor(args.status) };
 }
 
-export function blockedChipLabel(blockedBy: WorkItemBlockedBy | null): string | null {
+export function blockedChipLabel(blockedBy: WorkItemBlockedBy | null, blockerCount = 1): string | null {
   if (!blockedBy) return null;
   if (blockedBy.kind === "waiting-on-you") return `Blocked · ${WAITING_ON_YOU}`;
+  if (blockerCount > 1) return `Blocked · ${blockerCount} tasks`;
   return `Blocked · ${blockedBy.identifier}`;
 }
 
@@ -434,5 +451,14 @@ export type WorkItemTaskRow = {
   identifier: string;
   title: string;
   status: WorkItemStatus;
+  /** Waiting behind another task; shown as Queued rather than To do. */
+  queued?: boolean;
   href: string;
 };
+
+export const QUEUED_LABEL = "Queued";
+
+export function taskRowLabel(task: Pick<WorkItemTaskRow, "status" | "queued">): string {
+  if (task.queued && task.status !== "done" && task.status !== "cancelled") return QUEUED_LABEL;
+  return WORK_ITEM_STATUS_LABELS[task.status];
+}

@@ -83,7 +83,31 @@ function findPlanFence(text: string): { start: number; end: number; inner: strin
     const after = lines.slice(Math.min(j + 1, lines.length)).join("\n");
     return { start: before.length, end: before.length + (text.length - before.length - after.length), inner };
   }
-  return null;
+  // No fence at all, but the shape is there: a `goal:` line followed later by
+  // a `tasks:` line. Small models drop the fence more often than the keys.
+  const goalIndex = lines.findIndex((line) => /^\s*goal\s*:/i.test(line));
+  if (goalIndex === -1) return null;
+  const tasksIndex = lines.findIndex((line, index) => index > goalIndex && /^\s*tasks\s*:/i.test(line));
+  if (tasksIndex === -1) return null;
+  // The block runs from `goal:` to the last line that still looks like part of
+  // it (a key, a bullet, or an indented continuation).
+  let end = tasksIndex;
+  for (let k = tasksIndex + 1; k < lines.length; k += 1) {
+    const line = lines[k]!;
+    if (!line.trim()) {
+      end = k;
+      continue;
+    }
+    if (/^\s*[-*]\s+/.test(line) || /^\s+\S/.test(line) || /^\s*[A-Za-z][A-Za-z _-]*\s*:/.test(line)) {
+      end = k;
+      continue;
+    }
+    break;
+  }
+  const before = lines.slice(0, goalIndex).join("\n");
+  const block = lines.slice(goalIndex, end + 1).join("\n");
+  const start = before.length;
+  return { start, end: start + block.length + (goalIndex > 0 ? 1 : 0), inner: block };
 }
 
 function parsePlanInner(inner: string): ToderoPlan | null {
@@ -236,9 +260,31 @@ export function formatToderoPlanBlock(plan: ToderoPlan): string {
 }
 
 /** The description a child task gets, so it stands alone without the parent thread. */
-export function buildToderoPlanTaskDescription(plan: ToderoPlan, task: ToderoPlanTask): string {
+export const TODERO_PLAN_TASK_CONTEXT_MAX_CHARS = 1_500;
+
+export function buildToderoPlanTaskDescription(
+  plan: ToderoPlan,
+  task: ToderoPlanTask,
+  options: {
+    /** What the person said in the planning conversation, oldest first. */
+    personSaid?: string[];
+  } = {},
+): string {
   const feature = plan.features.find((row) => row.name.toLowerCase() === task.feature.toLowerCase()) ?? null;
   const parts = [`Goal: ${plan.goal}`];
+  const said = (options.personSaid ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (said.length > 0) {
+    let budget = TODERO_PLAN_TASK_CONTEXT_MAX_CHARS;
+    const kept: string[] = [];
+    for (const line of said.slice().reverse()) {
+      if (line.length > budget) break;
+      kept.unshift(line);
+      budget -= line.length;
+    }
+    if (kept.length > 0) {
+      parts.push("", "What the person said when we planned this (use it; do not ask for it again):", ...kept.map((line) => `- ${line}`), "");
+    }
+  }
   if (feature) {
     parts.push(`Feature: ${feature.name}${feature.why ? ` — ${feature.why}` : ""}`);
     if (feature.doneWhen) parts.push(`Done when: ${feature.doneWhen}`);

@@ -214,6 +214,9 @@ export function readChatCompletionsThread(context: Record<string, unknown>): Cha
 export const CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE =
   "That reply had only a status line and no content. Write the reply itself now: the output the task asks for, or the one question you need answered. Then end with the status line.";
 
+export const CHAT_COMPLETIONS_NO_TEXT_FALLBACK =
+  "The model sent back no text with its status this time.";
+
 export const CHAT_COMPLETIONS_CONTINUE_NUDGE =
   "(No reply from the person yet. Pick up where you left off in one short message, or restate the one question you most need answered.)";
 
@@ -240,6 +243,15 @@ export function buildChatCompletionsMessages(
       continue;
     }
     messages.push({ role, content: turn.body });
+  }
+  // A turn instruction from Todero itself (for example: every task in the
+  // plan is closed, write the wrap-up) is the last thing the model reads.
+  const turnInstruction = readNonEmptyString(context.toderoTurnInstruction);
+  if (turnInstruction) {
+    const last = messages[messages.length - 1]!;
+    if (last.role === "user" && messages.length > 2) last.content = `${last.content}\n\n${turnInstruction}`;
+    else messages.push({ role: "user", content: turnInstruction });
+    return messages;
   }
   if (messages[messages.length - 1]!.role === "assistant") {
     messages.push({ role: "user", content: CHAT_COMPLETIONS_CONTINUE_NUDGE });

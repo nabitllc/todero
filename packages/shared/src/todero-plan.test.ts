@@ -63,6 +63,16 @@ tasks:
     expect(result.plan.tasks[0]).toMatchObject({ title: "Draft the matching rules", output: "A short document with the rules listed" });
   });
 
+  it("accepts a plan with no fence at all, and keeps the words around it", () => {
+    const reply = "Proposed plan:\n\ngoal: Ship the launch kit.\nfeatures:\n  - name: Concept\n    done_when: written\ntasks:\n  - title: Draft the concept\n    feature: Concept\n    output: One page\n\nLet me know what to change.\nSTATUS: waiting";
+    const result = parseToderoPlanBlock(reply)!;
+    expect(result.plan.goal).toBe("Ship the launch kit.");
+    expect(result.plan.tasks[0]?.title).toBe("Draft the concept");
+    expect(result.body).toContain("Proposed plan:");
+    expect(result.body).toContain("Let me know what to change.");
+    expect(result.body).not.toContain("done_when");
+  });
+
   it("accepts an unlabeled fence that starts with goal:", () => {
     const result = parseToderoPlanBlock("```\ngoal: Ship it\ntasks:\n  - title: Do the thing\n```");
     expect(result?.plan.tasks[0]?.title).toBe("Do the thing");
@@ -79,6 +89,20 @@ tasks:
     const first = parseToderoPlanBlock(REPLY)!.plan;
     const again = parseToderoPlanBlock(formatToderoPlanBlock(first))!.plan;
     expect(again).toEqual(first);
+  });
+
+  it("carries what the person said into the child brief, newest lines kept when over budget", () => {
+    const plan = parseToderoPlanBlock(REPLY)!.plan;
+    const brief = buildToderoPlanTaskDescription(plan, plan.tasks[0]!, {
+      personSaid: ["Must have: phone sign-up and matching.", "Done means five real dinners."],
+    });
+    expect(brief).toContain("What the person said");
+    expect(brief).toContain("- Must have: phone sign-up and matching.");
+    expect(brief).toContain("- Done means five real dinners.");
+    const huge = "x".repeat(1_600);
+    const clipped = buildToderoPlanTaskDescription(plan, plan.tasks[0]!, { personSaid: [huge, "Keep this."] });
+    expect(clipped).toContain("- Keep this.");
+    expect(clipped).not.toContain(huge);
   });
 
   it("writes a child task brief that stands alone and asks for a status line", () => {

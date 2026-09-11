@@ -4,6 +4,7 @@ import {
   apiStatusFor,
   agentSummaryOverflowLine,
   agentSummaryRow,
+  taskRowLabel,
   blockedChipLabel,
   buildTrail,
   commitWorkItemStatus,
@@ -144,5 +145,27 @@ describe("work-item model", () => {
     expect(visibleCopyHasForbiddenWord("This issue is ready")).toBe(true);
     expect(visibleCopyHasForbiddenWord("disposition")).toBe(true);
     expect(visibleCopyHasForbiddenWord("This task is the work item")).toBe(false);
+  });
+});
+
+describe("review and plan markers", () => {
+  it("parses and strips the markers, and serializes them back", () => {
+    const description = "<!-- todero-type: Task -->\n<!-- todero-blocked-by: waiting-on-you -->\n<!-- todero-review: pending -->\nGoal: x\n";
+    const parsed = parseWorkItemDescription(description);
+    expect(parsed.waitingOnYou).toBe(true);
+    expect(parsed.reviewPending).toBe(true);
+    expect(parsed.planPending).toBe(false);
+    expect(parsed.body).toBe("Goal: x");
+    const again = serializeWorkItemDescription({ ...parsed, waitingOnYou: true });
+    expect(again).toContain("<!-- todero-review: pending -->");
+    expect(again).not.toContain("todero-plan");
+  });
+
+  it("counts blockers on the chip and labels queued rows", () => {
+    expect(blockedChipLabel({ kind: "item", id: "a", identifier: "T-2" }, 3)).toBe("Blocked · 3 tasks");
+    expect(blockedChipLabel({ kind: "item", id: "a", identifier: "T-2" }, 1)).toBe("Blocked · T-2");
+    expect(taskRowLabel({ status: "todo", queued: true })).toBe("Queued");
+    expect(taskRowLabel({ status: "done", queued: true })).toBe("Done");
+    expect(taskRowLabel({ status: "todo", queued: false })).toBe("To do");
   });
 });

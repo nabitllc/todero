@@ -10,6 +10,7 @@ import { ApiError } from "../api/client";
 import { dashboardApi } from "../api/dashboard";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
+import { YourTurnPanel } from "../components/todero/YourTurnPanel";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
@@ -2262,6 +2263,7 @@ export function Inbox() {
   const showGeneralIssueToolbarControls = tab !== "blocked";
   return (
     <div className="space-y-6">
+      {selectedCompanyId ? <YourTurnPanel companyId={selectedCompanyId} /> : null}
       <div className="space-y-2">
         {/* Search — full-width row on mobile, inline on desktop */}
         <div className="relative sm:hidden">

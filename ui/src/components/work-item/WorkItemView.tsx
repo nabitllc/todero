@@ -29,6 +29,7 @@ import {
   type WorkItemChecklistItem,
   type WorkItemPriority,
   type WorkItemTaskRow,
+  taskRowLabel,
   type WorkItemSection,
   type WorkItemStatus,
   type WorkItemTrailEntry,
@@ -52,6 +53,14 @@ export type WorkItemViewProps = {
   planApprovable?: boolean;
   /** Child tasks created from the plan, oldest first. */
   tasks?: WorkItemTaskRow[];
+  /** The agent handed in its output; show Accept / Send back. */
+  reviewPending?: boolean;
+  /** The agent proposed a plan and is waiting for a yes. */
+  planPending?: boolean;
+  /** How many tasks block this one; the chip says "N tasks" past one. */
+  blockerCount?: number;
+  /** A run is live on this task: the agent is writing. */
+  agentWorking?: boolean;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
   trail: WorkItemTrailEntry[];
@@ -77,6 +86,8 @@ export type WorkItemViewProps = {
   onBodySave?: (body: string) => void;
   onPlanApprove?: (keep: string[]) => void;
   onPlanChanges?: () => void;
+  onAccept?: () => void;
+  onSendBack?: (note: string) => void;
   onStatusChange?: (status: WorkItemStatus) => void;
   onPriorityChange?: (priority: WorkItemPriority) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
@@ -120,6 +131,10 @@ export function WorkItemView(props: WorkItemViewProps) {
     plan = null,
     planApprovable = false,
     tasks = [],
+    reviewPending = false,
+    planPending = false,
+    blockerCount = 1,
+    agentWorking = false,
     sections,
     checklist,
     trail,
@@ -145,6 +160,8 @@ export function WorkItemView(props: WorkItemViewProps) {
     onBodySave,
     onPlanApprove,
     onPlanChanges,
+    onAccept,
+    onSendBack,
     onStatusChange,
     onPriorityChange,
     onAssigneeChange,
@@ -173,10 +190,12 @@ export function WorkItemView(props: WorkItemViewProps) {
     setDroppedPlanTasks(new Set());
   }, [planKey]);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [sendBackOpen, setSendBackOpen] = useState(false);
+  const [sendBackNote, setSendBackNote] = useState("");
   const [agentListOpen, setAgentListOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const frozen = statusFreezesAssignee(status);
-  const chip = status === "blocked" ? blockedChipLabel(blockedBy) : WORK_ITEM_STATUS_LABELS[status];
+  const chip = status === "blocked" ? blockedChipLabel(blockedBy, blockerCount) : WORK_ITEM_STATUS_LABELS[status];
   const caption = statusCaption ?? staleStatusCaption ?? null;
   const modeMeta = workModeMetaFor(workMode);
 
@@ -389,8 +408,8 @@ export function WorkItemView(props: WorkItemViewProps) {
                 <ol className="work-item-task-list">
                   {tasks.map((task) => (
                     <li key={task.id} className="work-item-task-row" data-testid="work-item-task-row" data-status={task.status}>
-                      <span className={`work-item-task-status work-item-task-status-${task.status}`}>
-                        {WORK_ITEM_STATUS_LABELS[task.status]}
+                      <span className={`work-item-task-status work-item-task-status-${task.queued && task.status !== "done" ? "queued" : task.status}`}>
+                        {taskRowLabel(task)}
                       </span>
                       <Link to={task.href} className="work-item-task-link">
                         <span className="work-item-task-id">{task.identifier}</span> {task.title}
@@ -676,7 +695,9 @@ export function WorkItemView(props: WorkItemViewProps) {
           <section className="work-item-plan-card" data-testid="work-item-plan-card">
             <div className="work-item-plan-card-head">
               <span className="work-item-plan-card-label">Proposed plan</span>
-              <p className="work-item-plan-goal">{plan.goal}</p>
+              <p className="work-item-plan-goal">
+                <span className="work-item-plan-goal-label">Goal</span> {plan.goal}
+              </p>
             </div>
             {plan.features.length > 0 && (
               <ul className="work-item-plan-features">
@@ -734,6 +755,7 @@ export function WorkItemView(props: WorkItemViewProps) {
                 data-testid="work-item-plan-changes"
                 onClick={() => {
                   onPlanChanges?.();
+                  setComment((prev) => prev.trim() ? prev : "Please change the plan: ");
                   composerRef.current?.focus();
                 }}
               >
@@ -741,6 +763,72 @@ export function WorkItemView(props: WorkItemViewProps) {
               </button>
             </div>
           </section>
+        )}
+
+        {reviewPending && status === "blocked" && (
+          <section className="work-item-plan-card work-item-review-card" data-testid="work-item-review-card">
+            <div className="work-item-plan-card-head">
+              <span className="work-item-plan-card-label">Handed in</span>
+              <p className="work-item-plan-goal">
+                The output is ready. Read it in the thread, or under Artifacts on the right, then accept it or send it back.
+              </p>
+            </div>
+            {sendBackOpen ? (
+              <div className="work-item-sendback">
+                <textarea
+                  className="work-item-composer-input work-item-sendback-input"
+                  data-testid="work-item-sendback-note"
+                  placeholder="What should change?"
+                  value={sendBackNote}
+                  onChange={(event) => setSendBackNote(event.target.value)}
+                  autoFocus
+                />
+                <div className="work-item-plan-actions">
+                  <button
+                    type="button"
+                    className="work-item-plan-approve"
+                    data-testid="work-item-sendback-confirm"
+                    disabled={!sendBackNote.trim()}
+                    onClick={() => {
+                      onSendBack?.(sendBackNote.trim());
+                      setSendBackNote("");
+                      setSendBackOpen(false);
+                    }}
+                  >
+                    Send back
+                  </button>
+                  <button type="button" className="work-item-plan-changes" onClick={() => setSendBackOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="work-item-plan-actions">
+                <button
+                  type="button"
+                  className="work-item-plan-approve"
+                  data-testid="work-item-accept"
+                  onClick={() => onAccept?.()}
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  className="work-item-plan-changes"
+                  data-testid="work-item-sendback"
+                  onClick={() => setSendBackOpen(true)}
+                >
+                  Send back
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {agentWorking && (
+          <p className="work-item-working" data-testid="work-item-working">
+            {assigneeLabel ?? "The agent"} is writing a reply. The first one after a pause can take a minute while the model loads.
+          </p>
         )}
 
         <form className="work-item-composer" data-testid="work-item-composer" onSubmit={submitComment}>

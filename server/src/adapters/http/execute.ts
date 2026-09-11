@@ -4,6 +4,7 @@ import { asString, asNumber, parseObject } from "../utils.js";
 import {
   buildChatCompletionsBody,
   CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE,
+  CHAT_COMPLETIONS_NO_TEXT_FALLBACK,
   isChatCompletionsUrl,
   parseChatCompletionsReply,
   parseChatCompletionsText,
@@ -103,7 +104,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // A plan block is for Todero too: it becomes the task's Plan document and
     // the approval card, and the person reads the words around it.
     const planned = parseToderoPlanBlock(reply.body);
-    const summary = (planned ? planned.body : reply.body) || completion;
+    // Never post the bare status line as if it were the reply.
+    const summary = (planned ? planned.body : reply.body) || CHAT_COMPLETIONS_NO_TEXT_FALLBACK;
     return {
       exitCode: 0,
       signal: null,
