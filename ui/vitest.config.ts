@@ -11,5 +11,8 @@ export default defineConfig({
   test: {
     environment: "node",
     setupFiles: ["./vitest.setup.ts"],
+    // *.gauntlet.test.* are the gauntlet's item checks, which fail on purpose
+    // until their work item is done; vitest.gauntlet.config.ts runs them.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/*.gauntlet.test.*"],
   },
 });

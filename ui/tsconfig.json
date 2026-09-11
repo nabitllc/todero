@@ -16,5 +16,7 @@
       "lexical": ["./node_modules/lexical/index.d.ts"]
     }
   },
-  "include": ["src", "storybook"]
+  "include": ["src", "storybook"],
+  // *.gauntlet.test.* fail on purpose until their work item is done (docs/ai_context/gauntlet); vitest runs them, tsc does not.
+  "exclude": ["src/**/*.gauntlet.test.ts", "src/**/*.gauntlet.test.tsx"]
 }
