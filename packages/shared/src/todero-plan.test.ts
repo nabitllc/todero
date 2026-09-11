@@ -3,6 +3,7 @@ import {
   buildToderoPlanTaskDescription,
   formatToderoPlanBlock,
   parseToderoPlanBlock,
+  resolveToderoPlanTaskDependencies,
   TODERO_PLAN_BLOCK_INSTRUCTIONS,
   TODERO_PLAN_TASK_TYPE_MARKER,
 } from "./todero-plan.js";
@@ -131,5 +132,129 @@ tasks:
     const result = parseToderoPlanBlock(example);
     expect(result?.plan.features).toHaveLength(1);
     expect(result?.plan.tasks).toHaveLength(1);
+  });
+});
+
+describe("the optional 'after' line", () => {
+  it("reads after, and the words a model reaches for instead", () => {
+    const plan = parseToderoPlanBlock(`\`\`\`todero-plan
+goal: Ship it
+tasks:
+  - title: One
+    after: Two
+  - title: Two
+  - title: Three
+    depends_on: One
+  - title: Four
+    blocked by: Two
+\`\`\``)!.plan;
+    expect(plan.tasks.map((task) => task.after)).toEqual(["Two", "", "One", "Two"]);
+  });
+
+  it("leaves after empty when the model did not write one", () => {
+    const plan = parseToderoPlanBlock("```todero-plan\ngoal: Ship it\ntasks:\n  - title: One\n```")!.plan;
+    expect(plan.tasks[0]!.after).toBe("");
+  });
+
+  it("keeps after through the canonical block", () => {
+    const first = parseToderoPlanBlock(
+      "```todero-plan\ngoal: Ship it\ntasks:\n  - title: One\n  - title: Two\n    after: One\n```",
+    )!.plan;
+    const again = parseToderoPlanBlock(formatToderoPlanBlock(first))!.plan;
+    expect(again).toEqual(first);
+    expect(again.tasks[1]!.after).toBe("One");
+  });
+});
+
+describe("resolveToderoPlanTaskDependencies", () => {
+  function plan(block: string) {
+    return parseToderoPlanBlock(`\`\`\`todero-plan\ngoal: Ship it\ntasks:\n${block}\`\`\``)!.plan;
+  }
+  function shape(tasks: ReturnType<typeof plan>["tasks"]) {
+    return resolveToderoPlanTaskDependencies(tasks).map((entry) => ({
+      title: entry.task.title,
+      after: entry.blockedByTaskIds,
+    }));
+  }
+
+  it("starts the first task of every feature at once and chains the rest inside it", () => {
+    const tasks = plan(
+      "  - title: A1\n    feature: Alpha\n" +
+        "  - title: B1\n    feature: Beta\n" +
+        "  - title: A2\n    feature: Alpha\n" +
+        "  - title: B2\n    feature: Beta\n",
+    ).tasks;
+    expect(shape(tasks)).toEqual([
+      { title: "A1", after: [] },
+      { title: "B1", after: [] },
+      { title: "A2", after: ["t1"] },
+      { title: "B2", after: ["t2"] },
+    ]);
+  });
+
+  it("keeps one chain when the plan names no features at all", () => {
+    const tasks = plan("  - title: One\n  - title: Two\n  - title: Three\n").tasks;
+    expect(shape(tasks)).toEqual([
+      { title: "One", after: [] },
+      { title: "Two", after: ["t1"] },
+      { title: "Three", after: ["t2"] },
+    ]);
+  });
+
+  it("uses 'after' across features, by title or by plan id", () => {
+    const tasks = plan(
+      "  - title: Write the copy\n    feature: Alpha\n" +
+        "  - title: Lay out the page\n    feature: Beta\n    after: Write the copy\n" +
+        "  - title: Proofread\n    feature: Gamma\n    after: t2\n",
+    ).tasks;
+    expect(shape(tasks)).toEqual([
+      { title: "Write the copy", after: [] },
+      { title: "Lay out the page", after: ["t1"] },
+      { title: "Proofread", after: ["t2"] },
+    ]);
+  });
+
+  it("takes more than one name on a single after line", () => {
+    const tasks = plan(
+      "  - title: A\n    feature: Alpha\n" +
+        "  - title: B\n    feature: Beta\n" +
+        "  - title: C\n    feature: Gamma\n    after: A, B\n",
+    ).tasks;
+    expect(shape(tasks)[2]).toEqual({ title: "C", after: ["t1", "t2"] });
+  });
+
+  it("orders the result so a task always lands after what it waits for", () => {
+    const tasks = plan(
+      "  - title: Last\n    feature: Alpha\n    after: First\n" +
+        "  - title: First\n    feature: Beta\n",
+    ).tasks;
+    expect(shape(tasks)).toEqual([
+      { title: "First", after: [] },
+      { title: "Last", after: ["t2"] },
+    ]);
+  });
+
+  it("falls back to the feature chain when after names a task that is not there", () => {
+    const tasks = plan(
+      "  - title: One\n    feature: Alpha\n" +
+        "  - title: Two\n    feature: Alpha\n    after: Something we dropped\n",
+    ).tasks;
+    expect(shape(tasks)[1]).toEqual({ title: "Two", after: ["t1"] });
+  });
+
+  it("ignores a task that says it comes after itself", () => {
+    const tasks = plan("  - title: Only\n    feature: Alpha\n    after: Only\n").tasks;
+    expect(shape(tasks)).toEqual([{ title: "Only", after: [] }]);
+  });
+
+  it("breaks an impossible circle instead of refusing the plan", () => {
+    const tasks = plan(
+      "  - title: A\n    feature: Alpha\n    after: B\n" +
+        "  - title: B\n    feature: Beta\n    after: A\n",
+    ).tasks;
+    const result = shape(tasks);
+    expect(result).toHaveLength(2);
+    expect(result[0]!.after).toEqual([]);
+    expect(result[1]!.after).toEqual([result[0]!.title === "A" ? "t1" : "t2"]);
   });
 });

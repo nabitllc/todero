@@ -20,8 +20,8 @@ const plan: ToderoPlan = {
     { id: "f2", name: "Price list", why: "People ask", doneWhen: "Every card has a price." },
   ],
   tasks: [
-    { id: "t1", title: "Draft the starter guide", feature: "Starter guide", output: "A one-page draft" },
-    { id: "t2", title: "List the top twenty cards", feature: "Price list", output: "A list with prices" },
+    { id: "t1", title: "Draft the starter guide", feature: "Starter guide", output: "A one-page draft", after: "" },
+    { id: "t2", title: "List the top twenty cards", feature: "Price list", output: "A list with prices", after: "" },
   ],
 };
 

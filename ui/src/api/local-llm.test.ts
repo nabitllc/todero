@@ -8,7 +8,7 @@ vi.mock("./client", () => ({
   api: mockApi,
 }));
 
-import { LOCAL_LLM_DETECT_PATH, liveLocalLlmSelection, localLlmSelectionIsConnected, toderoLocalLlmApi, type LocalLlmRuntime } from "./local-llm";
+import { LOCAL_LLM_DETECT_PATH, liveLocalLlmSelection, localLlmSelectionIsConnected, localLlmSelectionParallelism, toderoLocalLlmApi, type LocalLlmRuntime } from "./local-llm";
 
 const ollama: LocalLlmRuntime = {
   id: "ollama:127.0.0.1:11434",
@@ -58,5 +58,28 @@ describe("liveLocalLlmSelection", () => {
     expect(liveLocalLlmSelection([], leftover)).toBeNull();
     expect(liveLocalLlmSelection([ollama], { runtimeId: ollama.id, modelId: "missing" })).toBeNull();
     expect(liveLocalLlmSelection([ollama], leftover)).toEqual(leftover);
+  });
+});
+
+describe("localLlmSelectionParallelism", () => {
+  it("reports what the picked runtime says it can serve at once", () => {
+    expect(
+      localLlmSelectionParallelism({
+        runtimes: [{ ...ollama, parallelism: 3 }],
+        runtimeId: ollama.id,
+      }),
+    ).toBe(3);
+  });
+
+  it("answers one when the runtime said nothing, or is not in the list", () => {
+    expect(localLlmSelectionParallelism({ runtimes: [ollama], runtimeId: ollama.id })).toBe(1);
+    expect(localLlmSelectionParallelism({ runtimes: [ollama], runtimeId: "missing" })).toBe(1);
+    expect(localLlmSelectionParallelism({ runtimes: [], runtimeId: null })).toBe(1);
+    expect(
+      localLlmSelectionParallelism({
+        runtimes: [{ ...ollama, parallelism: 0 }],
+        runtimeId: ollama.id,
+      }),
+    ).toBe(1);
   });
 });

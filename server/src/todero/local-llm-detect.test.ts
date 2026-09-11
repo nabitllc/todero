@@ -21,7 +21,7 @@ describe("detectLocalLlms", () => {
       }
       throw new Error("connection refused");
     }) as typeof fetch;
-    const result: LocalLlmDetectResult = await detectLocalLlms(fetchImpl);
+    const result: LocalLlmDetectResult = await detectLocalLlms(fetchImpl, { env: {} });
     expect(result.runtimes).toEqual([
       {
         id: "ollama",
@@ -30,6 +30,7 @@ describe("detectLocalLlms", () => {
         baseUrl: "http://127.0.0.1:11434",
         reachable: true,
         models: [{ id: "llama3.2:latest", label: "llama3.2:latest" }],
+        parallelism: 1,
       },
     ]);
     expect(
@@ -71,8 +72,36 @@ describe("detectLocalLlms", () => {
       }
       throw new Error("connection refused");
     }) as typeof fetch;
-    const result = await detectLocalLlms(fetchImpl);
+    const result = await detectLocalLlms(fetchImpl, { env: {} });
     expect(result.runtimes.map((r) => r.id)).toEqual(["lmstudio"]);
     expect(result.runtimes[0]?.models).toEqual([{ id: "local-qwen", label: "local-qwen" }]);
+    expect(result.runtimes[0]?.parallelism).toBe(1);
+  });
+
+  it("reports what Ollama can serve at once from the models it is holding", async () => {
+    const fetchImpl = (async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href === "http://127.0.0.1:11434/api/ps") {
+        return jsonOk({ models: [{ name: "a" }, { name: "b" }] });
+      }
+      if (href.startsWith("http://127.0.0.1:11434")) {
+        return jsonOk({ models: [{ name: "llama3.2:latest" }] });
+      }
+      throw new Error("connection refused");
+    }) as typeof fetch;
+    const result = await detectLocalLlms(fetchImpl, { env: {} });
+    expect(result.runtimes[0]?.parallelism).toBe(2);
+  });
+
+  it("lets the operator's setting override what the runtime reports", async () => {
+    const fetchImpl = (async (url: string | URL | Request) => {
+      const href = String(url);
+      if (href.startsWith("http://127.0.0.1:11434")) {
+        return jsonOk({ models: [{ name: "llama3.2:latest" }] });
+      }
+      throw new Error("connection refused");
+    }) as typeof fetch;
+    const result = await detectLocalLlms(fetchImpl, { env: { TODERO_LOCAL_LLM_PARALLELISM: "3" } });
+    expect(result.runtimes[0]?.parallelism).toBe(3);
   });
 });
