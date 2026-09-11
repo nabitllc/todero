@@ -689,6 +689,18 @@ export async function startServer(): Promise<StartedServer> {
         "Backfilled agent roles for teams hired before the manager wave (total)",
       );
     }
+    for (const row of backfillResult.localModelTimeoutBackfill.perCompany) {
+      logger.info(row, "Raised the wait for agents pointed at a model on this machine");
+    }
+    if (backfillResult.localModelTimeoutBackfill.agentsBackfilled > 0) {
+      logger.info(
+        {
+          companiesProcessed: backfillResult.localModelTimeoutBackfill.companiesProcessed,
+          agentsBackfilled: backfillResult.localModelTimeoutBackfill.agentsBackfilled,
+        },
+        "Raised the wait for agents pointed at a model on this machine (total)",
+      );
+    }
   } catch (err) {
     logger.error({ err }, "Failed to run startup backfills (non-blocking)");
   }

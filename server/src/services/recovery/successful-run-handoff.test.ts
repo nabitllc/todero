@@ -111,7 +111,11 @@ describe("successful run handoff decision", () => {
     expect(decision.instruction).toContain("3. Mark it `blocked` with first-class blockers");
     expect(decision.instruction).toContain("4. Either delegate follow-up work");
     expect(decision.instruction).toContain("Only mark `done` if you can point at concrete verification evidence");
-    expect(decision.instruction).toContain("you are on your normal model and allowed to work in this wake");
+    // Item 0 rewrote this sentence: "wake" is not a word a person should ever
+    // read, and this line is quoted into what the agent is shown. The old
+    // expectation held the banned wording in place, so it is rewritten here
+    // rather than the sentence being changed back.
+    expect(decision.instruction).toContain("you are on your normal model and allowed to work on this turn");
   });
 
   it.each([

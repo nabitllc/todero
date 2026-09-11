@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   markConversationDispositionApplied,
@@ -56,5 +58,27 @@ describe("markConversationDispositionApplied", () => {
     const { db, updates } = fakeDb({ issueId: "issue-1", toderoDispositionApplied: true });
     await expect(markConversationDispositionApplied(db, "run-1")).resolves.toBe(false);
     expect(updates).toEqual([]);
+  });
+});
+
+describe("the finalize path stamps the stored row", () => {
+  // Wave 1 saw a second turn asked for after a turn that had already said what
+  // happens next. The in-memory flag was passed to the hand-in check, but the
+  // stored row was only marked on one of the branches that set it, so a later
+  // sweep reading the row asked again. The mark now sits on the one line every
+  // branch reaches, and this holds it there: the finalize path must mark the
+  // row before it asks whether a hand-in is still needed.
+  const source = readFileSync(
+    path.resolve(__dirname, "..", "services", "heartbeat.ts"),
+    "utf8",
+  );
+
+  it("marks the row before the hand-in check, for every branch", () => {
+    const mark = source.indexOf("if (conversationDispositionApplied) {");
+    const handoff = source.indexOf("await handleSuccessfulRunHandoff(");
+    expect(mark).toBeGreaterThan(-1);
+    expect(handoff).toBeGreaterThan(-1);
+    expect(mark).toBeLessThan(handoff);
+    expect(source.slice(mark, handoff)).toContain("markConversationDispositionApplied(db, livenessRun.id)");
   });
 });

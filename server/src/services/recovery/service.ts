@@ -3831,7 +3831,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
               latestRun: latestPostResolutionRun,
               comment:
                 `Todero stopped requeueing accepted interaction \`${acceptedContinuationInteraction.id}\` after ` +
-                `${consecutive} consecutive follow-up runs were cancelled while waiting on review. ` +
+                `${consecutive} consecutive follow-up turns were cancelled while waiting on review. ` +
                 "Moving the task to `blocked` so the missing execution path is visible for intervention.",
             });
             if (updated) {

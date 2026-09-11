@@ -17,6 +17,7 @@
     { "id": "item2_wizard_window", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts", "timeout": 600 },
     { "id": "item3_board_reorder", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts", "timeout": 600 },
     { "id": "item4_send_back_one_call", "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts", "timeout": 900 },
-    { "id": "item5_task_drain_stable", "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts", "timeout": 1500 }
+    { "id": "item5_task_drain_stable", "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts", "timeout": 1500 },
+    { "id": "repro_slow_local_model_turn", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts", "timeout": 300 }
   ]
 }
