@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MODEL_ROUTING_TABLE, parseModelSizeB, pickModelForKind } from "./model-routing.js";
+import { MODEL_ROUTING_TABLE, parseModelSizeB, pickModelForKind, resolveToderoTaskKind } from "./model-routing.js";
 
 describe("parseModelSizeB", () => {
   it("reads a trailing size tag", () => {
@@ -73,6 +73,32 @@ describe("pickModelForKind", () => {
   it("covers every task kind in the routing table", () => {
     expect(Object.keys(MODEL_ROUTING_TABLE).sort()).toEqual(
       ["drafting", "formatting", "judging", "planning", "wrap-up"].sort(),
+    );
+  });
+});
+
+describe("resolveToderoTaskKind", () => {
+  it("is planning for the standing conversation task (no parent, no turn instruction)", () => {
+    expect(resolveToderoTaskKind({ turnInstructionPresent: false, hasParentIssue: false })).toBe(
+      "planning",
+    );
+  });
+
+  it("is drafting for a child task created under an approved plan", () => {
+    expect(resolveToderoTaskKind({ turnInstructionPresent: false, hasParentIssue: true })).toBe(
+      "drafting",
+    );
+  });
+
+  it("is wrap-up when a closing turn instruction is present, regardless of parent", () => {
+    expect(resolveToderoTaskKind({ turnInstructionPresent: true, hasParentIssue: false })).toBe(
+      "wrap-up",
+    );
+    // The precedence that matters: a wrapping-up child task must still route
+    // as wrap-up, not silently fall through to drafting because it has a
+    // parent. This is exactly the branch a bad merge/rebase could invert.
+    expect(resolveToderoTaskKind({ turnInstructionPresent: true, hasParentIssue: true })).toBe(
+      "wrap-up",
     );
   });
 });

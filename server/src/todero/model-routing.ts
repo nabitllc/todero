@@ -71,6 +71,23 @@ function pickFastestLocal(available: string[]): string | null {
 }
 
 /**
+ * Which task kind a heartbeat turn is, for `context.toderoTaskKind` /
+ * `pickModelForKind`. A closing turn instruction (set by the heartbeat when
+ * every plan child has closed) always means wrap-up, regardless of parent —
+ * that check must win over the parent check, not the other way around, or a
+ * wrapping-up child task would be routed as an ordinary drafting turn.
+ * Otherwise a task with a parent (created under an approved plan) is
+ * drafting, and everything else is the standing conversation task.
+ */
+export function resolveToderoTaskKind(input: {
+  turnInstructionPresent: boolean;
+  hasParentIssue: boolean;
+}): ModelRoutingTaskKind {
+  if (input.turnInstructionPresent) return "wrap-up";
+  return input.hasParentIssue ? "drafting" : "planning";
+}
+
+/**
  * Resolve a model id for one turn. `available` may be empty (no detect
  * result yet, or a non-local adapter) — every kind still falls back to
  * `defaultModel`, so callers never need a null check.
