@@ -11,6 +11,8 @@
     { "id": "unit_server_core", "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts", "timeout": 1200 },
     { "id": "file_size_caps", "cmd": "node checks/file-size-caps.mjs", "timeout": 120 },
     { "id": "live_loop_ollama", "cmd": "python checks/live-loop.py", "timeout": 1200 },
+    { "id": "item0_local_model_timeout", "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts", "timeout": 600 },
+    { "id": "item0_recovery_copy", "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts", "timeout": 600 },
     { "id": "item1_skill_rows", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx", "timeout": 600 },
     { "id": "item2_wizard_window", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts", "timeout": 600 },
     { "id": "item3_board_reorder", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts", "timeout": 600 },

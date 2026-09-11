@@ -15,3 +15,20 @@
 **Add** — turn cluster A's residue into cheap deterministic checks so the slow live loop is not the only thing that catches it: one that plan approval never starts more runs than the agent's concurrency limit; one that a wake is delivered once; one that user-visible recovery copy carries no banned words. Fix the fan-out first — the other three should then pass without touching the recovery service.
 
 **Stop** — repeating the task-drain test locally. It passed, and the flake has only ever appeared on the GitHub runner, so the local repeat scores nothing. Keep the work item; move its evidence to CI.
+
+## Correction after reading the run timings (session, 2026-09-11)
+
+The verdict's Cluster A rests on a fact the session got wrong. The runs on the live loop's
+organization did **not** overlap: they started one after another, exactly as the agent's
+one-run-at-a-time setting says. What failed was time. The model answered each turn in two to
+three minutes, and the http adapter's limit for that hire was 180 s, so one task timed out three
+times in a row (18:20 to 18:29) and the recovery paths took over from there: a "missing comment"
+retry, a "continuation" retry, notices to the person with the words "issue" and "continuation",
+and a second wake after a finished turn. Plan approval starting the first task of every feature
+is real but harmless here: the queue serialised them.
+
+So item 0 is "a slow local model does not derail the loop": a timeout floor for local runtimes
+well above 180 s, one quiet retry instead of three recovery paths, plain words in whatever is
+posted, and no second wake after a turn that already said what happens next. Two deterministic
+checks were added for it (item0_local_model_timeout, item0_recovery_copy); the live loop covers
+the rest. The task-drain repeat is kept for one more wave, as a control, then moved to CI.
