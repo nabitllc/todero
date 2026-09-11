@@ -5,7 +5,6 @@ import {
   agentSummaryOverflowLine,
   agentSummaryRow,
   taskRowLabel,
-  blockedChipLabel,
   buildTrail,
   commitWorkItemStatus,
   displayPriority,
@@ -127,13 +126,6 @@ describe("work-item model", () => {
     expect(trail.at(-1)?.current).toBe(true);
   });
 
-  it("labels blocked chips with the blocker meaning", () => {
-    expect(blockedChipLabel({ kind: "waiting-on-you" })).toBe("Blocked · Waiting on you.");
-    expect(blockedChipLabel({ kind: "item", id: "x", identifier: "TESA-12" })).toBe(
-      "Blocked · TESA-12",
-    );
-  });
-
   it("round-trips type and waiting-on-you markers in the description", () => {
     const serialized = serializeWorkItemDescription({
       type: "Bug",
@@ -169,9 +161,7 @@ describe("review and plan markers", () => {
     expect(again).not.toContain("todero-plan");
   });
 
-  it("counts blockers on the chip and labels queued rows", () => {
-    expect(blockedChipLabel({ kind: "item", id: "a", identifier: "T-2" }, 3)).toBe("Blocked · 3 tasks");
-    expect(blockedChipLabel({ kind: "item", id: "a", identifier: "T-2" }, 1)).toBe("Blocked · T-2");
+  it("labels queued rows", () => {
     expect(taskRowLabel({ status: "todo", queued: true })).toBe("Queued");
     expect(taskRowLabel({ status: "done", queued: true })).toBe("Done");
     expect(taskRowLabel({ status: "todo", queued: false })).toBe("To do");

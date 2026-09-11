@@ -207,12 +207,10 @@
   color: var(--wi-muted);
 }
 
+/* One column. The second column was the facts column; the Properties panel
+   holds those fields now, so the content runs the full width of the card. */
 .work-item-split {
-  display: grid;
-  grid-template-columns: 1fr 240px;
-  gap: var(--wi-space-24);
   margin-top: var(--wi-space-16);
-  align-items: start;
 }
 
 .work-item-main {
@@ -257,6 +255,55 @@
   max-width: 65ch;
 }
 
+/* The brief a plan-made task carries, read as labelled lines rather than as the
+   block of instructions it is for the model. */
+.work-item-brief {
+  max-width: 65ch;
+}
+
+.work-item-brief-lines {
+  margin: 0;
+  display: grid;
+  gap: var(--wi-space-8);
+}
+
+.work-item-brief-line {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: var(--wi-space-12);
+  align-items: baseline;
+}
+
+.work-item-brief-label {
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--wi-muted);
+}
+
+.work-item-brief-value {
+  margin: 0;
+  font-family: var(--wi-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--wi-fg);
+  min-width: 0;
+}
+
+.work-item-brief-said {
+  margin: 0;
+  padding-left: var(--wi-space-16);
+}
+
+@media (max-width: 720px) {
+  .work-item-brief-line {
+    grid-template-columns: 1fr;
+    gap: var(--wi-space-4);
+  }
+}
+
 .work-item-section-title {
   margin: 0 0 var(--wi-space-8);
   font-family: var(--wi-sans);
@@ -287,69 +334,8 @@
   margin: 0 0 var(--wi-space-8);
 }
 
-.work-item-facts {
-  min-width: 0;
-}
-
-.work-item-fact {
-  margin: 0 0 var(--wi-space-16);
-}
-
-.work-item-fact:last-child {
-  margin-bottom: 0;
-}
-
-.work-item-fact-label {
-  display: block;
-  font-family: var(--wi-sans);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--wi-muted);
-  margin: 0 0 var(--wi-space-4);
-}
-
-.work-item-fact-value,
-.work-item-fact-button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  color: var(--wi-fg);
-  font-family: var(--wi-sans);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.work-item-fact-button {
-  cursor: pointer;
-}
-
-.work-item-fact-muted,
-.work-item-fact-empty {
-  color: var(--wi-muted);
-}
-
-.work-item-fact-mono {
-  font-family: var(--wi-mono);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.work-item-fact-alert {
-  color: var(--wi-alert);
-}
-
-.work-item-bolt {
-  pointer-events: none;
-  cursor: default;
-  font-family: var(--wi-sans);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--wi-fg);
-}
+/* The facts column that used to sit here is gone: a task's fields live in the
+   Properties panel, which is the one details panel on the page. */
 
 .work-item-log-split {
   height: var(--wi-space-8);
@@ -550,12 +536,6 @@
 
 .work-item-agent-option:hover {
   background: color-mix(in oklch, var(--wi-fg) 8%, var(--wi-surface));
-}
-
-@media (max-width: 720px) {
-  .work-item-split {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* Tasks created from an approved plan */
@@ -785,4 +765,78 @@
   background: var(--wi-mark);
   color: var(--wi-ink);
   cursor: pointer;
+}
+
+/* The turn bar: one sentence under the title saying whose turn it is, and the
+   buttons for that turn. Only the tone that wants the person is marked; a task
+   that is merely waiting, queued or finished stays as quiet as the rest of the
+   card. */
+.work-item-turn-bar {
+  margin: var(--wi-space-16) 0 0;
+  padding: var(--wi-space-8) var(--wi-space-12);
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-input);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--wi-space-12);
+  flex-wrap: wrap;
+}
+
+.work-item-turn-bar[data-tone="action"] {
+  border-color: var(--wi-mark);
+  background: color-mix(in oklch, var(--wi-mark) 10%, var(--wi-surface));
+}
+
+.work-item-turn-sentence {
+  margin: 0;
+  font-family: var(--wi-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--wi-fg);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.work-item-turn-bar[data-tone="waiting"] .work-item-turn-sentence,
+.work-item-turn-bar[data-tone="info"] .work-item-turn-sentence,
+.work-item-turn-bar[data-tone="done"] .work-item-turn-sentence {
+  font-weight: 400;
+  color: var(--wi-muted);
+}
+
+.work-item-turn-actions {
+  display: flex;
+  gap: var(--wi-space-8);
+  flex-wrap: wrap;
+  flex: 0 1 auto;
+}
+
+.work-item-turn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: var(--wi-space-4) var(--wi-space-8);
+  border-radius: var(--wi-radius-stamp);
+  border: 1px solid var(--wi-border);
+  background: transparent;
+  color: var(--wi-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.work-item-turn-action:hover {
+  background: color-mix(in oklch, var(--wi-fg) 8%, var(--wi-surface));
+}
+
+.work-item-turn-bar[data-tone="action"] .work-item-turn-action {
+  border-color: var(--wi-mark);
+}
+
+.work-item-turn-bar[data-tone="action"] .work-item-turn-action:hover {
+  background: var(--wi-mark);
 }

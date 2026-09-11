@@ -104,11 +104,10 @@ import { WorkItemView } from "../components/work-item/WorkItemView";
 import {
   applyBodyToDescription,
   descriptionWithType,
-  patchFromBlockedBy,
   toWorkItemViewProps,
   workItemTypeFor,
 } from "../components/work-item/work-item-adapter";
-import { apiPriorityFor, apiStatusFor } from "../components/work-item/work-item-model";
+import { apiStatusFor } from "../components/work-item/work-item-model";
 import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescriptionBubble";
 import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
 import { workModeMetaFor } from "../lib/work-mode-meta";
@@ -190,6 +189,7 @@ import {
   successfulRunHandoffActivityTone,
 } from "../lib/successful-run-handoff";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
+import { readAgentTimer } from "../lib/agent-timer";
 import {
   Activity as ActivityIcon,
   AlertTriangle,
@@ -231,7 +231,6 @@ import {
   type IssueAttachment,
   type IssueComment,
   type IssueWorkProduct,
-  type IssueCostSummary,
   type IssueWorkMode,
   type IssueThreadInteraction,
   type RequestCheckboxConfirmationInteraction,
@@ -1223,11 +1222,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
     queryFn: () => activityApi.forIssue(issueId),
     placeholderData: keepPreviousDataForSameQueryTail<ActivityEvent[]>(issueId),
   });
-  const { data: costSummary } = useQuery({
-    queryKey: queryKeys.issues.costSummary(issueId),
-    queryFn: () => issuesApi.getCostSummary(issueId),
-    enabled: typeof issuesApi.getCostSummary === "function",
-  });
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
     queryFn: () => heartbeatsApi.liveRunsForIssue(issueId),
@@ -1392,10 +1386,28 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
       activity: activity ?? [],
       agentMap,
       userLabelMap,
-      projects,
-      costSummary: (costSummary ?? null) as IssueCostSummary | null,
       workMode: issueWorkMode,
     });
+    // A paused assignee is why nothing picks the task up, so the turn bar says
+    // Paused and offers Play. A budget hard stop clears on its own and resuming
+    // by hand would fight it, so that one gets the sentence without the button.
+    const assignedAgent = issueAssigneeAgentId ? agentMap.get(issueAssigneeAgentId) ?? null : null;
+    const assigneePaused = assignedAgent?.status === "paused";
+    // The agents list already carries each agent's busy timer, so the turn bar
+    // can say how soon the task is picked up, or offer Start now when the timer
+    // is off (agents hired before the timer became the default).
+    const assigneeTimer = readAgentTimer(assignedAgent);
+    const startNow =
+      assignedAgent && assigneeTimer && !assigneeTimer.enabled && issue.status === "todo"
+        ? () => {
+            void agentsApi.wakeup(assignedAgent.id, {
+              source: "on_demand",
+              triggerDetail: "manual",
+              reason: "issue_assigned",
+              payload: { issueId: issue.id },
+            }, assignedAgent.companyId);
+          }
+        : undefined;
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <div hidden data-testid="work-item-ops">{threadHeader}</div>
@@ -1411,19 +1423,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           onStatusChange={(nextStatus) => {
             onUpdate({ status: apiStatusFor(nextStatus) });
           }}
-          onPriorityChange={(nextPriority) => onUpdate({ priority: apiPriorityFor(nextPriority) })}
-          onAssigneeChange={(nextAssigneeId) => {
-            if (!nextAssigneeId) {
-              onUpdate({ assigneeAgentId: null, assigneeUserId: null });
-              return;
-            }
-            if (nextAssigneeId.startsWith("user:")) {
-              onUpdate({ assigneeUserId: nextAssigneeId.slice(5), assigneeAgentId: null });
-              return;
-            }
-            onUpdate({ assigneeAgentId: nextAssigneeId, assigneeUserId: null });
-          }}
-          onBlockedByChange={(next) => onUpdate(patchFromBlockedBy(next, issue, parsedType))}
           onComment={(body) => { void onAdd(body); }}
           onAttach={(file) => { void onAttachImage(file); }}
           onWorkModeChange={onWorkModeChange}
@@ -1445,6 +1444,16 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           }))}
           nextProjectSuggestion={nextProjectSuggestion}
           agentWorking={liveIssueIds.has(issue.id)}
+          paused={assigneePaused}
+          timerEnabled={assigneeTimer?.enabled}
+          timerIntervalSec={assigneeTimer?.intervalSec}
+          onStartNow={startNow}
+          resumePending={resumeAssigneePending}
+          onResume={
+            assigneePaused && onResumeAssignee && assignedAgent?.pauseReason !== "budget"
+              ? () => { void onResumeAssignee(); }
+              : undefined
+          }
           onPlanApprove={(keep) => approveProposedPlan.mutate(keep)}
           onStartProject={(name) => { void handleStartProject(name); }}
           onAccept={() => onUpdate({ status: "done" })}

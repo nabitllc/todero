@@ -347,3 +347,118 @@ tests. No schema change: the columns exist.
 **Out of scope.** Pausing a single agent from this card (the Agents page already does it); a
 scheduled pause ("pause at 6 pm"); a pause that asks the lead to write a status note (would need a
 run while paused; revisit after the judge wave).
+
+## Wave: the task view, how people and agents meet
+
+_Shipped in this PR:_ step 1 and step 2 in full, and step 0 on both sides. On the card: the facts
+column is gone, the chip and the turn bar share one status vocabulary, and a plan-made brief reads
+as a **Brief** block with the standing instruction left out. In the Properties panel: the groups are
+now Pinned / Relationships / Cost and time / Review / About; Token usage, Token cost, Created,
+Started, Closed and Updated moved into Cost and time, so nothing the card stopped showing went
+missing; and the panel's Status control speaks the card's six words plus Queued through the new
+`panel-status.ts` (`displayStatus` / `apiStatusFor`), refusing Blocked with no blocker and In
+progress with no assignee exactly as the card does. `IssueProperties.tsx` keeps its new logic in
+`panel-status.ts`, `panel-cost.ts` and `WorkItemStatusRow.tsx` rather than growing.
+
+_Still open from step 0:_ in-place editing of every panel value (step 21), Feature and Due date in
+the Pinned group (the goals wave and step 22), and the narrow-screen drawer behind an "i" button.
+
+_Two known gaps, deliberately not closed here:_
+
+- **Editing a brief shows the standing instruction.** The Brief block hides the "Do this task now…
+  STATUS: done" line because it is machinery, but clicking Edit opens the body exactly as it was
+  written, instruction and all. That is the explicit exception to the What-Nova-sees separation: the
+  card reshapes how a brief reads and never what it says, so an edit can never silently drop a line
+  the agent depends on. Closing the gap properly means an editor that round-trips the instruction,
+  which belongs with step 11 (description as a real editor).
+- **Start now wakes the agent once; it does not switch the timer on.** The turn bar reads the
+  assignee's busy timer from the agents list (`readAgentTimer`) and, when it is off on a To do task,
+  offers Start now, which sends one wake for this task. Turning the timer on for good is the
+  Hardening wave's backfill, so the agent then picks up the next task without a button.
+
+_Queued for future: steps 3–30._
+
+Ordered as it should be built. Each step is shippable alone.
+
+**Step 0: one sidebar, not two (half a day; goes first, 2026-09-11).** Today the task card carries its own facts column (Assignee, Priority, Created, Closed, Token usage, Token cost, Bolt) and the page also opens the Properties panel (Triage, Relationships, Execution, About), so the same task shows two sidebars with overlapping and sometimes disagreeing values (the chip says To do while the panel says Backlog).
+
+Jira and Azure DevOps both do this one way: the main column is the content and the conversation; a single details panel on the right holds every field, in collapsible groups, each field editable in place, with the few fields that matter most pinned at the top. Todero does the same:
+
+- Remove the facts column from the task card. The card keeps: type stamp, identifier trail, title, the turn sentence with its buttons (step 1), the body or brief, the Tasks list, the plan or review cards, then the activity and the composer.
+- The Properties panel becomes the only details panel, regrouped:
+  - **Pinned:** Assignee, Priority, Feature (its goal), Project, Due date (step 22).
+  - **Relationships:** Parent, Blocked by, Blocking, Related (step 14).
+  - **Cost and time:** Token usage, Token cost, Time in state (step 18), Created, Closed, Updated.
+  - **Review:** Reviewer, last verdict, rounds; Approvers and Monitor only when set.
+  - **About:** Originating, type, the "What Nova sees" toggle (step 9).
+  Every value edits in place (step 21). Empty fields show a muted "None" with a click target, never a dash.
+- One status vocabulary. The panel's Status editor and the card's chip use the same six words (New, To do, In progress, Blocked, Done, Cancelled) plus Queued as a computed label; the raw "backlog" never appears. The panel's editor and the chip share `displayStatus` and `apiStatusFor`.
+- A child task's brief renders as a **Brief** block, not raw text: Goal, Feature, Done when, Hand in, and What the person said as labelled lines; the standing instruction ("Do this task now… STATUS: done") is part of "What Nova sees", not the body. Same treatment the first task already gets for its mission.
+- Narrow screens: the panel becomes a drawer opened from an "i" button in the title bar, as both Jira and ADO do on mobile.
+
+**Step 1: the turn sentence and its actions (one day, with step 2, 5, 8).**
+
+- A bar under the title, always visible, one sentence: "Nova is writing" (a run is live), "Your turn: accept or send back" (review pending), "Your turn: approve the plan" (plan pending), "Your turn: answer Nova" (question), "Queued behind ZZW-3" (blocked by a task), "Waiting on ZZW-3 and 2 more" (parent), "Done", "Paused" (wave I).
+- The bar carries the buttons for that state: Approve N of M, Accept, Send back, Answer, Play. The same buttons remain above the composer for people who scroll.
+- Agents pick up open work by themselves (the two-minute busy timer from wave F), and the sentence says so instead of leaving a To do task looking abandoned: "Nova picks this up within 2 minutes" for an unblocked To do task, "Queued behind ZZW-3, then Nova picks it up" for a blocked one, and "Nova's timer is off; start now?" with a button when the agent's timer is disabled (agents hired before wave F; the Hardening wave backfills them, this is the safety net).
+- Source of truth is the existing state: status, the three markers, blockers, live runs. A pure function `turnSentence(view)` with tests for every state.
+
+**Step 2: actions where the eye is.** Covered by the bar. Keyboard: A accepts, S opens send back, Enter sends. Shown as hints on hover, never required.
+
+**Step 3: work apart from talk (two days, with 4, 6, 7).**
+
+- Two tabs on the main column: **Conversation** (default while the task is open) and **Deliverable** (default once handed in). Deliverable renders the `output` document with a version picker ("Version 2 · handed in 10:42 · accepted"), a copy button, and a download.
+- The conversation shows a one-line card where the reply used to be: "Handed in version 2 · Open". Replies that are questions or plans stay in the conversation in full.
+- The plan on the conversation task renders the same way under a **Plan** tab: goal, features with done-when, tasks with their status, and the approval card until approved.
+
+**Step 4: formatted replies.** Agent and person text renders as formatted text (headings, lists, bold, code) using the same renderer the body uses. Long replies fold after twelve lines with "Show all".
+
+**Step 5: mute the machinery.** Status lines ("Moved to To do"), assignment lines and system notices collapse into one grey line per cluster: "3 changes · show". A cluster is consecutive system lines with nothing human or agent between them. Recovery notices keep their warning tone but sit inside the cluster.
+
+**Step 6: the chain of why.** Above the title: Mission › Feature › Task, each a link (Goals page, the feature goal, this task). Comes from the goals wave.
+
+**Step 7: the reviewer's voice.** A verdict card: "Reviewed by Nova's reviewer · Pass" or "· Sent back", the paragraph, and the round ("2 of 2"). Distinct colour from Nova's replies and from yours. A failed verdict also shows the send-back note the worker received.
+
+**Step 8: the composer as quick replies.** Chips above the text box that change with the state: Approve, Send back with note, Ask a question, Give more context, Skip this task. Picking a chip fills a starting sentence; free text always works. @mention lists agents. Enter sends, Shift+Enter is a new line. Attachments stay.
+
+**Step 9: "What Nova sees" (half a day).** A toggle in the sidebar that opens a read-only panel with the brief, the standing instructions, and the conversation exactly as the model received them on the last run. Read from the run's stored context, never from a fresh call.
+
+**Step 10: phone (half a day).** One column. The turn bar and its buttons stick to the top. Tabs from step 3 become a segmented control. Composer chips scroll sideways.
+
+**Steps 11–30: what Jira and Azure DevOps do that the task view should too.** Approved for the queue on 2026-09-11. Build in three groups after step 10; the six starred items go first.
+
+*Reading the task*
+11. Description as a real editor: headings, checklists, pasted images.
+12. ★ Acceptance criteria as their own field, checkable one by one; the reviewer reads exactly this list (it becomes the feature's done-when for that task).
+13. Attachments panel with previews.
+14. Related tasks panel: blocks, is blocked by, relates to, duplicates.
+15. Parent and children as a tree with "2 of 5 done" on the parent.
+
+*Following what happened*
+16. History tab separate from comments: every field change with who and when, filterable.
+17. Watchers: follow a task you don't own and get its Inbox items.
+18. ★ Time in state: "In progress for 3 days" on the card and in the sidebar.
+19. ★ Resolution reason on close: done, won't do, duplicate, cannot reproduce.
+20. Reopen with a reason, which reopens the parent too.
+
+*Acting on it*
+21. ★ Inline edit of every sidebar field: assignee, priority, goal, project, due date.
+22. ★ Due date and a "due soon" flag the busy timer and the Inbox respect.
+23. Estimate field (T-shirt size) so the plan card shows total size.
+24. Clone, and create a sub-task from here, prefilled from the parent.
+25. Move to another project or organization from the sidebar.
+26. Bulk actions from the list: accept five outputs at once, cancel a feature's remaining tasks.
+
+*Talking about it*
+27. ★ @mention that notifies, people and agents, with the Inbox row it created.
+28. Quote-reply and threads on a comment, so a send-back note sits under the reply it answers.
+29. Reactions instead of "thanks" comments (keeps the model's context clean).
+30. Share link that opens the exact tab, comment, or version.
+
+*From the same review, outside the task view (own waves):* the Board as its own Work-menu entry; a ranked backlog the agents respect; automation rules shown and editable in Settings; saved views ("My turn", "Stuck more than a day", "Failed review twice"); tasks linked to their branch and PR once code tasks exist.
+
+**Rules for tone.** The person's words are never rewritten. Agent replies are never labelled "AI". System lines are grey and short. Nothing user-visible says issue, disposition, handoff, run, or wake.
+
+**Tests.** `turnSentence` for every state; cluster collapsing; verdict card rendering; chips change with state; the deliverable tab defaults once handed in; phone layout snapshot.
+
+**Dependencies.** Steps 1, 2, 4, 5, 8, 9, 10 need nothing new. Step 3 needs the output document (wave C, shipped). Step 6 needs the goals wave (D). Step 7 needs the judge wave (E).

@@ -3,31 +3,27 @@ import { Paperclip } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "@/lib/router";
-import { relativeTime, formatDateTime } from "@/lib/utils";
 import { workModeMetaFor, nextWorkMode } from "@/lib/work-mode-meta";
 import type { IssueWorkMode, ToderoPlan } from "@todero/shared";
 import "./work-item.css";
+import { planApproveLabel, turnSentence, type TurnActionId } from "./turn-sentence";
+import { parseWorkItemBrief } from "./work-item-brief";
+import { WorkItemTurnBar } from "./WorkItemTurnBar";
+import { WorkItemBriefBlock } from "./WorkItemBriefBlock";
 import {
-  BOLT_VALUE,
   COMPOSER_PLACEHOLDER,
   EMPTY_ACTIVITY,
   EMPTY_BODY_PLACEHOLDER,
   TITLE_PLACEHOLDER,
-  WAITING_ON_YOU,
   WORK_ITEM_CHOOSABLE_TYPES,
-  WORK_ITEM_PRIORITIES,
-  WORK_ITEM_PRIORITY_LABELS,
   WORK_ITEM_STATUS_LABELS,
   WORK_ITEM_STATUSES,
-  blockedChipLabel,
   commitWorkItemStatus,
-  displayPriority,
   highlightMentions,
   statusFreezesAssignee,
   type WorkItemActivityItem,
   type WorkItemBlockedBy,
   type WorkItemChecklistItem,
-  type WorkItemPriority,
   type WorkItemTaskRow,
   taskRowLabel,
   type WorkItemSection,
@@ -36,9 +32,7 @@ import {
   type WorkItemType,
 } from "./work-item-model";
 
-export type WorkItemAssigneeOption = { id: string; label: string };
 export type WorkItemAgentOption = { id: string; name: string };
-export type WorkItemBlockerOption = { id: string; identifier: string };
 
 export type WorkItemViewProps = {
   identifier: string;
@@ -69,22 +63,25 @@ export type WorkItemViewProps = {
   checklist: WorkItemChecklistItem[];
   trail: WorkItemTrailEntry[];
   status: WorkItemStatus;
-  priority: WorkItemPriority;
   assigneeId: string | null;
   assigneeLabel: string | null;
   blockedBy: WorkItemBlockedBy | null;
-  projectName?: string | null;
-  projectCount?: number;
-  createdAt: Date | string;
-  closedAt?: Date | string | null;
-  tokenUsage: string;
-  tokenCost: string;
+  /** The agent asked the person something and is waiting for the answer. */
+  waitingOnYou?: boolean;
+  /** The work is held: the assignee is paused, or a pause sits on the tree. */
+  paused?: boolean;
+  /** A resume is already in flight, so the Play button stops offering itself. */
+  resumePending?: boolean;
+  /** The busy timer that makes an agent pick up open work by itself. */
+  timerEnabled?: boolean;
+  timerIntervalSec?: number;
   staleStatusCaption?: string | null;
   activity: WorkItemActivityItem[];
-  assigneeOptions: WorkItemAssigneeOption[];
   agentOptions: WorkItemAgentOption[];
-  blockerOptions: WorkItemBlockerOption[];
   workMode?: IssueWorkMode;
+  // Assignee, Priority, Project, Token usage and cost, Created and Closed are
+  // the Properties panel's rows now — the one details panel. The card takes
+  // only what its own sentence and chip read.
   onTypeChange?: (type: WorkItemType) => void;
   onTitleSave?: (title: string) => void;
   onBodySave?: (body: string) => void;
@@ -94,36 +91,20 @@ export type WorkItemViewProps = {
   onAccept?: () => void;
   onSendBack?: (note: string) => void;
   onStatusChange?: (status: WorkItemStatus) => void;
-  onPriorityChange?: (priority: WorkItemPriority) => void;
-  onAssigneeChange?: (assigneeId: string | null) => void;
-  onBlockedByChange?: (blockedBy: WorkItemBlockedBy | null) => void;
   onComment?: (body: string) => void;
   onAttach?: (file: File) => void;
   onWorkModeChange?: (workMode: IssueWorkMode) => void;
   onAgentNotify?: (agentId: string, name: string) => void;
+  /** Start the work by hand when the agent's timer is off. */
+  onStartNow?: () => void;
+  /** Resume paused work. Without it the bar says Paused and offers no button. */
+  onResume?: () => void;
 };
 
 function statusClass(status: WorkItemStatus): string {
   if (status === "blocked") return "work-item-status work-item-status-blocked";
   if (status === "in_progress") return "work-item-status work-item-status-progress";
   return "work-item-status work-item-status-muted";
-}
-
-function Fact({
-  label,
-  children,
-  testId,
-}: {
-  label: string;
-  children: React.ReactNode;
-  testId?: string;
-}) {
-  return (
-    <div className="work-item-fact" data-testid={testId}>
-      <span className="work-item-fact-label">{label}</span>
-      {children}
-    </div>
-  );
 }
 
 export function WorkItemView(props: WorkItemViewProps) {
@@ -146,21 +127,17 @@ export function WorkItemView(props: WorkItemViewProps) {
     checklist,
     trail,
     status,
-    priority,
     assigneeId,
     assigneeLabel,
     blockedBy,
-    projectName,
-    projectCount = 1,
-    createdAt,
-    closedAt,
-    tokenUsage,
-    tokenCost,
+    waitingOnYou = false,
+    paused = false,
+    resumePending = false,
+    timerEnabled = true,
+    timerIntervalSec,
     staleStatusCaption,
     activity,
-    assigneeOptions,
     agentOptions,
-    blockerOptions,
     workMode = "standard",
     onTypeChange,
     onTitleSave,
@@ -171,20 +148,16 @@ export function WorkItemView(props: WorkItemViewProps) {
     onAccept,
     onSendBack,
     onStatusChange,
-    onPriorityChange,
-    onAssigneeChange,
-    onBlockedByChange,
     onComment,
     onAttach,
     onWorkModeChange,
     onAgentNotify,
+    onStartNow,
+    onResume,
   } = props;
 
   const [typeOpen, setTypeOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [priorityOpen, setPriorityOpen] = useState(false);
-  const [blockedOpen, setBlockedOpen] = useState(false);
   const [statusCaption, setStatusCaption] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingBody, setEditingBody] = useState(false);
@@ -203,13 +176,137 @@ export function WorkItemView(props: WorkItemViewProps) {
   const [agentListOpen, setAgentListOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const frozen = statusFreezesAssignee(status);
-  const chip = status === "blocked" ? blockedChipLabel(blockedBy, blockerCount) : WORK_ITEM_STATUS_LABELS[status];
+  // One status vocabulary: the chip says one of the six words, plus Queued for a
+  // task waiting behind another — the same computed label the Tasks list uses.
+  // Which task it waits behind is the turn bar's line, so the chip does not
+  // repeat it.
+  const chip = taskRowLabel({ status, queued: blockedBy?.kind === "item" });
   const caption = statusCaption ?? staleStatusCaption ?? null;
   const modeMeta = workModeMetaFor(workMode);
+  // A parent is waiting on its own plan while any task it made is still open.
+  const openChildren = useMemo(
+    () => tasks.filter((task) => task.status !== "done" && task.status !== "cancelled"),
+    [tasks],
+  );
+  // A task made from a plan carries a brief written for the model. The person
+  // reads it as labelled lines; the standing instruction in it is machinery and
+  // belongs to what Nova sees, not to the body. Editing still opens the brief
+  // as it was written — the card reshapes how it reads, never what it says.
+  const brief = useMemo(() => {
+    const parsed = parseWorkItemBrief(body);
+    return parsed.lines.length > 0 ? parsed : null;
+  }, [body]);
+  const planTaskCount = plan?.tasks.length ?? 0;
+  const keptPlanTasks = useMemo(
+    () => (plan ? plan.tasks.filter((task) => !droppedPlanTasks.has(task.id)) : []),
+    [plan, droppedPlanTasks],
+  );
 
   // An agent reply is the conversation itself, so it renders in full. The
   // one-line summary rule only ever hid what the agent said.
   const visibleActivity = useMemo(() => activity, [activity]);
+
+  // What the bar says and what it offers. Everything it reads is already on the
+  // card: status, the three markers, blockers, the tasks the plan made, whether
+  // a run is live.
+  const turn = useMemo(
+    () =>
+      turnSentence({
+        status,
+        blockedBy,
+        blockerCount,
+        openChildIdentifier: openChildren[0]?.identifier ?? null,
+        openChildCount: openChildren.length,
+        reviewPending,
+        planPending: planPending && planApprovable,
+        planTaskCount,
+        planTasksKept: keptPlanTasks.length,
+        waitingOnYou,
+        agentWorking,
+        assigneeName: assigneeLabel,
+        assigneeId,
+        paused,
+        canResume: Boolean(onResume) && !resumePending,
+        canStartNow: Boolean(onStartNow),
+        timerEnabled,
+        timerIntervalSec,
+      }),
+    [
+      status,
+      blockedBy,
+      blockerCount,
+      openChildren,
+      reviewPending,
+      planPending,
+      planApprovable,
+      planTaskCount,
+      keptPlanTasks,
+      waitingOnYou,
+      agentWorking,
+      assigneeLabel,
+      assigneeId,
+      paused,
+      onResume,
+      resumePending,
+      onStartNow,
+      timerEnabled,
+      timerIntervalSec,
+    ],
+  );
+
+  function askForPlanChanges() {
+    onPlanChanges?.();
+    setComment((prev) => (prev.trim() ? prev : "Please change the plan: "));
+    composerRef.current?.focus();
+  }
+
+  /**
+   * Every button in the bar does the same thing as its twin further down the
+   * card. Asking for changes on a plan is not the same move as sending a
+   * hand-in back, so it goes to the plan's own path.
+   */
+  function runTurnAction(id: TurnActionId) {
+    if (id === "accept") onAccept?.();
+    if (id === "send-back") {
+      if (reviewPending) setSendBackOpen(true);
+      else askForPlanChanges();
+    }
+    if (id === "approve") onPlanApprove?.(keptPlanTasks.map((task) => task.id));
+    if (id === "answer") composerRef.current?.focus();
+    if (id === "start-now") onStartNow?.();
+    if (id === "play") onResume?.();
+  }
+
+  // A accepts, S opens send back. Hints on hover, never required — so they stay
+  // out of the way of anyone typing, and out of the way of the browser's own
+  // shortcuts. The handler is held in a ref so the listener is bound once per
+  // state rather than on every keystroke that changes the composer.
+  const turnActionRef = useRef(runTurnAction);
+  turnActionRef.current = runTurnAction;
+
+  useEffect(() => {
+    if (!reviewPending && !planPending) return undefined;
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      const active = document.activeElement;
+      const typing =
+        active instanceof HTMLTextAreaElement ||
+        active instanceof HTMLInputElement ||
+        (active instanceof HTMLElement && active.isContentEditable);
+      if (typing) return;
+      const key = event.key.toLowerCase();
+      if (key === "a" && reviewPending) {
+        event.preventDefault();
+        turnActionRef.current("accept");
+      }
+      if (key === "s") {
+        event.preventDefault();
+        turnActionRef.current("send-back");
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [reviewPending, planPending]);
 
   function tryStatus(next: WorkItemStatus) {
     const result = commitWorkItemStatus({
@@ -370,6 +467,8 @@ export function WorkItemView(props: WorkItemViewProps) {
           </h1>
         )}
 
+        <WorkItemTurnBar turn={turn} onAction={runTurnAction} />
+
         <div className="work-item-split">
           <div className="work-item-main">
             {editingBody ? (
@@ -380,6 +479,15 @@ export function WorkItemView(props: WorkItemViewProps) {
                 onChange={(event) => setBodyDraft(event.target.value)}
                 onBlur={saveBody}
                 autoFocus
+              />
+            ) : brief ? (
+              <WorkItemBriefBlock
+                brief={brief}
+                editable={bodyEditable}
+                onEdit={() => {
+                  setBodyDraft(body);
+                  setEditingBody(true);
+                }}
               />
             ) : (
               <div
@@ -445,213 +553,6 @@ export function WorkItemView(props: WorkItemViewProps) {
             ) : null}
           </div>
 
-          <aside className="work-item-facts" data-testid="work-item-facts">
-            <Fact label="Assignee">
-              <div style={{ position: "relative" }}>
-                <button
-                  type="button"
-                  className={assigneeLabel ? "work-item-fact-button" : "work-item-fact-button work-item-fact-muted"}
-                  data-testid="work-item-assignee"
-                  disabled={frozen}
-                  onClick={() => setAssigneeOpen((open) => !open)}
-                >
-                  {assigneeLabel ?? "Unassigned"}
-                </button>
-                {assigneeOpen && !frozen ? (
-                  <div className="work-item-menu" role="menu">
-                    <button
-                      type="button"
-                      className="work-item-stamp-option"
-                      onClick={() => {
-                        setAssigneeOpen(false);
-                        onAssigneeChange?.(null);
-                      }}
-                    >
-                      Unassigned
-                    </button>
-                    {assigneeOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className="work-item-stamp-option"
-                        onClick={() => {
-                          setAssigneeOpen(false);
-                          onAssigneeChange?.(option.id);
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </Fact>
-
-            {priority !== "none" ? (
-              <Fact label="Priority">
-                <div style={{ position: "relative" }}>
-                  <button
-                    type="button"
-                    className={
-                      priority === "critical"
-                        ? "work-item-fact-button work-item-fact-alert"
-                        : "work-item-fact-button"
-                    }
-                    data-testid="work-item-priority"
-                    onClick={() => setPriorityOpen((open) => !open)}
-                  >
-                    {WORK_ITEM_PRIORITY_LABELS[priority]}
-                  </button>
-                  {priorityOpen ? (
-                    <div className="work-item-menu" role="menu">
-                      {WORK_ITEM_PRIORITIES.map((itemPriority) => (
-                        <button
-                          key={itemPriority}
-                          type="button"
-                          className="work-item-stamp-option"
-                          onClick={() => {
-                            setPriorityOpen(false);
-                            onPriorityChange?.(itemPriority);
-                          }}
-                        >
-                          {WORK_ITEM_PRIORITY_LABELS[itemPriority]}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </Fact>
-            ) : (
-              <Fact label="Priority">
-                <div style={{ position: "relative" }}>
-                  <button
-                    type="button"
-                    className="work-item-fact-button work-item-fact-empty"
-                    data-testid="work-item-priority"
-                    onClick={() => setPriorityOpen((open) => !open)}
-                  >
-                    {""}
-                  </button>
-                  {priorityOpen ? (
-                    <div className="work-item-menu" role="menu">
-                      {WORK_ITEM_PRIORITIES.map((itemPriority) => (
-                        <button
-                          key={itemPriority}
-                          type="button"
-                          className="work-item-stamp-option"
-                          onClick={() => {
-                            setPriorityOpen(false);
-                            onPriorityChange?.(itemPriority);
-                          }}
-                        >
-                          {WORK_ITEM_PRIORITY_LABELS[itemPriority]}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </Fact>
-            )}
-
-            {status === "blocked" ? (
-            <Fact label="Blocked by">
-              <div style={{ position: "relative" }}>
-                <button
-                  type="button"
-                  className={blockedBy ? "work-item-fact-button" : "work-item-fact-button work-item-fact-muted"}
-                  data-testid="work-item-blocked-by"
-                  onClick={() => setBlockedOpen((open) => !open)}
-                >
-                  {blockedBy?.kind === "waiting-on-you"
-                    ? WAITING_ON_YOU
-                    : blockedBy?.kind === "item"
-                      ? blockedBy.identifier
-                      : "—"}
-                </button>
-                {blockedOpen ? (
-                  <div className="work-item-menu" role="menu">
-                    <button
-                      type="button"
-                      className="work-item-stamp-option"
-                      onClick={() => {
-                        setBlockedOpen(false);
-                        onBlockedByChange?.(null);
-                      }}
-                    >
-                      —
-                    </button>
-                    <button
-                      type="button"
-                      className="work-item-stamp-option"
-                      onClick={() => {
-                        setBlockedOpen(false);
-                        onBlockedByChange?.({ kind: "waiting-on-you" });
-                      }}
-                    >
-                      {WAITING_ON_YOU}
-                    </button>
-                    {blockerOptions.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className="work-item-stamp-option"
-                        onClick={() => {
-                          setBlockedOpen(false);
-                          onBlockedByChange?.({
-                            kind: "item",
-                            id: option.id,
-                            identifier: option.identifier,
-                          });
-                        }}
-                      >
-                        {option.identifier}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </Fact>
-            ) : null}
-
-            {projectCount > 1 && projectName ? (
-              <Fact label="Project">
-                <span className="work-item-fact-value">{projectName}</span>
-              </Fact>
-            ) : null}
-
-            <Fact label="Created">
-              <span className="work-item-fact-value work-item-fact-muted" title={formatDateTime(createdAt)}>
-                {relativeTime(createdAt)}
-              </span>
-            </Fact>
-
-            <Fact label="Closed">
-              <span className="work-item-fact-value work-item-fact-muted">
-                {closedAt ? relativeTime(closedAt) : "—"}
-              </span>
-            </Fact>
-
-            <Fact label="Token usage">
-              <span className="work-item-fact-value work-item-fact-mono">{tokenUsage}</span>
-            </Fact>
-
-            <Fact label="Token cost">
-              <span className="work-item-fact-value work-item-fact-mono" data-testid="work-item-token-cost">{tokenCost}</span>
-            </Fact>
-
-            {plan && (
-              <Fact label="Plan" testId="work-item-plan-fact">
-                <span className="work-item-fact-value">
-                  {plan.features.length} {plan.features.length === 1 ? "feature" : "features"} · {plan.tasks.length}{" "}
-                  {plan.tasks.length === 1 ? "task" : "tasks"}
-                </span>
-              </Fact>
-            )}
-
-            <Fact label="Bolt">
-              <span className="work-item-bolt" data-testid="work-item-bolt">{BOLT_VALUE}</span>
-            </Fact>
-          </aside>
         </div>
       </div>
 
@@ -757,20 +658,16 @@ export function WorkItemView(props: WorkItemViewProps) {
                 type="button"
                 className="work-item-plan-approve"
                 data-testid="work-item-plan-approve"
-                disabled={droppedPlanTasks.size >= plan.tasks.length}
-                onClick={() => onPlanApprove?.(plan.tasks.filter((task) => !droppedPlanTasks.has(task.id)).map((task) => task.id))}
+                disabled={keptPlanTasks.length === 0}
+                onClick={() => runTurnAction("approve")}
               >
-                Approve {plan.tasks.length - droppedPlanTasks.size} of {plan.tasks.length}
+                {planApproveLabel(keptPlanTasks.length, planTaskCount)}
               </button>
               <button
                 type="button"
                 className="work-item-plan-changes"
                 data-testid="work-item-plan-changes"
-                onClick={() => {
-                  onPlanChanges?.();
-                  setComment((prev) => prev.trim() ? prev : "Please change the plan: ");
-                  composerRef.current?.focus();
-                }}
+                onClick={askForPlanChanges}
               >
                 Ask for changes
               </button>
@@ -838,9 +735,11 @@ export function WorkItemView(props: WorkItemViewProps) {
           </section>
         )}
 
+        {/* The turn bar already says who is writing. This line adds only the
+            part it does not carry, where the person is waiting for it. */}
         {agentWorking && (
           <p className="work-item-working" data-testid="work-item-working">
-            {assigneeLabel ?? "The agent"} is writing a reply. The first one after a pause can take a minute while the model loads.
+            The first reply after a pause can take a minute while the model loads.
           </p>
         )}
 
@@ -922,5 +821,3 @@ export function WorkItemView(props: WorkItemViewProps) {
     </div>
   );
 }
-
-export { displayPriority };

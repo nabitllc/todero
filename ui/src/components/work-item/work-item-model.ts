@@ -36,14 +36,6 @@ export const WORK_ITEM_STATUS_LABELS: Record<WorkItemStatus, string> = {
 export const WORK_ITEM_PRIORITIES = ["critical", "high", "medium", "low", "none"] as const;
 export type WorkItemPriority = (typeof WORK_ITEM_PRIORITIES)[number];
 
-export const WORK_ITEM_PRIORITY_LABELS: Record<WorkItemPriority, string> = {
-  critical: "Critical",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
-  none: "None",
-};
-
 export const WORK_ITEM_SECTION_TITLES = [
   "Acceptance Criteria",
   "In Scope",
@@ -53,7 +45,6 @@ export const WORK_ITEM_SECTION_TITLES = [
 export type WorkItemSectionTitle = (typeof WORK_ITEM_SECTION_TITLES)[number];
 
 export const COMPOSER_PLACEHOLDER = "Comment, or @ an agent";
-export const BOLT_VALUE = "Coming";
 export const EMPTY_BODY_PLACEHOLDER = "What is the work?";
 export const EMPTY_ACTIVITY = "No activity yet.";
 export const TITLE_PLACEHOLDER = "Short title";
@@ -298,13 +289,6 @@ export function commitWorkItemStatus(args: {
     return { ok: false, reason: "blocked-by", caption: "Blocked by is required." };
   }
   return { ok: true, apiStatus: apiStatusFor(args.status) };
-}
-
-export function blockedChipLabel(blockedBy: WorkItemBlockedBy | null, blockerCount = 1): string | null {
-  if (!blockedBy) return null;
-  if (blockedBy.kind === "waiting-on-you") return `Blocked · ${WAITING_ON_YOU}`;
-  if (blockerCount > 1) return `Blocked · ${blockerCount} tasks`;
-  return `Blocked · ${blockedBy.identifier}`;
 }
 
 export function buildTrail(args: {

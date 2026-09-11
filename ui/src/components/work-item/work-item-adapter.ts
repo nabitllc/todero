@@ -1,16 +1,12 @@
-import type { ActivityEvent, Agent, Issue, IssueComment, IssueCostSummary, IssueWorkMode } from "@todero/shared";
+import type { ActivityEvent, Agent, Issue, IssueComment, IssueWorkMode } from "@todero/shared";
 import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@todero/shared";
 import { createIssueDetailPath } from "@/lib/issueDetailBreadcrumb";
 import { relativeTime } from "@/lib/utils";
 import type { WorkItemActivityItem, WorkItemBlockedBy, WorkItemType } from "./work-item-model";
 import {
   buildTrail,
-  closedValue,
   defaultWorkItemType,
-  displayPriority,
   displayStatus,
-  formatTokenCost,
-  formatTokenUsage,
   parseWorkItemDescription,
   resolveBlockedBy,
   serializeWorkItemDescription,
@@ -142,8 +138,6 @@ export function toWorkItemViewProps(args: {
   activity: ActivityEvent[];
   agentMap: Map<string, Agent>;
   userLabelMap: ReadonlyMap<string, string> | null;
-  projects: Array<{ id: string; name: string }>;
-  costSummary?: IssueCostSummary | null;
   workMode?: IssueWorkMode;
 }): Omit<
   WorkItemViewProps,
@@ -151,9 +145,6 @@ export function toWorkItemViewProps(args: {
   | "onTitleSave"
   | "onBodySave"
   | "onStatusChange"
-  | "onPriorityChange"
-  | "onAssigneeChange"
-  | "onBlockedByChange"
   | "onComment"
   | "onAttach"
   | "onWorkModeChange"
@@ -195,6 +186,9 @@ export function toWorkItemViewProps(args: {
     bodyEditable: !firstTask,
     reviewPending: parsed.reviewPending,
     planPending: parsed.planPending,
+    // The agent asked something and is waiting: the turn bar says so and offers
+    // the composer. It is the same marker the blocker resolver reads.
+    waitingOnYou: parsed.waitingOnYou,
     blockerCount: (issue.blockedBy ?? []).length,
     // The onboarding conversation is the Brief for the whole thing; its type is
     // not a choice, so the stamp on it does not open.
@@ -203,16 +197,9 @@ export function toWorkItemViewProps(args: {
     checklist: parsed.checklist,
     trail,
     status,
-    priority: displayPriority(issue.priority),
     assigneeId,
     assigneeLabel,
     blockedBy,
-    projectName: issue.project?.name ?? args.projects.find((project) => project.id === issue.projectId)?.name ?? null,
-    projectCount: args.projects.length,
-    createdAt: issue.createdAt,
-    closedAt: closedValue(issue),
-    tokenUsage: formatTokenUsage(args.costSummary),
-    tokenCost: formatTokenCost(args.costSummary?.costCents),
     staleStatusCaption: staleAgentStatusCaption({
       status,
       agentName: agentName(lastAgent?.authorAgentId ?? lastAgent?.derivedAuthorAgentId ?? issue.assigneeAgentId, args.agentMap),
@@ -224,12 +211,7 @@ export function toWorkItemViewProps(args: {
       agentMap: args.agentMap,
       userLabelMap: args.userLabelMap,
     }),
-    assigneeOptions: agents.map((agent) => ({ id: agent.id, label: agent.name })),
     agentOptions: agents.map((agent) => ({ id: agent.id, name: agent.name })),
-    blockerOptions: (issue.blockedBy ?? []).map((blocker) => ({
-      id: blocker.id,
-      identifier: blocker.identifier ?? blocker.id,
-    })),
     workMode: args.workMode ?? issue.workMode ?? "standard",
   };
 }

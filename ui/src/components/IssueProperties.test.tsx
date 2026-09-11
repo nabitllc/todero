@@ -956,10 +956,21 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("passes blocker attention to the sidebar status icon", async () => {
+  it("puts blocker attention on the status row without contradicting its label", async () => {
     const root = renderProperties(container, {
       issue: createIssue({
         status: "blocked",
+        blockedBy: [
+          {
+            id: "issue-2",
+            identifier: "PAP-2",
+            title: "Blocker",
+            status: "in_progress",
+            priority: "medium",
+            assigneeAgentId: null,
+            assigneeUserId: null,
+          },
+        ],
         blockerAttention: {
           state: "covered",
           reason: "active_child",
@@ -976,7 +987,51 @@ describe("IssueProperties", () => {
     });
     await flush();
 
-    expect(container.querySelector('[data-status-icon-state="covered"]')?.textContent).toBe("blocked");
+    const trigger = container.querySelector('[data-testid="panel-status-trigger"]');
+    // A task held behind another reads Queued, exactly as the card's chip does,
+    // and the reason rides on the hover line rather than fighting the label.
+    expect(trigger?.textContent).toBe("Queued");
+    expect(trigger?.getAttribute("title")).toBe("Queued · waiting on active sub-task PAP-2");
+
+    act(() => root.unmount());
+  });
+
+  it("speaks the card's status vocabulary, never the raw backlog", async () => {
+    const root = renderProperties(container, {
+      issue: createIssue({ status: "backlog", assigneeAgentId: null, assigneeUserId: null }),
+      childIssues: [],
+      onUpdate: vi.fn(),
+    });
+    await flush();
+
+    expect(container.querySelector('[data-testid="panel-status-trigger"]')?.textContent).toBe("New");
+    expect(container.textContent).not.toContain("Backlog");
+
+    act(() => root.unmount());
+  });
+
+  it("groups the panel the way the task view expects", async () => {
+    const root = renderProperties(container, {
+      issue: createIssue({}),
+      childIssues: [],
+      onUpdate: vi.fn(),
+      inline: true,
+    });
+    await flush();
+
+    const text = container.textContent ?? "";
+    for (const group of ["Pinned", "Relationships", "Cost and time", "Review", "About"]) {
+      expect(text).toContain(group);
+    }
+    expect(text).not.toContain("Triage");
+    // Token usage and cost live here now that the card carries no facts column.
+    expect(container.querySelector('[data-property-label="Token usage"]')).not.toBeNull();
+    expect(container.querySelector('[data-property-label="Token cost"]')).not.toBeNull();
+    expect(container.querySelector('[data-property-label="Closed"]')).not.toBeNull();
+    expect(container.querySelector('[data-property-label="Created"]')).not.toBeNull();
+    expect(container.querySelector('[data-property-label="Updated"]')).not.toBeNull();
+    // Nothing was measured, so the rows say None rather than a dash or $0.00.
+    expect(container.querySelector('[data-testid="panel-token-cost"]')?.textContent).toBe("None");
 
     act(() => root.unmount());
   });
@@ -1597,7 +1652,8 @@ describe("IssueProperties", () => {
 
     expect(container.textContent).toMatch(/CreatedApr 6, 2026, \d{1,2}:34 (AM|PM)/);
     expect(container.textContent).toMatch(/StartedApr 6, 2026, \d{1,2}:35 (AM|PM)/);
-    expect(container.textContent).toMatch(/CompletedApr 6, 2026, \d{1,2}:36 (AM|PM)/);
+    // "Closed" is the one word for done-or-cancelled, in the Cost and time group.
+    expect(container.textContent).toMatch(/ClosedApr 6, 2026, \d{1,2}:36 (AM|PM)/);
 
     act(() => root.unmount());
   });
