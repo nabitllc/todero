@@ -1,0 +1,22 @@
+{
+  "name": "todero gauntlet",
+  "surface": "The server's HTTP routes under /api (server/src/routes/), the CLI, and the check scripts under scripts/. The live loop on Ollama is driven through those routes (checks/live-loop.py). Anything reachable only by clicking the UI is a judge question, not a check.",
+  "windows_note": "pnpm typecheck and pnpm test do not run on this machine (workspace symlink restriction, see docs/ai_context/session_gates.md); the typecheck and unit checks below run the per-package commands that do. The full commands run in CI on every PR with the full-ci label.",
+  "checks": [
+    { "id": "smoke", "cmd": "node checks/pnpm-run.mjs check:node-version check:no-git-push", "timeout": 120 },
+    { "id": "tokens", "cmd": "node checks/pnpm-run.mjs check:tokens check:token-gates", "timeout": 120 },
+    { "id": "typecheck", "cmd": "node checks/tsc.mjs packages/shared server ui", "timeout": 600 },
+    { "id": "unit_shared", "cmd": "node checks/vitest.mjs packages/shared", "timeout": 600 },
+    { "id": "unit_ui", "cmd": "node checks/vitest.mjs ui", "timeout": 900 },
+    { "id": "unit_server_core", "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts", "timeout": 1200 },
+    { "id": "file_size_caps", "cmd": "node checks/file-size-caps.mjs", "timeout": 120 },
+    { "id": "live_loop_ollama", "cmd": "python checks/live-loop.py", "timeout": 1200 },
+    { "id": "item0_local_model_timeout", "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts", "timeout": 600 },
+    { "id": "item0_recovery_copy", "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts", "timeout": 600 },
+    { "id": "item1_skill_rows", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx", "timeout": 600 },
+    { "id": "item2_wizard_window", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts", "timeout": 600 },
+    { "id": "item3_board_reorder", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts", "timeout": 600 },
+    { "id": "item4_send_back_one_call", "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts", "timeout": 900 },
+    { "id": "item5_task_drain_stable", "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts", "timeout": 1500 }
+  ]
+}
