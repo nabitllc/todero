@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  conversationTurnRole,
   descriptionWithWaitingMarker,
   isConversationalHttpAgent,
   planConversationDisposition,
@@ -74,5 +75,27 @@ describe("conversation disposition", () => {
     expect(
       planConversationDisposition({ issue: { status: "done", description: null }, disposition: "done" }),
     ).toBeNull();
+  });
+});
+
+describe("conversationTurnRole", () => {
+  const fromAgent = (id: string) => ({ authorType: "agent", authorAgentId: id, derivedAuthorAgentId: null });
+  const fromPerson = { authorType: "user", authorAgentId: null, derivedAuthorAgentId: null };
+
+  it("reads a person's comment as the other side of the conversation", () => {
+    expect(conversationTurnRole(fromPerson, "agent-1")).toBe("user");
+  });
+
+  it("reads the agent's own comments as its own turns", () => {
+    expect(conversationTurnRole(fromAgent("agent-1"), "agent-1")).toBe("agent");
+  });
+
+  it("reads another agent — the reviewer — as somebody talking to it", () => {
+    expect(conversationTurnRole(fromAgent("judge-1"), "agent-1")).toBe("user");
+  });
+
+  it("keeps the single-agent reading when there is no reader", () => {
+    expect(conversationTurnRole(fromAgent("judge-1"))).toBe("agent");
+    expect(conversationTurnRole(fromPerson)).toBe("user");
   });
 });

@@ -19,6 +19,10 @@ export const interactionResolverGovernanceSchema = z.object({
   request_confirmation: interactionResolverKindGovernanceSchema.optional(),
   request_checkbox_confirmation: interactionResolverKindGovernanceSchema.optional(),
   request_item_verdicts: interactionResolverKindGovernanceSchema.optional(),
+  // The zero-human switch: accept a task for the person when the reviewer
+  // passes it. Absent means off, so a company that has never opened the
+  // setting keeps accepting finished work itself.
+  autoAcceptWhenJudgePasses: z.boolean().optional(),
 }).strict().default({});
 
 export const createCompanySchema = z.object({

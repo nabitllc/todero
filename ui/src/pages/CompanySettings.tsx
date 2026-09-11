@@ -87,6 +87,14 @@ export function CompanySettings() {
     }
   });
 
+  // The zero-human switch rides along in the same settings object as the
+  // interaction governance, so it saves through the same mutation.
+  function handleAutoAcceptChange(next: boolean) {
+    const nextGovernance = { ...governance, autoAcceptWhenJudgePasses: next };
+    setGovernance(nextGovernance);
+    governanceMutation.mutate(nextGovernance);
+  }
+
   function handleGovernanceChange(
     kind: IssueThreadInteractionKind,
     field: GovernanceField,
@@ -314,6 +322,22 @@ export function CompanySettings() {
             checked={!!selectedCompany.requireBoardApprovalForNewAgents}
             onChange={(v) => settingsMutation.mutate(v)}
             toggleTestId="company-settings-team-approval-toggle"
+          />
+        </div>
+      </div>
+
+      {/* Finished work */}
+      <div className="max-w-2xl space-y-4" data-testid="company-settings-review-section">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Finished work
+        </div>
+        <div>
+          <ToggleField
+            label="Accept finished tasks for me"
+            hint="A second agent reads every finished task against what it was asked for. Turn this on and a task it passes is closed for you and the next one starts. Left off, every finished task waits for you to accept it."
+            checked={governance.autoAcceptWhenJudgePasses === true}
+            onChange={handleAutoAcceptChange}
+            toggleTestId="company-settings-auto-accept-toggle"
           />
         </div>
       </div>

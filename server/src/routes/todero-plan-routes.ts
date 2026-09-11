@@ -6,10 +6,12 @@ import {
   type ToderoPlan,
   type ToderoPlanTask,
 } from "@todero/shared";
+import { agentService } from "../services/agents.js";
 import { documentService } from "../services/documents.js";
 import { FEATURE_GOAL_LEVEL, GOAL_STATUS_ACTIVE } from "../services/goal-completion.js";
 import { goalService } from "../services/goals.js";
 import { issueService } from "../services/issues.js";
+import { logger } from "../middleware/logger.js";
 import {
   queueIssueAssignmentWakeup,
   type IssueAssignmentWakeupDeps,
@@ -19,6 +21,7 @@ import {
   descriptionWithWaitingMarker,
 } from "../todero/conversation-thread.js";
 import { descriptionWithPlanMarker } from "../todero/conversation-outcome.js";
+import { ensureJudgeAgentForLead } from "../todero/judge-agent.js";
 
 /**
  * The tasks the person kept, in plan order. An empty or missing `keep` means
@@ -103,6 +106,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
   const issuesSvc = issueService(db);
   const documentsSvc = documentService(db);
   const goalsSvc = goalService(db);
+  const agentsSvc = agentService(db);
 
   router.post("/issues/:id/plan/approve", async (req, res) => {
     if (req.actor.type !== "board") {
@@ -163,6 +167,24 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       });
       featureGoals.push({ id: goal.id, title: goal.title });
       for (const taskId of draft.taskIds) goalIdByTaskId.set(taskId, goal.id);
+    }
+
+    // The first approved plan in a company is also when its reviewer is
+    // hired: a second agent on the same local model that reads finished work
+    // before it reaches the person. A failure here never blocks the approval.
+    try {
+      const lead = await agentsSvc.getById(issue.assigneeAgentId);
+      if (lead) {
+        await ensureJudgeAgentForLead(db, agentsSvc, {
+          id: lead.id,
+          companyId: lead.companyId,
+          name: lead.name,
+          adapterType: lead.adapterType,
+          adapterConfig: lead.adapterConfig,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to hire the reviewer on plan approval");
     }
 
     const children: Array<{ id: string; identifier: string | null; title: string; status: string }> = [];

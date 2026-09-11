@@ -127,9 +127,15 @@ import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
+  descriptionWithoutConversationMarkers,
   loadPlanChildren,
   planConversationOutcome,
+  planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
+import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
+import { reviewConversationHandIn } from "../todero/judge-review.js";
+import { applyJudgeReview } from "../todero/judge-apply.js";
+import { enqueueWakesForClosedIssue } from "./issue-closed-wakeups.js";
 import { documentService } from "./documents.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -187,7 +193,10 @@ import { authorizationService, type AuthorizationActor } from "./authorization.j
 import { createToolGatewayService } from "./tool-gateway.js";
 import { toolAccessService } from "./tool-access.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
-import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
+import {
+  ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+  findExistingIssueBlockersResolvedWakeForReadyState,
+} from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
   buildIssueMonitorTriggeredPatch,
@@ -14821,6 +14830,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       context.toderoThread = await loadConversationThread(db, {
         companyId: agent.companyId,
         issueId: issueRef.id,
+        // The reviewer's comments are somebody else talking to this agent.
+        readerAgentId: agent.id,
       });
       // Its standing brief, since the http adapter never reads AGENTS.md.
       context.toderoIdentity = await loadConversationIdentity(db, {
@@ -17171,7 +17182,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           try {
             const currentIssue = await issuesSvc.getById(issueId);
             const conversationRunWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
-            const plan = currentIssue
+            const handIn = currentIssue
               ? planConversationOutcome({
                   issue: currentIssue,
                   disposition: conversationDisposition,
@@ -17181,25 +17192,91 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                     conversationRunWakeReason === "issue_children_completed",
                 })
               : null;
-            if (plan) {
-              // A child task's deliverable is kept as its Output document so
-              // it can be opened, not only read back in the thread.
-              if (plan.outcome === "review") {
-                const output = readNonEmptyString(parseObject(persistedResultJson).summary);
-                if (output) {
-                  await documentService(db).upsertIssueDocument({
-                    issueId,
-                    key: CONVERSATION_OUTPUT_DOCUMENT_KEY,
-                    title: "Output",
-                    format: "markdown",
-                    body: output,
-                    changeSummary: "Handed in by the agent.",
-                    createdByAgentId: agent.id,
-                    createdByRunId: livenessRun.id,
-                    lockedDocumentStrategy: "conflict",
-                  });
-                }
+            // A child task's deliverable is kept as its Output document so it
+            // can be opened, not only read back in the thread.
+            const deliverable = readNonEmptyString(parseObject(persistedResultJson).summary) ?? "";
+            if (handIn?.outcome === "review" && deliverable) {
+              await documentService(db).upsertIssueDocument({
+                issueId,
+                key: CONVERSATION_OUTPUT_DOCUMENT_KEY,
+                title: "Output",
+                format: "markdown",
+                body: deliverable,
+                changeSummary: "Handed in by the agent.",
+                createdByAgentId: agent.id,
+                createdByRunId: livenessRun.id,
+                lockedDocumentStrategy: "conflict",
+              });
+            }
+            // Wave E: a hand-in goes past the reviewer before it reaches the
+            // person. The reviewer is another agent on the same local model;
+            // when the company has none, or it cannot answer, the review gate
+            // stands exactly where Wave C put it.
+            let plan = handIn;
+            let acceptedByReviewer = false;
+            if (currentIssue && handIn?.outcome === "review") {
+              try {
+                const [companyRow] = await db
+                  .select({
+                    name: companies.name,
+                    interactionResolverGovernance: companies.interactionResolverGovernance,
+                  })
+                  .from(companies)
+                  .where(eq(companies.id, currentIssue.companyId))
+                  .limit(1);
+                const review = await reviewConversationHandIn(db, {
+                  issue: {
+                    id: currentIssue.id,
+                    companyId: currentIssue.companyId,
+                    title: currentIssue.title,
+                    description: currentIssue.description,
+                    parentId: currentIssue.parentId,
+                  },
+                  deliverable,
+                  leadAgentId: agent.id,
+                  companyName: companyRow?.name ?? null,
+                  autoAcceptWhenJudgePasses: readAutoAcceptWhenJudgePasses(
+                    companyRow?.interactionResolverGovernance ?? {},
+                  ),
+                });
+                const applied = await applyJudgeReview(
+                  {
+                    addComment: (id, body, judgeAgentId) => issuesSvc.addComment(id, body, { agentId: judgeAgentId }),
+                    updateIssue: (id, patch) => issuesSvc.update(id, { ...patch, actorAgentId: agent.id }),
+                    wakeAgent: ({ issueId: wakeIssueId, agentId: wakeAgentId }) =>
+                      enqueueWakeup(wakeAgentId, {
+                        source: "assignment",
+                        triggerDetail: "system",
+                        reason: "issue_judge_revision",
+                        payload: { issueId: wakeIssueId, mutation: "update" },
+                        requestedByActorType: "agent",
+                        requestedByActorId: agent.id,
+                        contextSnapshot: { issueId: wakeIssueId, source: "issue.judge_review" },
+                      }).catch(() => null),
+                    log: (message) => {
+                      void onLog("stdout", message);
+                    },
+                  },
+                  {
+                    issue: {
+                      id: currentIssue.id,
+                      description: descriptionWithoutConversationMarkers(currentIssue.description),
+                    },
+                    assigneeAgentId: currentIssue.assigneeAgentId ?? agent.id,
+                    review,
+                  },
+                );
+                plan = planReviewedOutcome(handIn, applied);
+                acceptedByReviewer = applied === "accept";
+              } catch (reviewErr) {
+                await onLog(
+                  "stderr",
+                  `[todero] The reviewer could not read this one: ${reviewErr instanceof Error ? reviewErr.message : String(reviewErr)}\n`,
+                );
+                plan = handIn;
               }
+            }
+            if (plan) {
               await issuesSvc.update(issueId, {
                 status: plan.status,
                 description: plan.description,
@@ -17208,11 +17285,43 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               await onLog(
                 "stdout",
                 plan.outcome === "done"
-                  ? "[todero] Marked the task done.\n"
+                  ? acceptedByReviewer
+                    ? "[todero] The reviewer accepted it; the task is closed.\n"
+                    : "[todero] Marked the task done.\n"
                   : plan.outcome === "review"
                     ? "[todero] Handed in the output for the user to accept.\n"
                     : "[todero] Handed the turn back to the user.\n",
               );
+              // Closing a task through the API wakes whatever was queued behind
+              // it and, once it was the last one, the parent for its wrap-up.
+              // The reviewer's Accept never goes through that route, so the two
+              // wakes are raised here instead.
+              if (acceptedByReviewer && currentIssue) {
+                await enqueueWakesForClosedIssue(
+                  {
+                    listWakeableBlockedDependents: (blockerIssueId) =>
+                      issuesSvc.listWakeableBlockedDependents(blockerIssueId),
+                    getWakeableParentAfterChildCompletion: (parentIssueId) =>
+                      issuesSvc.getWakeableParentAfterChildCompletion(parentIssueId),
+                    enqueueWakeup: (wakeAgentId, wakeup) => enqueueWakeup(wakeAgentId, wakeup),
+                    hasPendingDependencyWake: async (readyState) =>
+                      Boolean(await findExistingIssueBlockersResolvedWakeForReadyState(db, readyState)),
+                    log: (message) => {
+                      void onLog("stdout", message);
+                    },
+                  },
+                  {
+                    issue: {
+                      id: currentIssue.id,
+                      companyId: currentIssue.companyId,
+                      parentId: currentIssue.parentId ?? null,
+                    },
+                    source: "issue.judge_accepted",
+                    requestedByActorType: "agent",
+                    requestedByActorId: agent.id,
+                  },
+                );
+              }
             }
           } catch (err) {
             await onLog(
