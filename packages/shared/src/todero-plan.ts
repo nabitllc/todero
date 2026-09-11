@@ -251,8 +251,25 @@ function parsePlanInner(inner: string): ToderoPlan | null {
     .slice(0, TODERO_PLAN_MAX_TASKS)
     .map((task, index) => ({ ...task, id: `t${index + 1}` }));
 
-  if (!goal.trim() || cleanTasks.length === 0) return null;
-  return { goal: goal.trim(), features: cleanFeatures, tasks: cleanTasks };
+  if (!goal.trim()) return null;
+  // A smaller model sometimes writes the features and stops before the tasks
+  // (the wave-2 live loop did, twice in a row). The plan is still a plan: one
+  // task per feature, handing in what the feature's done_when asks for. Dropping
+  // it instead posted "Do you approve this plan?" with nothing to approve.
+  const plannedTasks = cleanTasks.length > 0 ? cleanTasks : tasksFromFeatures(cleanFeatures);
+  if (plannedTasks.length === 0) return null;
+  return { goal: goal.trim(), features: cleanFeatures, tasks: plannedTasks };
+}
+
+/** One task per feature, for a plan that named its features but no tasks. */
+function tasksFromFeatures(features: ToderoPlanFeature[]): ToderoPlanTask[] {
+  return features.slice(0, TODERO_PLAN_MAX_TASKS).map((feature, index) => ({
+    id: `t${index + 1}`,
+    title: feature.name,
+    feature: feature.name,
+    output: feature.doneWhen,
+    after: "",
+  }));
 }
 
 /**

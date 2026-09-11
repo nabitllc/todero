@@ -5,7 +5,7 @@
 // not-yet-built item's check should do.
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { REPO_ROOT, run, vitestBin } from "./_lib.mjs";
+import { REPO_ROOT, runCaptured, vitestBin } from "./_lib.mjs";
 
 // --gauntlet runs through the package's vitest.gauntlet.config.ts, the only
 // config that includes the *.gauntlet.ts(x) item checks.
@@ -23,4 +23,12 @@ if (missing.length > 0) {
   process.exit(1);
 }
 console.log(`[gauntlet] vitest in ${pkg}${targets.length ? ": " + targets.join(" ") : " (whole package)"}`);
-process.exit(run(process.execPath, [vitestBin(), "run", ...configArgs, ...targets, "--reporter=dot"], pkg));
+const { status, output } = runCaptured(process.execPath, [vitestBin(), "run", ...configArgs, ...targets, "--reporter=dot"], pkg);
+// The runner keeps only the last few hundred characters of a check's output,
+// so end with the names of what failed rather than the last stack trace.
+const failed = [...new Set(output.split(/\r?\n/).filter((line) => /^\s*FAIL\s/.test(line)).map((line) => line.trim()))];
+if (failed.length > 0) {
+  console.log(`[gauntlet] ${failed.length} failed:`);
+  for (const line of failed) console.log(`  ${line}`);
+}
+process.exit(status);
