@@ -86,7 +86,12 @@ import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { FrontDoor } from "./FrontDoor";
 import { SecondBrainPicker } from "./todero/SecondBrainPicker";
 import { LocalLlmPicker, type LocalLlmSelection } from "./todero/LocalLlmPicker";
-import { toderoLocalLlmApi, localLlmSelectionIsConnected, type LocalLlmRuntime } from "../api/local-llm";
+import {
+  toderoLocalLlmApi,
+  localLlmSelectionIsConnected,
+  localLlmSelectionParallelism,
+  type LocalLlmRuntime,
+} from "../api/local-llm";
 import { PillGuy } from "./onboarding/PillGuy";
 import { AGENT_ARC_WIZARD_STEPS, Stepper, agentArcStepFor } from "./onboarding/Stepper";
 import { AgentPreview } from "./onboarding/AgentPreview";
@@ -1480,6 +1485,9 @@ function OnboardingWizardInner({
     hiringAgentRef.current = true;
     setLoading(true);
     setError(null);
+    // How many threads this machine can serve at once, as detect reports it.
+    // One is the safe answer when nothing says otherwise.
+    let localLlmParallelism = 1;
     try {
       if (connectKind === "local_llm") {
         if (!localLlmSelection) {
@@ -1487,6 +1495,10 @@ function OnboardingWizardInner({
           return;
         }
         const detected = await toderoLocalLlmApi.detect();
+        localLlmParallelism = localLlmSelectionParallelism({
+          runtimes: detected.runtimes,
+          runtimeId: localLlmSelection.runtimeId,
+        });
         if (!localLlmSelectionIsConnected({
           runtimes: detected.runtimes,
           runtimeId: localLlmSelection.runtimeId,
@@ -1646,6 +1658,7 @@ function OnboardingWizardInner({
         ...(shouldApplyStoredClaudeLogin ? { applyStoredClaudeLogin: true } : {}),
         runtimeConfig: buildNewAgentRuntimeConfig({
           conversational: connectKind === "local_llm",
+          parallelism: connectKind === "local_llm" ? localLlmParallelism : null,
         }),
         // The heartbeat reads the managed AGENTS.md materialized from this
         // bundle. A later overwrite is not the first work the lead sees.

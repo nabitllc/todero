@@ -7,6 +7,10 @@ import { and, asc, desc, eq, getTableColumns, gt, gte, inArray, isNull, lt, lte,
 import type { Db } from "@todero/db";
 import { applyVaultReadEnv } from "../todero/vault-settings.js";
 import {
+  TIMER_ACTIONABLE_ISSUE_STATUSES,
+  selectActionableTimerWork,
+} from "../todero/timer-work-selection.js";
+import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   CONNECTION_INTENT_AGENT_GUIDANCE,
   CONNECTION_RUNTIME_TOOL_NAMES,
@@ -127,9 +131,18 @@ import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
+  descriptionWithoutConversationMarkers,
   loadPlanChildren,
+  NEXT_PROJECT_DOCUMENT_KEY,
+  parseNextProjectLine,
   planConversationOutcome,
+  planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
+import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
+import { reviewConversationHandIn } from "../todero/judge-review.js";
+import { applyJudgeReview } from "../todero/judge-apply.js";
+import { enqueueWakesForClosedIssue } from "./issue-closed-wakeups.js";
+import { resolveToderoTaskKind } from "../todero/model-routing.js";
 import { documentService } from "./documents.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -187,7 +200,10 @@ import { authorizationService, type AuthorizationActor } from "./authorization.j
 import { createToolGatewayService } from "./tool-gateway.js";
 import { toolAccessService } from "./tool-access.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
-import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
+import {
+  ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+  findExistingIssueBlockersResolvedWakeForReadyState,
+} from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
   buildIssueMonitorTriggeredPatch,
@@ -480,7 +496,10 @@ const EXECUTION_PATH_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_r
 const CANCELLABLE_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 const HEARTBEAT_RUN_TERMINAL_STATUSES = ["succeeded", "interrupted", "failed", "cancelled", "timed_out"] as const;
 const UNSUCCESSFUL_HEARTBEAT_RUN_TERMINAL_STATUSES = ["failed", "cancelled", "timed_out"] as const;
-const TIMER_ACTIONABLE_ISSUE_STATUSES = ["todo", "in_progress"] as const;
+// How many of an agent's open tasks we look at before deciding a timer tick has
+// nothing to do. Wide enough that a real queue fits in one page; when it does
+// not, the check errs towards letting the tick happen.
+const TIMER_ACTIONABLE_CANDIDATE_LIMIT = 200;
 export {
   ACTIVE_RUN_OUTPUT_CONTINUE_REARM_MS,
   ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS,
@@ -12757,8 +12776,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
   }
 
   async function hasActionableTimerWork(agent: typeof agents.$inferSelect) {
-    const row = await db
-      .select({ id: issues.id })
+    const candidateRows = await db
+      .select({ id: issues.id, status: issues.status })
       .from(issues)
       .where(
         and(
@@ -12769,9 +12788,44 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           inArray(issues.status, [...TIMER_ACTIONABLE_ISSUE_STATUSES]),
         ),
       )
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    return Boolean(row);
+      .limit(TIMER_ACTIONABLE_CANDIDATE_LIMIT);
+    if (candidateRows.length === 0) return false;
+
+    // A To do task that still waits on another open task is not work the agent
+    // can start; waking for it burns a run and posts nothing.
+    const candidateIds = candidateRows.map((row) => row.id);
+    const blockerRows = await db
+      .select({ dependentId: issueRelations.relatedIssueId, blockerStatus: issues.status })
+      .from(issueRelations)
+      .innerJoin(issues, eq(issueRelations.issueId, issues.id))
+      .where(
+        and(
+          eq(issueRelations.companyId, agent.companyId),
+          eq(issueRelations.type, "blocks"),
+          inArray(issueRelations.relatedIssueId, candidateIds),
+        ),
+      );
+    const unresolvedByIssueId = new Map<string, number>();
+    for (const row of blockerRows) {
+      if (row.blockerStatus === "done") continue;
+      unresolvedByIssueId.set(row.dependentId, (unresolvedByIssueId.get(row.dependentId) ?? 0) + 1);
+    }
+
+    const actionable =
+      selectActionableTimerWork(
+        candidateRows.map((row) => ({
+          id: row.id,
+          status: row.status,
+          unresolvedBlockerCount: unresolvedByIssueId.get(row.id) ?? 0,
+        })),
+      ) !== null;
+    if (actionable) return true;
+
+    // We only looked at the first page of this agent's open tasks. If every one
+    // of them is waiting, there may still be a task further down that is ready,
+    // so let the tick happen rather than silently skipping real work. Skipping
+    // is only safe when we have seen the whole list.
+    return candidateRows.length >= TIMER_ACTIONABLE_CANDIDATE_LIMIT;
   }
 
   async function markTimerHeartbeatChecked(agentId: string, source: WakeupOptions["source"]) {
@@ -14821,6 +14875,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       context.toderoThread = await loadConversationThread(db, {
         companyId: agent.companyId,
         issueId: issueRef.id,
+        // The reviewer's comments are somebody else talking to this agent.
+        readerAgentId: agent.id,
       });
       // Its standing brief, since the http adapter never reads AGENTS.md.
       context.toderoIdentity = await loadConversationIdentity(db, {
@@ -14840,10 +14896,19 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           context.toderoTurnInstruction = buildPlanSummaryTurnInstruction(planChildren);
         }
       }
+      // Model routing (server/src/todero/model-routing.ts) reads this to pick
+      // a model per turn. See resolveToderoTaskKind for the precedence: a
+      // closing instruction (set just above, when this wake is the wrap-up)
+      // always wins over the parent check.
+      context.toderoTaskKind = resolveToderoTaskKind({
+        turnInstructionPresent: Boolean(readNonEmptyString(context.toderoTurnInstruction)),
+        hasParentIssue: Boolean(issueContext?.parentId),
+      });
     } else {
       delete context.toderoThread;
       delete context.toderoIdentity;
       delete context.toderoTurnInstruction;
+      delete context.toderoTaskKind;
     }
     if (issueRef) {
       context.toderoIssue = {
@@ -17171,7 +17236,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           try {
             const currentIssue = await issuesSvc.getById(issueId);
             const conversationRunWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
-            const plan = currentIssue
+            const handIn = currentIssue
               ? planConversationOutcome({
                   issue: currentIssue,
                   disposition: conversationDisposition,
@@ -17181,25 +17246,91 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                     conversationRunWakeReason === "issue_children_completed",
                 })
               : null;
-            if (plan) {
-              // A child task's deliverable is kept as its Output document so
-              // it can be opened, not only read back in the thread.
-              if (plan.outcome === "review") {
-                const output = readNonEmptyString(parseObject(persistedResultJson).summary);
-                if (output) {
-                  await documentService(db).upsertIssueDocument({
-                    issueId,
-                    key: CONVERSATION_OUTPUT_DOCUMENT_KEY,
-                    title: "Output",
-                    format: "markdown",
-                    body: output,
-                    changeSummary: "Handed in by the agent.",
-                    createdByAgentId: agent.id,
-                    createdByRunId: livenessRun.id,
-                    lockedDocumentStrategy: "conflict",
-                  });
-                }
+            // A child task's deliverable is kept as its Output document so it
+            // can be opened, not only read back in the thread.
+            const deliverable = readNonEmptyString(parseObject(persistedResultJson).summary) ?? "";
+            if (handIn?.outcome === "review" && deliverable) {
+              await documentService(db).upsertIssueDocument({
+                issueId,
+                key: CONVERSATION_OUTPUT_DOCUMENT_KEY,
+                title: "Output",
+                format: "markdown",
+                body: deliverable,
+                changeSummary: "Handed in by the agent.",
+                createdByAgentId: agent.id,
+                createdByRunId: livenessRun.id,
+                lockedDocumentStrategy: "conflict",
+              });
+            }
+            // Wave E: a hand-in goes past the reviewer before it reaches the
+            // person. The reviewer is another agent on the same local model;
+            // when the company has none, or it cannot answer, the review gate
+            // stands exactly where Wave C put it.
+            let plan = handIn;
+            let acceptedByReviewer = false;
+            if (currentIssue && handIn?.outcome === "review") {
+              try {
+                const [companyRow] = await db
+                  .select({
+                    name: companies.name,
+                    interactionResolverGovernance: companies.interactionResolverGovernance,
+                  })
+                  .from(companies)
+                  .where(eq(companies.id, currentIssue.companyId))
+                  .limit(1);
+                const review = await reviewConversationHandIn(db, {
+                  issue: {
+                    id: currentIssue.id,
+                    companyId: currentIssue.companyId,
+                    title: currentIssue.title,
+                    description: currentIssue.description,
+                    parentId: currentIssue.parentId,
+                  },
+                  deliverable,
+                  leadAgentId: agent.id,
+                  companyName: companyRow?.name ?? null,
+                  autoAcceptWhenJudgePasses: readAutoAcceptWhenJudgePasses(
+                    companyRow?.interactionResolverGovernance ?? {},
+                  ),
+                });
+                const applied = await applyJudgeReview(
+                  {
+                    addComment: (id, body, judgeAgentId) => issuesSvc.addComment(id, body, { agentId: judgeAgentId }),
+                    updateIssue: (id, patch) => issuesSvc.update(id, { ...patch, actorAgentId: agent.id }),
+                    wakeAgent: ({ issueId: wakeIssueId, agentId: wakeAgentId }) =>
+                      enqueueWakeup(wakeAgentId, {
+                        source: "assignment",
+                        triggerDetail: "system",
+                        reason: "issue_judge_revision",
+                        payload: { issueId: wakeIssueId, mutation: "update" },
+                        requestedByActorType: "agent",
+                        requestedByActorId: agent.id,
+                        contextSnapshot: { issueId: wakeIssueId, source: "issue.judge_review" },
+                      }).catch(() => null),
+                    log: (message) => {
+                      void onLog("stdout", message);
+                    },
+                  },
+                  {
+                    issue: {
+                      id: currentIssue.id,
+                      description: descriptionWithoutConversationMarkers(currentIssue.description),
+                    },
+                    assigneeAgentId: currentIssue.assigneeAgentId ?? agent.id,
+                    review,
+                  },
+                );
+                plan = planReviewedOutcome(handIn, applied);
+                acceptedByReviewer = applied === "accept";
+              } catch (reviewErr) {
+                await onLog(
+                  "stderr",
+                  `[todero] The reviewer could not read this one: ${reviewErr instanceof Error ? reviewErr.message : String(reviewErr)}\n`,
+                );
+                plan = handIn;
               }
+            }
+            if (plan) {
               await issuesSvc.update(issueId, {
                 status: plan.status,
                 description: plan.description,
@@ -17208,11 +17339,92 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               await onLog(
                 "stdout",
                 plan.outcome === "done"
-                  ? "[todero] Marked the task done.\n"
+                  ? acceptedByReviewer
+                    ? "[todero] The reviewer accepted it; the task is closed.\n"
+                    : "[todero] Marked the task done.\n"
                   : plan.outcome === "review"
                     ? "[todero] Handed in the output for the user to accept.\n"
                     : "[todero] Handed the turn back to the user.\n",
               );
+              // Closing a task through the API wakes whatever was queued behind
+              // it and, once it was the last one, the parent for its wrap-up.
+              // The reviewer's Accept never goes through that route, so the two
+              // wakes are raised here instead.
+              if (acceptedByReviewer && currentIssue) {
+                await enqueueWakesForClosedIssue(
+                  {
+                    listWakeableBlockedDependents: (blockerIssueId) =>
+                      issuesSvc.listWakeableBlockedDependents(blockerIssueId),
+                    getWakeableParentAfterChildCompletion: (parentIssueId) =>
+                      issuesSvc.getWakeableParentAfterChildCompletion(parentIssueId),
+                    enqueueWakeup: (wakeAgentId, wakeup) => enqueueWakeup(wakeAgentId, wakeup),
+                    hasPendingDependencyWake: async (readyState) =>
+                      Boolean(await findExistingIssueBlockersResolvedWakeForReadyState(db, readyState)),
+                    log: (message) => {
+                      void onLog("stdout", message);
+                    },
+                  },
+                  {
+                    issue: {
+                      id: currentIssue.id,
+                      companyId: currentIssue.companyId,
+                      parentId: currentIssue.parentId ?? null,
+                    },
+                    source: "issue.judge_accepted",
+                    requestedByActorType: "agent",
+                    requestedByActorId: agent.id,
+                  },
+                );
+              }
+              // The conversation task is the whole project for a chat-only
+              // agent: `planConversationOutcome` only returns "done" from
+              // "in_progress" with `closeAllowed`, so this fires exactly once,
+              // at the wrap-up. A parentless task (not one of the plan's own
+              // chained children) closing means the project it belongs to is
+              // done too.
+              if (plan.outcome === "done" && currentIssue && !currentIssue.parentId && currentIssue.projectId) {
+                const projectId = currentIssue.projectId;
+                try {
+                  const completedProject = await projectService(db).update(projectId, { status: "completed" });
+                  if (completedProject) {
+                    await issuesSvc.addComment(
+                      issueId,
+                      `Project ${completedProject.name} is complete.`,
+                      { agentId: agent.id, runId: livenessRun.id },
+                    );
+                  }
+                } catch (err) {
+                  await onLog(
+                    "stderr",
+                    `[todero] Failed to complete the project: ${err instanceof Error ? err.message : String(err)}\n`,
+                  );
+                }
+                // The wrap-up reply may end with a `Next:` line naming a
+                // follow-on project (see buildPlanSummaryTurnInstruction);
+                // save it so the work-item view can offer "Start a project".
+                try {
+                  const wrapUpSummary = readNonEmptyString(parseObject(persistedResultJson).summary);
+                  const nextProject = wrapUpSummary ? parseNextProjectLine(wrapUpSummary) : null;
+                  if (nextProject) {
+                    await documentService(db).upsertIssueDocument({
+                      issueId,
+                      key: NEXT_PROJECT_DOCUMENT_KEY,
+                      title: "Next",
+                      format: "markdown",
+                      body: nextProject,
+                      changeSummary: "Proposed by the agent in the wrap-up.",
+                      createdByAgentId: agent.id,
+                      createdByRunId: livenessRun.id,
+                      lockedDocumentStrategy: "conflict",
+                    });
+                  }
+                } catch (err) {
+                  await onLog(
+                    "stderr",
+                    `[todero] Failed to save the next-project note: ${err instanceof Error ? err.message : String(err)}\n`,
+                  );
+                }
+              }
             }
           } catch (err) {
             await onLog(

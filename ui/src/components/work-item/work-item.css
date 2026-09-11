@@ -65,6 +65,13 @@
   flex-shrink: 0;
 }
 
+/* The Brief's stamp is a label, not a control: it reads the same, it just does
+   not invite a click. */
+.work-item-stamp:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .work-item-stamp-menu {
   position: absolute;
   z-index: 20;
@@ -736,4 +743,46 @@
   font-size: 12px;
   color: var(--wi-muted);
   margin: 0 0 var(--wi-space-12);
+}
+
+/* The agent's Next: suggestion, once the project is done */
+.work-item-next-card {
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-input);
+  padding: var(--wi-space-16);
+  margin-bottom: var(--wi-space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-8);
+  max-width: 65ch;
+}
+
+.work-item-next-card-label {
+  font-family: var(--wi-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wi-muted);
+}
+
+.work-item-next-line {
+  font-family: var(--wi-sans);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--wi-fg);
+  margin: 0;
+}
+
+.work-item-next-start {
+  align-self: flex-start;
+  font-family: var(--wi-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: var(--wi-radius-stamp);
+  border: 1px solid var(--wi-mark);
+  background: var(--wi-mark);
+  color: var(--wi-ink);
+  cursor: pointer;
 }

@@ -188,6 +188,7 @@ import {
   buildIssueBlockersResolvedWakeStateKey,
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../services/issue-dependency-wakeups.js";
+import { syncFeatureGoalCompletion } from "../services/goal-completion.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import {
   executionWorkspaceService as executionWorkspaceServiceDirect,
@@ -10555,6 +10556,19 @@ export function issueRoutes(
       requestedByActorId: actor.actorId,
     });
 
+    // A feature goal closes itself when the last task under it is done, and
+    // opens again if one of them comes back. Done here, in the request, so the
+    // Goals page tells the truth the moment the task moves; never let it fail
+    // the change the person or agent actually asked for.
+    if (existing.status !== issue.status) {
+      await syncFeatureGoalCompletion(db, issue.goalId).catch((err) =>
+        logger.warn(
+          { err, issueId: issue.id, goalId: issue.goalId },
+          "failed to update the feature goal after a task status change",
+        ),
+      );
+    }
+
     // Merge all wakeups from this update into one enqueue per agent to avoid duplicate runs.
     void (async () => {
       type WakeupRequest = NonNullable<Parameters<typeof heartbeat.wakeup>[1]>;
@@ -12623,6 +12637,17 @@ export function issueRoutes(
       reopened,
       blockedToTodoRecovery: reopened && reopenFromStatus === "blocked" && currentIssue.status === "todo",
     });
+
+    // Same rule as the status route: the feature goal follows its tasks, and a
+    // comment can move a task (a reopen, a resume) just as a status change can.
+    if (issueBeforeCommentDecision.status !== currentIssue.status) {
+      await syncFeatureGoalCompletion(db, currentIssue.goalId).catch((err) =>
+        logger.warn(
+          { err, issueId: currentIssue.id, goalId: currentIssue.goalId },
+          "failed to update the feature goal after a task status change",
+        ),
+      );
+    }
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
     void (async () => {

@@ -176,6 +176,32 @@ describe("WorkItemView TESA-1", () => {
     );
   });
 
+  it("does not offer Brief as a type a person can pick", async () => {
+    const onTypeChange = vi.fn();
+    await render(fixture({ onTypeChange }));
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-type-stamp"]') as HTMLButtonElement).click();
+    });
+    const offered = [...container.querySelectorAll(".work-item-stamp-option")].map(
+      (node) => node.textContent,
+    );
+    expect(offered).toEqual(["Feature", "Story", "Task", "Bug"]);
+    expect(offered).not.toContain("Brief");
+  });
+
+  it("locks the type on the Brief so it cannot be renamed to a Task", async () => {
+    const onTypeChange = vi.fn();
+    await render(fixture({ type: "Brief", typeEditable: false, onTypeChange }));
+    const stamp = container.querySelector('[data-testid="work-item-type-stamp"]') as HTMLButtonElement;
+    expect(stamp.textContent).toBe("Brief");
+    expect(stamp.disabled).toBe(true);
+    await act(async () => {
+      stamp.click();
+    });
+    expect(container.querySelector(".work-item-stamp-menu")).toBeNull();
+    expect(onTypeChange).not.toHaveBeenCalled();
+  });
+
   it("does not allow Blocked with an empty blocked-by", async () => {
     const onStatusChange = vi.fn();
     await render(fixture({ blockedBy: null, onStatusChange }));
@@ -308,9 +334,15 @@ describe("proposed plan card and tasks", () => {
       { id: "f2", name: "Pick a dinner", why: "The product", doneWhen: "one dinner can be picked" },
     ],
     tasks: [
-      { id: "t1", title: "Write the sign-up spec", feature: "Sign up", output: "A spec" },
-      { id: "t2", title: "List ten restaurants", feature: "Pick a dinner", output: "A table" },
-      { id: "t3", title: "Draft the matching rules", feature: "Pick a dinner", output: "A document" },
+      { id: "t1", title: "Write the sign-up spec", feature: "Sign up", output: "A spec", after: "" },
+      { id: "t2", title: "List ten restaurants", feature: "Pick a dinner", output: "A table", after: "" },
+      {
+        id: "t3",
+        title: "Draft the matching rules",
+        feature: "Pick a dinner",
+        output: "A document",
+        after: "List ten restaurants",
+      },
     ],
   };
 
@@ -421,7 +453,7 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
   });
 
   it("labels the goal and prefills the composer when asking for changes", async () => {
-    const plan = { goal: "Seat neighbors.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "" }] };
+    const plan = { goal: "Seat neighbors.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "", after: "" }] };
     await render(fixture({ plan, planApprovable: true }));
     expect(container.querySelector(".work-item-plan-goal")!.textContent).toContain("Goal");
     await act(async () => {
@@ -434,5 +466,22 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
   it("says the agent is writing while a run is live", async () => {
     await render(fixture({ agentWorking: true, assigneeLabel: "Nova" }));
     expect(container.querySelector('[data-testid="work-item-working"]')!.textContent).toContain("Nova is writing a reply");
+  });
+});
+
+describe("the next-project card", () => {
+  it("offers Start a project only once the task is done and a Next suggestion exists", async () => {
+    await render(fixture({ status: "in_progress", nextProjectSuggestion: "a billing dashboard" }));
+    expect(container.querySelector('[data-testid="work-item-next-card"]')).toBeNull();
+
+    const onStartProject = vi.fn();
+    await render(fixture({ status: "done", nextProjectSuggestion: "a billing dashboard", onStartProject }));
+    const card = container.querySelector('[data-testid="work-item-next-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain("a billing dashboard");
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-next-start"]') as HTMLButtonElement).click();
+    });
+    expect(onStartProject).toHaveBeenCalledWith("a billing dashboard");
   });
 });

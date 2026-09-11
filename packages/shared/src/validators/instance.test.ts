@@ -18,10 +18,14 @@ describe("instance experimental settings validators", () => {
     expect(settings.enableWorkspaceDirtyQuarantineRepair).toBe(true);
   });
 
-  it("defaults the goals sidebar link off", () => {
+  it("defaults the goals sidebar link on, so the setting is an opt-out", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
-    expect(settings.enableGoalsSidebarLink).toBe(false);
+    expect(settings.enableGoalsSidebarLink).toBe(true);
+    expect(
+      instanceExperimentalSettingsSchema.parse({ enableGoalsSidebarLink: false })
+        .enableGoalsSidebarLink,
+    ).toBe(false);
   });
 
   it("defaults the sandbox duplex bridge kill switch off", () => {

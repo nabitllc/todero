@@ -14,11 +14,11 @@ import {
   EMPTY_BODY_PLACEHOLDER,
   TITLE_PLACEHOLDER,
   WAITING_ON_YOU,
+  WORK_ITEM_CHOOSABLE_TYPES,
   WORK_ITEM_PRIORITIES,
   WORK_ITEM_PRIORITY_LABELS,
   WORK_ITEM_STATUS_LABELS,
   WORK_ITEM_STATUSES,
-  WORK_ITEM_TYPES,
   blockedChipLabel,
   commitWorkItemStatus,
   displayPriority,
@@ -47,12 +47,16 @@ export type WorkItemViewProps = {
   body: string;
   /** False on the onboarding first task, whose description is the agent's brief. */
   bodyEditable?: boolean;
+  /** False on the onboarding first task, which is always the Brief. */
+  typeEditable?: boolean;
   /** The plan the agent proposed, parsed from the task's Plan document. */
   plan?: ToderoPlan | null;
   /** True while the plan is waiting for the person: shows the approval card. */
   planApprovable?: boolean;
   /** Child tasks created from the plan, oldest first. */
   tasks?: WorkItemTaskRow[];
+  /** A `Next:` project the agent named in its wrap-up; not offered again once started. */
+  nextProjectSuggestion?: string | null;
   /** The agent handed in its output; show Accept / Send back. */
   reviewPending?: boolean;
   /** The agent proposed a plan and is waiting for a yes. */
@@ -86,6 +90,7 @@ export type WorkItemViewProps = {
   onBodySave?: (body: string) => void;
   onPlanApprove?: (keep: string[]) => void;
   onPlanChanges?: () => void;
+  onStartProject?: (name: string) => void;
   onAccept?: () => void;
   onSendBack?: (note: string) => void;
   onStatusChange?: (status: WorkItemStatus) => void;
@@ -128,9 +133,11 @@ export function WorkItemView(props: WorkItemViewProps) {
     title,
     body,
     bodyEditable = true,
+    typeEditable = true,
     plan = null,
     planApprovable = false,
     tasks = [],
+    nextProjectSuggestion = null,
     reviewPending = false,
     planPending = false,
     blockerCount = 1,
@@ -160,6 +167,7 @@ export function WorkItemView(props: WorkItemViewProps) {
     onBodySave,
     onPlanApprove,
     onPlanChanges,
+    onStartProject,
     onAccept,
     onSendBack,
     onStatusChange,
@@ -259,15 +267,20 @@ export function WorkItemView(props: WorkItemViewProps) {
               type="button"
               className="work-item-stamp"
               data-testid="work-item-type-stamp"
-              aria-haspopup="menu"
-              aria-expanded={typeOpen}
-              onClick={() => setTypeOpen((open) => !open)}
+              aria-haspopup={typeEditable ? "menu" : undefined}
+              aria-expanded={typeEditable ? typeOpen : undefined}
+              disabled={!typeEditable}
+              data-work-item-type-editable={typeEditable ? "true" : "false"}
+              onClick={() => {
+                if (!typeEditable) return;
+                setTypeOpen((open) => !open);
+              }}
             >
               {type}
             </button>
-            {typeOpen ? (
+            {typeEditable && typeOpen ? (
               <div className="work-item-stamp-menu" role="menu">
-                {WORK_ITEM_TYPES.map((itemType) => (
+                {WORK_ITEM_CHOOSABLE_TYPES.map((itemType) => (
                   <button
                     key={itemType}
                     type="button"
@@ -829,6 +842,21 @@ export function WorkItemView(props: WorkItemViewProps) {
           <p className="work-item-working" data-testid="work-item-working">
             {assigneeLabel ?? "The agent"} is writing a reply. The first one after a pause can take a minute while the model loads.
           </p>
+        )}
+
+        {status === "done" && nextProjectSuggestion && (
+          <section className="work-item-next-card" data-testid="work-item-next-card">
+            <span className="work-item-next-card-label">Next</span>
+            <p className="work-item-next-line">{nextProjectSuggestion}</p>
+            <button
+              type="button"
+              className="work-item-next-start"
+              data-testid="work-item-next-start"
+              onClick={() => onStartProject?.(nextProjectSuggestion)}
+            >
+              Start a project
+            </button>
+          </section>
         )}
 
         <form className="work-item-composer" data-testid="work-item-composer" onSubmit={submitComment}>

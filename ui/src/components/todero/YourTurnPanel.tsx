@@ -2,12 +2,16 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Issue } from "@todero/shared";
 import { Link } from "@/lib/router";
+import { ApiError } from "@/api/client";
 import { issuesApi } from "@/api/issues";
+import { projectsApi } from "@/api/projects";
 import { createIssueDetailPath } from "@/lib/issueDetailBreadcrumb";
+import { queryKeys } from "@/lib/queryKeys";
 import { parseWorkItemDescription } from "@/components/work-item/work-item-model";
+import { useDialogActions } from "@/context/DialogContext";
 import { Button } from "../ui/button";
 
-export type YourTurnKind = "plan" | "review" | "question";
+export type YourTurnKind = "plan" | "review" | "question" | "next";
 
 export type YourTurnRow = {
   id: string;
@@ -15,12 +19,15 @@ export type YourTurnRow = {
   title: string;
   kind: YourTurnKind;
   href: string;
+  /** kind "next" only: the follow-on project the agent named. */
+  nextProjectName?: string;
 };
 
 export const YOUR_TURN_LABELS: Record<YourTurnKind, string> = {
   plan: "Plan to approve",
   review: "Output to accept",
   question: "Question to answer",
+  next: "Follow-on project",
 };
 
 /**
@@ -40,9 +47,41 @@ export function yourTurnRows(issues: Issue[]): YourTurnRow[] {
   return rows.sort((left, right) => left.identifier.localeCompare(right.identifier, undefined, { numeric: true }));
 }
 
-function RowActions({ row, onDone }: { row: YourTurnRow; onDone: () => void }) {
+/**
+ * One row per finished conversation task that named a follow-on project in
+ * its wrap-up (the `next` issue document) and has not started one yet.
+ * `entries` pairs a done, parentless task with that document's body.
+ */
+export function nextTurnRows(entries: Array<{ issue: Issue; nextProjectName: string }>): YourTurnRow[] {
+  const rows: YourTurnRow[] = [];
+  for (const { issue, nextProjectName } of entries) {
+    const name = nextProjectName.trim();
+    if (issue.status !== "done" || issue.parentId || !name) continue;
+    const identifier = issue.identifier ?? issue.id;
+    rows.push({
+      id: issue.id,
+      identifier,
+      title: issue.title,
+      kind: "next",
+      href: createIssueDetailPath(identifier),
+      nextProjectName: name,
+    });
+  }
+  return rows.sort((left, right) => left.identifier.localeCompare(right.identifier, undefined, { numeric: true }));
+}
+
+function RowActions({
+  row,
+  companyId,
+  onDone,
+}: {
+  row: YourTurnRow;
+  companyId: string;
+  onDone: () => void;
+}) {
   const [open, setOpen] = useState<"reply" | "sendback" | null>(null);
   const [text, setText] = useState("");
+  const { openNewIssue } = useDialogActions();
   const approve = useMutation({ mutationFn: () => issuesApi.approvePlan(row.id, []), onSuccess: onDone });
   const accept = useMutation({ mutationFn: () => issuesApi.update(row.id, { status: "done" }), onSuccess: onDone });
   const sendBack = useMutation({
@@ -53,7 +92,25 @@ function RowActions({ row, onDone }: { row: YourTurnRow; onDone: () => void }) {
     onSuccess: onDone,
   });
   const reply = useMutation({ mutationFn: (body: string) => issuesApi.addComment(row.id, body), onSuccess: onDone });
-  const busy = approve.isPending || accept.isPending || sendBack.isPending || reply.isPending;
+  const startProject = useMutation({
+    mutationFn: async () => {
+      const name = row.nextProjectName ?? row.title;
+      const project = await projectsApi.create(companyId, { name, status: "in_progress" });
+      // Delete the note so this row does not reappear or offer a second
+      // project from the same suggestion once one has been started.
+      try {
+        await issuesApi.deleteDocument(row.id, "next");
+      } catch {
+        // Best effort — onDone below refreshes the query either way.
+      }
+      return project;
+    },
+    onSuccess: (project) => {
+      onDone();
+      openNewIssue({ projectId: project.id });
+    },
+  });
+  const busy = approve.isPending || accept.isPending || sendBack.isPending || reply.isPending || startProject.isPending;
 
   if (open) {
     const isReply = open === "reply";
@@ -110,6 +167,23 @@ function RowActions({ row, onDone }: { row: YourTurnRow; onDone: () => void }) {
       </div>
     );
   }
+  if (row.kind === "next") {
+    return (
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          disabled={busy}
+          onClick={() => startProject.mutate()}
+          data-testid="your-turn-start-project"
+        >
+          Start a project
+        </Button>
+        <Button size="sm" variant="ghost" asChild>
+          <Link to={row.href}>Open</Link>
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="flex gap-2">
       <Button size="sm" onClick={() => setOpen("reply")} data-testid="your-turn-reply">
@@ -133,10 +207,40 @@ export function YourTurnPanel({ companyId }: { companyId: string }) {
     queryFn: () => issuesApi.list(companyId, { status: "blocked", includeBlockedBy: true }),
     refetchInterval: 10_000,
   });
-  const rows = yourTurnRows(data ?? []);
+  // A finished conversation task may have named a follow-on project in its
+  // wrap-up (the `next` document). There are only ever a handful of these —
+  // one agent works one project at a time — so a small, capped list of done,
+  // parentless tasks is cheap to check individually.
+  const { data: nextCandidates } = useQuery({
+    queryKey: ["issues", companyId, "your-turn-next"],
+    queryFn: async () => {
+      const done = await issuesApi.list(companyId, {
+        status: "done",
+        limit: 20,
+        sortField: "updated",
+        sortDir: "desc",
+      });
+      const roots = done.filter((issue) => !issue.parentId);
+      const withNext = await Promise.all(
+        roots.map(async (issue) => {
+          try {
+            const doc = await issuesApi.getDocument(issue.id, "next");
+            return doc.body?.trim() ? { issue, nextProjectName: doc.body.trim() } : null;
+          } catch (err) {
+            if (err instanceof ApiError && err.status === 404) return null;
+            throw err;
+          }
+        }),
+      );
+      return withNext.filter((entry): entry is { issue: Issue; nextProjectName: string } => entry !== null);
+    },
+    refetchInterval: 30_000,
+  });
+  const rows = [...yourTurnRows(data ?? []), ...nextTurnRows(nextCandidates ?? [])];
   if (rows.length === 0) return null;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["issues"] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all(companyId) });
   };
   return (
     <section className="rounded-md border border-border p-3" data-testid="your-turn-panel">
@@ -152,10 +256,11 @@ export function YourTurnPanel({ companyId }: { companyId: string }) {
             <div className="min-w-0">
               <div className="text-xs text-muted-foreground">{YOUR_TURN_LABELS[row.kind]}</div>
               <Link to={row.href} className="block truncate text-sm hover:underline">
-                <span className="font-mono text-xs text-muted-foreground">{row.identifier}</span> {row.title}
+                <span className="font-mono text-xs text-muted-foreground">{row.identifier}</span>{" "}
+                {row.kind === "next" ? row.nextProjectName : row.title}
               </Link>
             </div>
-            <RowActions row={row} onDone={refresh} />
+            <RowActions row={row} companyId={companyId} onDone={refresh} />
           </li>
         ))}
       </ul>

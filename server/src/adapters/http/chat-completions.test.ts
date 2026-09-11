@@ -33,6 +33,19 @@ describe("http adapter chat completions prompt", () => {
     expect(prompt).toContain("Company mission (from onboarding):");
   });
 
+  it("keeps Todero's own markers out of the prompt", () => {
+    const prompt = buildChatCompletionsPrompt({
+      toderoIssue: {
+        title: "Write the sign-up spec",
+        description: "<!-- todero-type: Task -->\n<!-- todero-blocked-by: waiting-on-you -->\nGoal: Ship it",
+      },
+    });
+    expect(prompt).not.toContain("todero-type");
+    expect(prompt).not.toContain("todero-blocked-by");
+    expect(prompt).toContain("Goal: Ship it");
+    expect(prompt).toContain("Write the sign-up spec");
+  });
+
   it("reads the mission from the issue description when task markdown is missing", () => {
     const prompt = buildChatCompletionsPrompt({
       toderoIssue: {
@@ -55,6 +68,72 @@ describe("http adapter chat completions prompt", () => {
     const prompt = JSON.stringify(body.messages);
     expect(prompt).toContain(MISSION);
     expect(prompt).not.toContain("adapter default with no mission");
+  });
+});
+
+describe("http adapter chat completions model routing", () => {
+  it("keeps the configured model unchanged when the heartbeat named no task kind", () => {
+    const body = buildChatCompletionsBody({
+      config: { model: "the-default" },
+      context: {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoAvailableModels: ["qwen2.5-coder:14b"],
+      },
+      payloadTemplate: {},
+    });
+    expect(body.model).toBe("the-default");
+  });
+
+  it("routes planning to the 12-16B class when one is available", () => {
+    const body = buildChatCompletionsBody({
+      config: { model: "the-default" },
+      context: {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoTaskKind: "planning",
+        toderoAvailableModels: ["llama3.2:1b", "qwen2.5-coder:14b"],
+      },
+      payloadTemplate: {},
+    });
+    expect(body.model).toBe("qwen2.5-coder:14b");
+  });
+
+  it("routes drafting to the default model even when a bigger one is available", () => {
+    const body = buildChatCompletionsBody({
+      config: { model: "the-default" },
+      context: {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoTaskKind: "drafting",
+        toderoAvailableModels: ["qwen2.5-coder:14b"],
+      },
+      payloadTemplate: {},
+    });
+    expect(body.model).toBe("the-default");
+  });
+
+  it("falls back to the default model for planning when nothing in range is available", () => {
+    const body = buildChatCompletionsBody({
+      config: { model: "the-default" },
+      context: {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoTaskKind: "planning",
+        toderoAvailableModels: ["llama3.2:1b"],
+      },
+      payloadTemplate: {},
+    });
+    expect(body.model).toBe("the-default");
+  });
+
+  it("ignores an unrecognized task kind and keeps the configured model", () => {
+    const body = buildChatCompletionsBody({
+      config: { model: "the-default" },
+      context: {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoTaskKind: "not-a-real-kind",
+        toderoAvailableModels: ["qwen2.5-coder:14b"],
+      },
+      payloadTemplate: {},
+    });
+    expect(body.model).toBe("the-default");
   });
 });
 

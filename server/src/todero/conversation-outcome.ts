@@ -46,6 +46,23 @@ export function descriptionWithPlanMarker(description: string | null | undefined
 
 export type ConversationOutcome = "done" | "review" | "waiting";
 
+export type ConversationOutcomePlan = {
+  outcome: ConversationOutcome;
+  status: "done" | "blocked";
+  description: string;
+};
+
+/**
+ * Every conversation marker off. What a task keeps once it closes, and the
+ * clean base a task sent back for another round starts from.
+ */
+export function descriptionWithoutConversationMarkers(description: string | null | undefined): string {
+  return descriptionWithWaitingMarker(
+    descriptionWithPlanMarker(descriptionWithReviewMarker(description, false), false),
+    false,
+  );
+}
+
 /**
  * Wave C: a child task's "done" is not the end. Its output goes to the
  * person first (blocked, waiting on you, review pending); Accept closes it
@@ -62,7 +79,7 @@ export function planConversationOutcome(input: {
    * after proposing a plan, is handing the turn back, whatever it wrote.
    */
   closeAllowed?: boolean;
-}): { outcome: ConversationOutcome; status: "done" | "blocked"; description: string } | null {
+}): ConversationOutcomePlan | null {
   if (input.issue.status !== "in_progress") return null;
   const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false);
   const isConversation = !input.issue.parentId;
@@ -82,6 +99,30 @@ export function planConversationOutcome(input: {
     description: input.proposedPlan
       ? descriptionWithPlanMarker(descriptionWithWaitingMarker(base, true), true)
       : descriptionWithWaitingMarker(base, true),
+  };
+}
+
+/** What the reviewer decided about a hand-in that was headed for the person. */
+export type ReviewerDecision = "accept" | "handoff" | "revise" | "none";
+
+/**
+ * Wave E: the reviewer reads the hand-in before the person does, and only its
+ * "accept" changes where the task lands — it closes the task the same way the
+ * person's Accept does. "revise" means the reviewer already sent the task back
+ * to the agent, so there is nothing left for the caller to write (null).
+ * Anything else leaves the review gate exactly where Wave C put it.
+ */
+export function planReviewedOutcome(
+  plan: ConversationOutcomePlan,
+  decision: ReviewerDecision,
+): ConversationOutcomePlan | null {
+  if (plan.outcome !== "review") return plan;
+  if (decision === "revise") return null;
+  if (decision !== "accept") return plan;
+  return {
+    outcome: "done",
+    status: "done",
+    description: descriptionWithoutConversationMarkers(plan.description),
   };
 }
 
@@ -106,6 +147,9 @@ export function allPlanChildrenClosed(children: PlanChildSummary[]): boolean {
   return children.length > 0 && children.every((child) => child.status === "done" || child.status === "cancelled");
 }
 
+/** The issue document a follow-on project idea from the wrap-up lives in. */
+export const NEXT_PROJECT_DOCUMENT_KEY = "next";
+
 /**
  * The extra turn a plan parent gets when its last task closes: the agent
  * writes the wrap-up for the person and closes the conversation itself.
@@ -116,6 +160,28 @@ export function buildPlanSummaryTurnInstruction(children: PlanChildSummary[]): s
     "Every task in your plan is now closed:",
     ...lines,
     "",
-    "Write the wrap-up for the person: in plain words, what was delivered for each feature, what they should look at first, and the one or two things you would do next if they want to keep going. Do not propose a new plan block. End with `STATUS: done`.",
+    "Write the wrap-up for the person: in plain words, what was delivered for each feature, what they should look at first, and the one or two things you would do next if they want to keep going. Do not propose a new plan block.",
+    "If you can see one clear next project worth doing after this one, end that wrap-up with one line that starts with `Next:` naming it in a few words — the idea, not a plan. Leave that line out if nothing obvious comes to mind.",
+    "Then end with `STATUS: done`.",
   ].join("\n");
+}
+
+const NEXT_LINE_RE = /^\s*next\s*:\s*(.+?)\s*$/i;
+
+/**
+ * The last `Next:` line in a wrap-up reply, if the model included one. Scans
+ * from the end since that is where `buildPlanSummaryTurnInstruction` asks for
+ * it; an earlier, unrelated use of the word "next" in the body should not
+ * match.
+ */
+export function parseNextProjectLine(text: string): string | null {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const match = lines[i]!.match(NEXT_LINE_RE);
+    if (match) {
+      const value = match[1]!.trim();
+      return value ? value : null;
+    }
+  }
+  return null;
 }

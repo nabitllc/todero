@@ -1,7 +1,18 @@
 import type { Issue, IssueComment, IssuePriority, IssueStatus } from "@todero/shared";
 
-export const WORK_ITEM_TYPES = ["Feature", "Story", "Task", "Bug"] as const;
+// "Brief" is the conversation an agent starts from: the first task of an
+// onboarding, where the person and the agent agree what the work is. Everything
+// the plan then creates is a Task.
+export const WORK_ITEM_TYPES = ["Brief", "Feature", "Story", "Task", "Bug"] as const;
 export type WorkItemType = (typeof WORK_ITEM_TYPES)[number];
+
+/**
+ * The types a person can pick. Brief is not one of them: Todero puts it on the
+ * onboarding conversation itself, and that item's type cannot be changed.
+ */
+export const WORK_ITEM_CHOOSABLE_TYPES = WORK_ITEM_TYPES.filter(
+  (type) => type !== "Brief",
+) as ReadonlyArray<WorkItemType>;
 
 export const WORK_ITEM_STATUSES = [
   "new",
@@ -51,10 +62,11 @@ export const AGENT_SUMMARY_LIMIT = 140;
 export const WAITING_ON_YOU = "Waiting on you.";
 export const APOSTROPHE = "\u2019";
 
-const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Feature|Story|Task|Bug)\s*-->/i;
+const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Brief|Feature|Story|Task|Bug)\s*-->/i;
 const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
 const REVIEW_COMMENT_RE = /<!--\s*todero-review:\s*pending\s*-->/i;
 const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;
+const JUDGE_ROUNDS_COMMENT_RE = /<!--\s*todero-judge-rounds:\s*\d+\s*-->\s*\n?/gi;
 const SECTION_HEADING_RE = /^(#{1,6}\s+|\*\*)(Acceptance Criteria|In Scope|Out of Scope|Testing Strategies)(\*\*)?\s*$/i;
 const CHECK_ITEM_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/;
 
@@ -98,6 +110,9 @@ export function stripWorkItemMeta(description: string | null | undefined): strin
     .replace(WAITING_COMMENT_RE, "")
     .replace(REVIEW_COMMENT_RE, "")
     .replace(PLAN_COMMENT_RE, "")
+    // The reviewer counts its rounds in the description; the person never
+    // needs to see the tally.
+    .replace(JUDGE_ROUNDS_COMMENT_RE, "")
     .replace(/^\s+/, "");
 }
 
@@ -454,6 +469,8 @@ export type WorkItemTaskRow = {
   /** Waiting behind another task; shown as Queued rather than To do. */
   queued?: boolean;
   href: string;
+  /** When the plan approval created this task. */
+  createdAt?: Date | string | null;
 };
 
 export const QUEUED_LABEL = "Queued";
@@ -462,3 +479,4 @@ export function taskRowLabel(task: Pick<WorkItemTaskRow, "status" | "queued">): 
   if (task.queued && task.status !== "done" && task.status !== "cancelled") return QUEUED_LABEL;
   return WORK_ITEM_STATUS_LABELS[task.status];
 }
+

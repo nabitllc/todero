@@ -1,0 +1,7 @@
+{
+  "judgeAfterFirstPlan": true,
+  "extraWorkerWhenReadyTasksAbove": 3,
+  "neverMoreAgentsThanModelsServed": true,
+  "maxJudgeRounds": 2,
+  "busyTimerSec": 120
+}

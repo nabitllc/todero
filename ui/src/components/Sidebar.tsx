@@ -86,8 +86,10 @@ export function Sidebar() {
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
-  const goalsLinkPending = experimentalSettings === undefined;
-  const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink === true;
+  // Goals is a standard item in the Work menu. The setting is an opt-out now,
+  // so the link shows unless it was explicitly turned off — including while the
+  // settings are still loading, which is why there is no reserved slot here.
+  const showGoalsLink = experimentalSettings?.enableGoalsSidebarLink !== false;
   // Decisions (attention home) is an experimental surface (PAP-13481): the nav
   // item is hidden entirely until the flag is enabled (same no-flash pattern as
   // showWorkspacesLink — it defaults hidden, so no placeholder is needed).
@@ -233,15 +235,7 @@ export function Sidebar() {
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
-          {showGoalsLink ? (
-            <SidebarNavItem to="/goals" label="Goals" icon={Target} />
-          ) : goalsLinkPending ? (
-            <div
-              data-testid="sidebar-goals-placeholder"
-              className="h-8 pointer-coarse:h-7"
-              aria-hidden="true"
-            />
-          ) : null}
+          {showGoalsLink ? <SidebarNavItem to="/goals" label="Goals" icon={Target} /> : null}
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (

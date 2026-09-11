@@ -14,7 +14,9 @@ export function goalRoutes(db: Db) {
   router.get("/companies/:companyId/goals", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const result = await svc.list(companyId);
+    // The list carries the task counts the Goals page shows, so the page does
+    // not have to fetch every task to say "2 of 5 tasks done".
+    const result = await svc.listWithTaskCounts(companyId);
     res.json(result);
   });
 

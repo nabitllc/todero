@@ -1,6 +1,6 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@todero/db";
-import { goals } from "@todero/db";
+import { goals, issues } from "@todero/db";
 
 type GoalReader = Pick<Db, "select">;
 
@@ -42,9 +42,91 @@ export async function getDefaultCompanyGoal(db: GoalReader, companyId: string) {
     .then((rows) => rows[0] ?? null);
 }
 
+/**
+ * How much of the work under each goal is finished. Cancelled tasks are left
+ * out of both numbers: work that was called off is not work still owed, so a
+ * goal whose only open task was cancelled still counts as finished.
+ */
+export type GoalTaskCounts = { taskCount: number; doneTaskCount: number };
+
+export async function countTasksByGoal(
+  db: GoalReader,
+  companyId: string,
+): Promise<Map<string, GoalTaskCounts>> {
+  const rows = await db
+    .select({
+      goalId: issues.goalId,
+      taskCount: sql<number>`count(*)`,
+      doneTaskCount: sql<number>`count(*) filter (where ${issues.status} = 'done')`,
+    })
+    .from(issues)
+    .where(and(eq(issues.companyId, companyId), sql`${issues.status} <> 'cancelled'`))
+    .groupBy(issues.goalId);
+
+  const counts = new Map<string, GoalTaskCounts>();
+  for (const row of rows) {
+    if (!row.goalId) continue;
+    counts.set(row.goalId, {
+      taskCount: Number(row.taskCount ?? 0),
+      doneTaskCount: Number(row.doneTaskCount ?? 0),
+    });
+  }
+  return counts;
+}
+
+/**
+ * Rolls each goal's own task counts up through its parents, so a company goal
+ * reports all the work happening under the features beneath it rather than
+ * reading "No tasks" while its features are busy. A goal whose parent is
+ * missing from the list stops the walk, and a parent loop stops at the first
+ * goal it comes back to.
+ */
+export function rollUpTaskCounts(
+  rows: ReadonlyArray<{ id: string; parentId: string | null }>,
+  direct: ReadonlyMap<string, GoalTaskCounts>,
+): Map<string, GoalTaskCounts> {
+  const parentOf = new Map(rows.map((row) => [row.id, row.parentId ?? null]));
+  const totals = new Map<string, GoalTaskCounts>();
+  for (const row of rows) totals.set(row.id, { taskCount: 0, doneTaskCount: 0 });
+
+  for (const row of rows) {
+    const own = direct.get(row.id);
+    if (!own || (own.taskCount === 0 && own.doneTaskCount === 0)) continue;
+    const seen = new Set<string>();
+    let current: string | null = row.id;
+    while (current && !seen.has(current)) {
+      seen.add(current);
+      const total = totals.get(current);
+      if (!total) break;
+      total.taskCount += own.taskCount;
+      total.doneTaskCount += own.doneTaskCount;
+      current = parentOf.get(current) ?? null;
+    }
+  }
+  return totals;
+}
+
 export function goalService(db: Db) {
   return {
     list: (companyId: string) => db.select().from(goals).where(eq(goals.companyId, companyId)),
+
+    /**
+     * The Goals page list: every goal plus how much of the work under it is
+     * done, counting the tasks linked to the goal itself and to every goal
+     * beneath it.
+     */
+    listWithTaskCounts: async (companyId: string) => {
+      const [rows, counts] = await Promise.all([
+        db.select().from(goals).where(eq(goals.companyId, companyId)),
+        countTasksByGoal(db, companyId),
+      ]);
+      const totals = rollUpTaskCounts(rows, counts);
+      return rows.map((goal) => ({
+        ...goal,
+        taskCount: totals.get(goal.id)?.taskCount ?? 0,
+        doneTaskCount: totals.get(goal.id)?.doneTaskCount ?? 0,
+      }));
+    },
 
     getById: (id: string) =>
       db

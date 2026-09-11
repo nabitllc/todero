@@ -5,25 +5,52 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useState } from "react";
 
+/** A goal row, with the task counts the list endpoint adds when it has them. */
+export type GoalTreeGoal = Goal & { taskCount?: number; doneTaskCount?: number };
+
+/**
+ * How much of the work under a goal is finished, in words. Returns null when
+ * the caller has no counts, so older callers render exactly as before.
+ */
+export function goalTaskCountLabel(goal: GoalTreeGoal): string | null {
+  if (typeof goal.taskCount !== "number") return null;
+  if (goal.taskCount === 0) return "No tasks";
+  const done = typeof goal.doneTaskCount === "number" ? goal.doneTaskCount : 0;
+  return `${done} of ${goal.taskCount} ${goal.taskCount === 1 ? "task" : "tasks"} done`;
+}
+
+/** Goal statuses in the product's words. "achieved" reads as Done to a person. */
+export const GOAL_STATUS_LABELS: Record<string, string> = {
+  planned: "Planned",
+  active: "In progress",
+  achieved: "Done",
+  cancelled: "Cancelled",
+};
+
+export function goalStatusLabel(status: string): string {
+  return GOAL_STATUS_LABELS[status] ?? status.replace(/[_-]/g, " ");
+}
+
 interface GoalTreeProps {
-  goals: Goal[];
-  goalLink?: (goal: Goal) => string;
-  onSelect?: (goal: Goal) => void;
+  goals: GoalTreeGoal[];
+  goalLink?: (goal: GoalTreeGoal) => string;
+  onSelect?: (goal: GoalTreeGoal) => void;
 }
 
 interface GoalNodeProps {
-  goal: Goal;
-  children: Goal[];
-  allGoals: Goal[];
+  goal: GoalTreeGoal;
+  children: GoalTreeGoal[];
+  allGoals: GoalTreeGoal[];
   depth: number;
-  goalLink?: (goal: Goal) => string;
-  onSelect?: (goal: Goal) => void;
+  goalLink?: (goal: GoalTreeGoal) => string;
+  onSelect?: (goal: GoalTreeGoal) => void;
 }
 
 function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalNodeProps) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = children.length > 0;
   const link = goalLink?.(goal);
+  const countLabel = goalTaskCountLabel(goal);
 
   const inner = (
     <>
@@ -47,7 +74,12 @@ function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalN
       )}
       <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
       <span className="flex-1 truncate">{goal.title}</span>
-      <StatusBadge status={goal.status} />
+      {countLabel ? (
+        <span className="text-xs text-muted-foreground whitespace-nowrap" data-testid="goal-task-count">
+          {countLabel}
+        </span>
+      ) : null}
+      <StatusBadge status={goal.status} label={goalStatusLabel(goal.status)} />
     </>
   );
 

@@ -312,3 +312,85 @@ instead of guessing.
   `server/src/services/heartbeat.ts` (thread context and disposition), `server/src/services/company-skills.ts`
   (snapshot refresh), `server/src/services/heartbeat-run-summary.ts` (comment cap),
   `ui/src/components/work-item/WorkItemView.tsx`, `ui/src/components/OnboardingWizard.tsx`.
+
+## ADR-013 — Finished work passes a reviewer agent, and each organization decides whether a pass closes the task
+
+- **Date:** 2026-09-10
+- **Status:** Accepted
+- **Context:** A chat-only local model closes its own task the moment it writes `STATUS: done`.
+  Nothing reads the work first, so a half-finished draft unblocks the next task in the chain and
+  the person only finds out at the end. The answer is a second opinion from the same local model,
+  plus a switch that says whether a person still has to look.
+- **Decision:** When a child task of an approved plan hands in, the heartbeat runs one more chat
+  completion against a **reviewer agent**: a real agent record hired on the first plan approval,
+  named `<lead>'s reviewer`, on the same adapter config as the worker, found again by a
+  `metadata.toderoJudge.forAgentId` marker. The prompt is the feature's `done_when` line from the
+  parent's Plan document, what the task said it would hand in, and the reply itself; the answer is
+  `VERDICT: pass|fail` plus one paragraph. The reviewer sits inside the Wave C review gate: it runs
+  only for a hand-in `planConversationOutcome` already routed to `review`, and only its "accept"
+  changes where the task lands. A pass is accepted for the person when the organization's
+  `autoAcceptWhenJudgePasses` setting is on, and handed to them as "Waiting on you" when it is off
+  — which is the default, so nobody gives up reviewing their own finished work without turning the
+  switch on. A fail posts the paragraph as a comment from the reviewer, puts
+  the task back to To do and wakes the worker, at most twice — counted in the description as
+  `<!-- todero-judge-rounds: N -->` — after which the person decides. A reviewer that cannot be
+  reached, or a reply with no verdict in it, changes nothing.
+- **Consequences:**
+  - The switch lives on the company's existing `interaction_resolver_governance` JSON, so there is
+    no migration. Anything else that wants a company-level flag adds a key there rather than
+    reshaping the object.
+  - The reviewer's verdict is a comment authored by the reviewer agent, not a heartbeat run of its
+    own: starting a run for a second agent on a task it never checked out would have to go through
+    the whole execution path. The audit trail is the comment.
+  - The conversation thread now labels another agent's comments as the other side of the
+    conversation, so the worker reads the reviewer's paragraph as feedback rather than as its own
+    words.
+  - At most two extra model calls per task on a laptop GPU, and none at all for a company that has
+    never approved a plan.
+  - A task Todero closes on the person's behalf does not go through the PATCH route, so the two
+    wakes that route raises after a close — the task queued behind it, and the parent's wrap-up
+    once every task under it is closed — now live in `server/src/services/issue-closed-wakeups.ts`
+    and are raised from the heartbeat. The route keeps its own batched copy for now; the helper is
+    written with injected dependencies so it can adopt it.
+- **Source:** `server/src/todero/judge.ts`, `server/src/todero/judge-review.ts`,
+  `server/src/todero/judge-apply.ts`, `server/src/todero/judge-agent.ts`,
+  `server/src/todero/conversation-outcome.ts` (`planReviewedOutcome`),
+  `server/src/services/issue-closed-wakeups.ts`,
+  `server/src/services/heartbeat.ts` (the conversational disposition block),
+  `server/src/routes/todero-plan-routes.ts`, `packages/shared/src/types/company.ts`,
+  `ui/src/pages/CompanySettings.tsx`.
+
+## ADR-014 — Local model routing and orchestration rules are data
+
+- **Date:** 2026-09-10
+- **Status:** Accepted
+- **Context:** Which local model answers a turn, and how many workers or judge passes run, were
+  either hardcoded one call site at a time or not decided anywhere yet. A machine serving more
+  than one model size (a strongest-available class alongside a small fast one) had no place to
+  express "use the bigger one for planning, the smallest for reformatting."
+- **Decision:** `server/src/todero/model-routing.ts` holds a table from task kind (`planning`,
+  `judging`, `drafting`, `wrap-up`, `formatting`) to a preference order of model classes
+  (`strongest_local` = 12-16B parsed from the model id, `fastest_local` = smallest parsed size,
+  `wizard_default` = the agent's configured model). `pickModelForKind` resolves the first class
+  that matches a model in the list the local-llm detect endpoint reports, falling back to the
+  default. `chat-completions.ts`'s `buildChatCompletionsBody` calls it via `context.toderoTaskKind`,
+  which the heartbeat sets to `planning` for the standing conversation task, `drafting` for a task
+  with a parent, and `wrap-up` when a closing turn instruction is present; the chosen model is
+  recorded as `resultJson.toderoModel`. Separately, `server/src/todero/orchestration-rules.json` +
+  `orchestration-rules.ts` hold `judgeAfterFirstPlan`, `extraWorkerWhenReadyTasksAbove`,
+  `neverMoreAgentsThanModelsServed`, `maxJudgeRounds`, and `busyTimerSec` as one file with a
+  tolerant loader (missing file, bad JSON, or a wrong-typed field all fall back to the built-in
+  defaults field-by-field). Nothing reads the orchestration rules yet: the file landed alongside
+  the first version of the reviewer (ADR-013) and of the second
+  worker, and its numbers are not yet the ones those two read.
+- **Consequences:**
+  - Adding a model class or a task kind is a table edit, not a new `if` at a call site.
+  - The rules file has no consumer yet; a future wave points `heartbeat.ts` /
+    `issues.ts` to it instead of inventing another local constant. The reviewer (ADR-013) and the
+    second worker each still carry their own numbers today.
+  - `context.toderoAvailableModels` (the list `pickModelForKind` ranks) is not populated by the
+    heartbeat yet, since no wave threads a live detect result into run context; until it is,
+    routing always falls through to the default model, which matches today's behavior exactly.
+- **Source:** `server/src/todero/model-routing.ts`, `server/src/todero/orchestration-rules.ts`,
+  `server/src/todero/orchestration-rules.json`, `server/src/adapters/http/chat-completions.ts`,
+  `server/src/adapters/http/execute.ts`, `server/src/services/heartbeat.ts`.

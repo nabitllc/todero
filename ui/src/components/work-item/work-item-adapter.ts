@@ -20,7 +20,7 @@ import {
 } from "./work-item-model";
 import type { WorkItemViewProps } from "./WorkItemView";
 
-export function isOnboardingFirstTask(issue: Pick<Issue, "originKind">): boolean {
+export function isOnboardingFirstTask(issue: Partial<Pick<Issue, "originKind">>): boolean {
   return issue.originKind === ONBOARDING_FIRST_TASK_ORIGIN_KIND;
 }
 
@@ -52,9 +52,18 @@ function userName(
   return userLabelMap?.get(userId) ?? null;
 }
 
-export function workItemTypeFor(issue: Pick<Issue, "description" | "ancestors">): WorkItemType {
+/**
+ * What kind of work item this is. The type is written on the item when it is
+ * created — Todero marks every task it makes from an approved plan as a Task —
+ * so a marked item is taken at its word. Otherwise the onboarding conversation
+ * is a Brief, and only an unmarked, unplanned item falls back to its depth.
+ */
+export function workItemTypeFor(
+  issue: Pick<Issue, "description" | "ancestors"> & Partial<Pick<Issue, "originKind">>,
+): WorkItemType {
   const parsed = parseWorkItemDescription(issue.description);
   if (/<!--\s*todero-type:/i.test(issue.description ?? "")) return parsed.type;
+  if (isOnboardingFirstTask(issue)) return "Brief";
   return defaultWorkItemType(issue.ancestors?.length ?? 0);
 }
 
@@ -187,6 +196,9 @@ export function toWorkItemViewProps(args: {
     reviewPending: parsed.reviewPending,
     planPending: parsed.planPending,
     blockerCount: (issue.blockedBy ?? []).length,
+    // The onboarding conversation is the Brief for the whole thing; its type is
+    // not a choice, so the stamp on it does not open.
+    typeEditable: !firstTask,
     sections: firstTask ? [] : parsed.sections,
     checklist: parsed.checklist,
     trail,
