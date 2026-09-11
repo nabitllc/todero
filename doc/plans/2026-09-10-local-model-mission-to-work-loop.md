@@ -376,7 +376,9 @@ _Two known gaps, deliberately not closed here:_
   offers Start now, which sends one wake for this task. Turning the timer on for good is the
   Hardening wave's backfill, so the agent then picks up the next task without a button.
 
-_Queued for future: steps 3–30._
+_Steps 3–10 shipped on 2026-09-11; see **What shipped (steps 3-10)** below the step list._
+
+_Queued for future: steps 11–30._
 
 Ordered as it should be built. Each step is shippable alone.
 
@@ -424,6 +426,157 @@ Jira and Azure DevOps both do this one way: the main column is the content and t
 **Step 9: "What Nova sees" (half a day).** A toggle in the sidebar that opens a read-only panel with the brief, the standing instructions, and the conversation exactly as the model received them on the last run. Read from the run's stored context, never from a fresh call.
 
 **Step 10: phone (half a day).** One column. The turn bar and its buttons stick to the top. Tabs from step 3 become a segmented control. Composer chips scroll sideways.
+
+#### What shipped (steps 3-10)
+
+Shipped 2026-09-11, UI only — no server route, no schema, no migration. The data was already there;
+this wave reads it.
+
+**Step 3 — work apart from talk.** The main column carries up to three tabs: **Conversation**,
+**Deliverable** (the `output` document) and **Plan**. One tab shows no strip at all. Which tab opens
+is a rule, not a memory: the Deliverable the moment work is handed in *and* every time a finished
+task is opened again, the Plan while it is still asking for a yes, the Conversation the rest of the
+time — including work sent back to be redone, where the note saying what to change is
+(`work-item-tabs.ts`; `tabsFor`, `defaultTabFor`, `resolveTab`). The strip is a real tab strip:
+each tab names the panel it opens, the arrow keys move between them, and only the current tab is a
+tab stop. The Deliverable tab renders the document with a version picker, a
+copy and a download; the line over it reads "Version 2 · handed in 10:42 · accepted", built by
+`work-item-deliverable.ts` (`deliverableVersions`, `handedInAt`, `versionLabel`) — "accepted" only
+on the newest version, only once the task is done, and never while the person still has to decide.
+The Plan tab took over the approval card whole, checkboxes included, so there is one plan card and
+not two, and once the plan is approved each line says where the task it became stands — To do, In
+progress, Done, Blocked or Queued (`work-item-plan.ts`, joined by id and then by title). The conversation keeps a one-line card where the hand-in reply was: "Handed in version 2 ·
+Open", and Open switches the tab.
+
+**Step 4 — formatted replies.** Every reply, the agent's and the person's, renders through the same
+markdown renderer the body uses. A reply longer than twelve lines folds behind "Show all"
+(`replyLineCount` / `replyFolds`, clamped in CSS so a fold never cuts a list or a fence in half).
+@mentions still stand out inside formatted text: a small rehype plugin (`work-item-mentions.ts`)
+swaps each `@name` run for the span the stylesheet already knew, skipping code and links.
+
+**Step 5 — mute the machinery.** Consecutive status and assignment lines collapse to one grey
+"3 changes · show" that opens in place (`work-item-cluster.ts`, `WorkItemClusterLine`). A single
+machinery line is left as itself. A notice the product posted — a recovery notice — is machinery
+too, never the person's own words, and it folds into the cluster with the rest; but it keeps the
+warning tone it arrived with, so opening the cluster still tells the two kinds of line apart.
+
+**Step 6 — the chain of why.** Mission › Feature › Task above the title, from the goal the task was
+created under: Mission opens the Goals page, the middle link opens that feature's goal, the task
+itself is not a link. Hidden entirely when the task hangs off no feature (`chainOfWhy`). No call of
+its own — `issue.goal` already comes down with the task.
+
+**Step 7 — the reviewer's voice.** A reviewer's reply is no longer a reply. `parseVerdictFromComment`
+reads the four sentences `buildJudgeComment` writes on the server and turns that comment into a
+verdict card with its own colour and its own left edge: "Reviewed by Nova's reviewer · Pass" or
+"· Sent back", the paragraph, and the round ("2 of 2", from the `todero-judge-rounds` marker). A
+sent-back verdict also shows the manager's "What to change" (the `guidance` document), and says so
+when it was the last round.
+
+**Step 8 — the composer as quick replies.** Chips above the box, computed from the same turn the bar
+above is computed from (`composerChipsFor(turn.actions, …)`), so the two can never disagree: no
+Accept in the bar, no Approve chip. A chip that has a button presses it; a chip that does not writes
+an opening sentence and leaves the person to finish it. Nothing is ever sent by a chip alone. There
+are five labels in all — Approve, Send back with note, Ask a question, Give more context, Skip this
+task — and a plan uses the same two words for the same two moves as a hand-in does. Enter sends,
+Shift+Enter is a new line, @ still lists the agents, attachments unchanged.
+
+**Step 9 — "What Nova sees".** A **Behind the scenes** toggle in the Properties panel. Opening it
+fetches the task's most recent turn and reads that turn's stored `contextSnapshot`
+(`readAgentContext`): who the model was told it is, the brief, the standing instructions, what it
+was asked this turn, and the conversation it was given. Nothing is fetched until it is opened, and
+nothing is rebuilt — a fresh call would show today's brief against yesterday's reply.
+
+**Step 10 — phone.** Under 720px the turn bar sticks to the top of the scroll, the tab strip becomes
+a segmented control, and the chips scroll sideways.
+
+**Where the code went.** `WorkItemView.tsx` came *down* from 830 lines to 547 while gaining all of
+the above: the header, the body, the thread, the review card and the composer are now their own
+components (`WorkItemHeader`, `WorkItemBody`, `WorkItemThread`, `WorkItemReviewCard`,
+`WorkItemComposer`), and every rule that can be a pure function is one, with a test per branch —
+`work-item-tabs.ts`, `work-item-thread.ts`, `work-item-chips.ts`, `work-item-deliverable.ts`,
+`work-item-chain.ts`, `work-item-verdict.ts`, `work-item-mentions.ts`, `work-item-cluster.ts`,
+`work-item-plan.ts`, `agent-context.ts`. `IssueDetail.tsx` gained three lazy document queries
+(`output`, its revisions, `guidance`) and four props; `IssueProperties.tsx` gained one line. "What
+Nova sees" asks for the turn under the same query keys the task page already uses
+(`queryKeys.issues.runs`, `queryKeys.runDetail`), so opening it reads what is already there rather
+than fetching a private second copy.
+
+#### Open
+
+- **The hand-in card is the last agent reply, not a matched one.** The comment an agent leaves on a
+  hand-in is the same summary that becomes the Output document, but the server clips it, so matching
+  the two strings would miss on any long hand-in. The card therefore replaces the last agent reply
+  while a hand-in is waiting. If a task ever gets an agent reply *after* a hand-in that is neither a
+  verdict nor a new hand-in, that reply would wear the card. Nothing does that today.
+- **The version picker counts revisions, not acceptances.** "accepted" is inferred from the task
+  being done, because no column records which revision was accepted. A task accepted at version 1
+  and handed in again would label version 2 accepted. Closing this needs a stored acceptance, which
+  is a schema change and out of this wave.
+- **The chain needs the goals wave to have run.** A task created before the plan-to-goals work, or
+  one whose goal is the company goal, shows no chain. That is the intended fallback, not a bug, but
+  it means most older tasks show nothing.
+- **`WorkItemView.tsx` is still over the 400-line component cap** at 547. It is a mount point and a
+  props type now; splitting the props type off buys nothing. Recorded as standing debt, smaller than
+  it was.
+- **"What Nova sees" reads the newest turn on the task, whoever took it.** On a task the reviewer
+  also touched, the newest turn may be the reviewer's. Naming the turn (agent and time) at the top
+  of the panel is the fix and is not done.
+- **A recovery notice reads in the new task view; it cannot be answered there.** The notice and its
+  warning tone are shown, but the card that offers to resolve or re-hand-out a stuck task
+  (`IssueRecoveryActionCard`) is still only on the classic thread. Mounting it as it stands would
+  drag its own vocabulary onto a screen that may not use those words, so it wants a rewrite of its
+  own rather than a wiring change. Out of this wave.
+- **Step 9's toggle is not in the About group.** Step 0 planned it there; it went in as its own
+  **Behind the scenes** section so the 2,700-line `IssueProperties.tsx` did not have to be reshaped
+  to take it. Moving it is cosmetic.
+- **The full `@todero/ui` suite is flaky under parallelism.** Two runs on this branch failed a
+  different unrelated file each time (`AgentToolsTab`, `CompanySettings`), both passing alone; the
+  third run was green end to end. Pre-existing, not from this wave, but worth a look.
+
+#### Live verification on this machine
+
+Tampa Supper Club is **paused**, so it is safe to read. **Do not accept anything and do not send
+anything back** — every step below is a read.
+
+1. Open **TAM-3** (the hand-in waiting for Accept) from the Board's Your turn column or from Work.
+2. The **Deliverable tab is already open** and shows the handed-in output as formatted text, not raw
+   markdown. Above it: "Version N · handed in HH:MM". With more than one version it is a picker;
+   with one it is a plain line. Neither says "accepted" — nothing has been accepted.
+3. **Copy** and **Download** sit to the right of that line. Copy is safe to press (it writes the
+   clipboard and says "Copied"). Download saves a `.md`; skip it if you would rather not.
+4. Click **Conversation**. Where the agent's hand-in reply used to be there is one line: "Handed in
+   version N · Open". Press **Open** — it takes you back to Deliverable. Come back to Conversation.
+5. If the organization has a reviewer that has spoken, its paragraph is a **verdict card**, not a
+   reply: a tinted card with a coloured left edge reading "Reviewed by <reviewer> · Pass" or
+   "· Sent back", with "1 of 2" or "2 of 2" beside it when the task has been round the loop. A sent
+   back one also carries a **What to change** block. It must not look like Nova's replies.
+6. The **review card under the conversation agrees with it**: if the reviewer passed it, the card
+   says "<reviewer> read it and says it does what the task asked"; otherwise "The output is ready".
+   Both end "Read it under Deliverable, then accept it or send it back." Read only — do not press
+   Accept or Send back.
+7. Any run of "Moved to…" / "Assigned to…" lines is **one grey line**: "3 changes · show". Click it:
+   the lines appear indented under it; click again to fold them.
+8. Above the title, if TAM-3 belongs to a feature: **Mission › Feature › Task**. Mission opens the
+   Goals page, the feature name opens that goal, the task name is plain text. If the task has no
+   feature goal, the chain is absent — that is correct, not a failure.
+9. Above the composer: **chips**. On a hand-in they read Approve · Send back with note · Ask a
+   question. **Press "Ask a question"** (safe — it only types): the box fills with "A question: " and
+   nothing is sent. Clear the box. Do **not** press Approve or Send back: they are the same call the
+   buttons are.
+10. In the right-hand Properties panel, find **Behind the scenes** and open **"What Nova sees"**. It
+    loads the last turn and shows who the model was told it is, the brief, the standing instructions,
+    what it was asked this turn, and the conversation it was given. On a task that has never had a
+    turn it says "Nothing yet — this task has not had a turn." It is read-only throughout.
+11. Narrow the window under **720px**. The turn bar **sticks to the top** as the page scrolls; the
+    tabs become a **segmented control** (one rounded strip, the current tab filled, no underline);
+    the chips **scroll sideways** instead of wrapping. One column throughout.
+12. Nowhere on any of those screens should the words *issue, disposition, handoff, run, wake,
+    heartbeat, prompt, system message* or *token* appear, and no reply should be labelled "AI".
+13. Open a task whose plan was approved (the conversation task, **TAM-1**) and click **Plan**. Each
+    task line now ends with where it stands — To do, In progress, Done, Blocked or Queued — matching
+    the Tasks list on the left. A plan still waiting for a yes shows tick boxes and no status words.
+14. Open a task that is already **done** and has an output. It opens on **Deliverable**, not on
+    Conversation, every time.
 
 **Steps 11–30: what Jira and Azure DevOps do that the task view should too.** Approved for the queue on 2026-09-11. Build in three groups after step 10; the six starred items go first.
 

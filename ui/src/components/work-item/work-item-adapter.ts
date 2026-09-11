@@ -63,6 +63,27 @@ export function workItemTypeFor(
   return defaultWorkItemType(issue.ancestors?.length ?? 0);
 }
 
+/**
+ * A notice the product posted rather than a person or an agent: a recovery
+ * notice most often. The screen shows the short headline it carries, not the
+ * whole escalation, and it folds into the cluster with the other machinery —
+ * but a warning one keeps its tone there, so a notice that matters still reads
+ * as one when the cluster is opened.
+ */
+export function systemNoticeItem(comment: IssueComment): WorkItemActivityItem | null {
+  const notice = comment.authorType === "system" || comment.presentation?.kind === "system_notice";
+  if (!notice) return null;
+  const tone = comment.presentation?.tone;
+  const title = comment.presentation?.title?.trim();
+  const firstLine = (comment.body ?? "").split("\n").find((line) => line.trim())?.trim() ?? "";
+  return {
+    id: comment.id,
+    kind: "system",
+    text: title || firstLine,
+    ...(tone === "warning" || tone === "danger" ? { tone: "warning" as const } : {}),
+  };
+}
+
 export function buildWorkItemActivity(args: {
   comments: IssueComment[];
   activity: ActivityEvent[];
@@ -74,6 +95,13 @@ export function buildWorkItemActivity(args: {
   for (const comment of args.comments) {
     if (comment.deletedAt) continue;
     const at = new Date(comment.createdAt).getTime();
+    // A notice the product posted is machinery, not anyone's words: it must
+    // never be drawn as the person's own reply.
+    const notice = systemNoticeItem(comment);
+    if (notice) {
+      items.push({ ...notice, at });
+      continue;
+    }
     const isAgent = comment.authorType === "agent" || Boolean(comment.authorAgentId || comment.derivedAuthorAgentId);
     if (isAgent) {
       const name =

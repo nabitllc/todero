@@ -108,6 +108,9 @@ import {
   workItemTypeFor,
 } from "../components/work-item/work-item-adapter";
 import { apiStatusFor } from "../components/work-item/work-item-model";
+import { chainOfWhy } from "../components/work-item/work-item-chain";
+import { extractRoundFromDescription } from "../components/work-item/work-item-verdict";
+import { CONVERSATION_OUTPUT_DOCUMENT_KEY, MANAGER_GUIDANCE_DOCUMENT_KEY } from "../components/work-item/work-item-documents";
 import type { TaskChatIssueBrief } from "../components/task-chat/TaskChatDescriptionBubble";
 import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
 import { workModeMetaFor } from "../lib/work-mode-meta";
@@ -1200,6 +1203,54 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
       void workItemQueryClient.invalidateQueries({ queryKey: ["issues"] });
     },
   });
+  // What the agent handed in, and every version of it. The Deliverable tab
+  // renders the document; the version picker needs the revisions. A task that
+  // has never been handed in has neither, and 404 is the normal answer.
+  const hasOutputDocument =
+    (issue.documentSummaries ?? []).some((summary) => summary.key === CONVERSATION_OUTPUT_DOCUMENT_KEY)
+    || parseWorkItemDescription(issue.description).reviewPending;
+  const { data: outputDocument } = useQuery({
+    queryKey: ["issues", issueId, "documents", CONVERSATION_OUTPUT_DOCUMENT_KEY, "work-item"],
+    queryFn: async () => {
+      try {
+        return await issuesApi.getDocument(issueId, CONVERSATION_OUTPUT_DOCUMENT_KEY);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: !classicTaskInterfaceEnabled && Boolean(issueId) && hasOutputDocument,
+  });
+  const { data: outputDocumentRevisions } = useQuery({
+    queryKey: ["issues", issueId, "documents", CONVERSATION_OUTPUT_DOCUMENT_KEY, "revisions", "work-item"],
+    queryFn: async () => {
+      try {
+        return await issuesApi.listDocumentRevisions(issueId, CONVERSATION_OUTPUT_DOCUMENT_KEY);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return [];
+        throw err;
+      }
+    },
+    enabled: !classicTaskInterfaceEnabled && Boolean(issueId) && Boolean(outputDocument),
+  });
+  // The manager's rewritten brief for work that came back. The reviewer's
+  // sent-back card shows it, so the person reads the same instruction the
+  // worker was given rather than guessing at it.
+  const hasGuidanceDocument = (issue.documentSummaries ?? []).some(
+    (summary) => summary.key === MANAGER_GUIDANCE_DOCUMENT_KEY,
+  );
+  const { data: guidanceDocument } = useQuery({
+    queryKey: ["issues", issueId, "documents", MANAGER_GUIDANCE_DOCUMENT_KEY, "work-item"],
+    queryFn: async () => {
+      try {
+        return await issuesApi.getDocument(issueId, MANAGER_GUIDANCE_DOCUMENT_KEY);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: !classicTaskInterfaceEnabled && Boolean(issueId) && hasGuidanceDocument,
+  });
   // The agent's wrap-up may end with a `Next:` line, saved as this task's
   // `next` document. Only worth fetching once the task is actually done.
   const { data: nextProjectDocument } = useQuery({
@@ -1442,6 +1493,11 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           onComment={(body) => { void onAdd(body); }}
           onAttach={(file) => { void onAttachImage(file); }}
           onWorkModeChange={onWorkModeChange}
+          chain={chainOfWhy({ goal: issue.goal ?? null, taskTitle: issue.title })}
+          outputDocument={outputDocument ?? null}
+          outputDocumentRevisions={outputDocumentRevisions ?? []}
+          guidance={guidanceDocument?.body ?? null}
+          reviewRound={extractRoundFromDescription(issue.description)}
           plan={proposedPlan}
           planApprovable={
             Boolean(proposedPlan) &&

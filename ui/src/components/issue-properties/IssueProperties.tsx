@@ -98,6 +98,7 @@ import {
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { AssignedByCaption, TeamSection } from "./ManagerRoleSections";
+import { WhatTheAgentSeesSection } from "../work-item/WhatTheAgentSeesSection";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
 import { WorkItemStatusRow } from "./WorkItemStatusRow";
 import { PANEL_EMPTY_VALUE, panelClosedAt, panelTokenCostLabel, panelTokenUsageLabel } from "./panel-cost";
@@ -2361,6 +2362,11 @@ export function IssueProperties({
           selectedCompanyId={selectedCompanyId || undefined}
         />
       )}
+
+      {/* What the agent was actually given on its last turn, read back out of
+          what that turn stored. Nothing is fetched until it is opened. */}
+      <WhatTheAgentSeesSection issueId={issue.id} agentName={assignee?.name ?? null} />
+
 
       <PropertySection title="Cost and time">
         <PropertyRow label="Token usage">

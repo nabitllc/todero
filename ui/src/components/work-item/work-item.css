@@ -392,6 +392,15 @@
   color: var(--wi-muted);
 }
 
+/* A notice that is not routine keeps its tone where it sits, so opening a
+   cluster still tells the two kinds of line apart. */
+.work-item-system-warning {
+  color: var(--wi-alert);
+  font-weight: 500;
+  border-left: 2px solid var(--wi-alert);
+  padding-left: var(--wi-space-8);
+}
+
 .work-item-human {
   max-width: 65ch;
 }
@@ -663,6 +672,18 @@
   color: var(--wi-muted);
 }
 
+/* Where the task this line became stands. The Plan tab is the record of what
+   was agreed, so it says which parts are done. */
+.work-item-plan-task-status {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-family: var(--wi-sans);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wi-muted);
+  white-space: nowrap;
+}
+
 .work-item-plan-actions {
   display: flex;
   gap: var(--wi-space-8);
@@ -838,4 +859,432 @@
 
 .work-item-turn-bar[data-tone="action"] .work-item-turn-action:hover {
   background: var(--wi-mark);
+}
+
+
+/* ── Step 6: the chain of why ─────────────────────────────────────────────
+   Mission › Feature › Task, above the title. Quiet enough that the title is
+   still the first thing read. */
+
+.work-item-chain {
+  margin-top: var(--wi-space-12);
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wi-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.work-item-chain a {
+  color: var(--wi-muted);
+  text-decoration: none;
+}
+
+.work-item-chain a:hover {
+  color: var(--wi-fg);
+  text-decoration: underline;
+}
+
+.work-item-chain-sep {
+  color: var(--wi-muted);
+}
+
+.work-item-chain-current {
+  color: var(--wi-fg);
+}
+
+/* ── Step 3: work apart from talk ─────────────────────────────────────────
+   Tabs on wide screens, a segmented control on a phone. */
+
+.work-item-tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.work-item-tab-strip {
+  display: flex;
+  gap: var(--wi-space-16);
+  border-bottom: 1px solid var(--wi-border);
+  margin-bottom: var(--wi-space-16);
+}
+
+.work-item-tab {
+  position: relative;
+  background: transparent;
+  border: 0;
+  padding: var(--wi-space-8) 0;
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wi-muted);
+  cursor: pointer;
+}
+
+.work-item-tab:hover {
+  color: var(--wi-fg);
+}
+
+.work-item-tab-current {
+  color: var(--wi-fg);
+}
+
+.work-item-tab-current::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--wi-mark);
+}
+
+.work-item-tabs-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The Deliverable tab: the work itself, with its version, a copy and a save. */
+
+.work-item-deliverable {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-12);
+}
+
+.work-item-deliverable-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wi-space-8);
+  flex-wrap: wrap;
+  padding-bottom: var(--wi-space-8);
+  border-bottom: 1px solid var(--wi-border);
+}
+
+.work-item-deliverable-version {
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wi-muted);
+}
+
+.work-item-deliverable-versions {
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  padding: var(--wi-space-4) var(--wi-space-8);
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-input);
+  background: var(--wi-surface);
+  color: var(--wi-fg);
+  cursor: pointer;
+}
+
+.work-item-deliverable-actions {
+  display: flex;
+  gap: var(--wi-space-8);
+}
+
+.work-item-deliverable-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wi-space-4);
+  padding: var(--wi-space-4) var(--wi-space-8);
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-stamp);
+  background: transparent;
+  color: var(--wi-fg);
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.work-item-deliverable-action:hover {
+  background: color-mix(in oklch, var(--wi-fg) 8%, var(--wi-surface));
+}
+
+.work-item-deliverable-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.work-item-deliverable-body {
+  max-width: 75ch;
+  font-family: var(--wi-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--wi-fg);
+}
+
+/* The one line the hand-in leaves in the conversation. */
+
+.work-item-handed-in {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--wi-space-8);
+  padding: var(--wi-space-8) var(--wi-space-12);
+  border: 1px solid var(--wi-mark);
+  border-radius: var(--wi-radius-input);
+  background: color-mix(in oklch, var(--wi-mark) 8%, var(--wi-surface));
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wi-fg);
+}
+
+.work-item-handed-in-sep {
+  color: var(--wi-muted);
+}
+
+.work-item-handed-in-open {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--wi-fg);
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── Step 4: formatted replies ────────────────────────────────────────────
+   A long reply folds rather than running the page away from the turn bar. */
+
+.work-item-formatted-reply {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-4);
+}
+
+.work-item-reply-text {
+  font-family: var(--wi-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--wi-fg);
+}
+
+.work-item-reply-text > :first-child {
+  margin-top: 0;
+}
+
+.work-item-reply-text > :last-child {
+  margin-bottom: 0;
+}
+
+.work-item-reply-folded {
+  max-height: calc(var(--wi-fold-lines, 12) * 1.5em);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, var(--wi-fg) 70%, transparent 100%);
+}
+
+.work-item-reply-expand {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wi-muted);
+  cursor: pointer;
+}
+
+.work-item-reply-expand:hover {
+  color: var(--wi-fg);
+  text-decoration: underline;
+}
+
+/* ── Step 5: mute the machinery ───────────────────────────────────────────
+   A run of status and assignment lines reads as one grey line until opened. */
+
+.work-item-cluster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-8);
+}
+
+.work-item-cluster-line {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wi-muted);
+  cursor: pointer;
+}
+
+.work-item-cluster-line:hover {
+  color: var(--wi-fg);
+}
+
+.work-item-cluster-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-8);
+  padding-left: var(--wi-space-12);
+  border-left: 1px solid var(--wi-border);
+}
+
+/* ── Step 7: the reviewer's voice ─────────────────────────────────────────
+   Its own card and its own edge, so it is never read as the worker's reply. */
+
+.work-item-verdict {
+  max-width: 65ch;
+  padding: var(--wi-space-12);
+  border: 1px solid var(--wi-border);
+  border-left: 3px solid var(--wi-mark);
+  border-radius: var(--wi-radius-input);
+  background: color-mix(in oklch, var(--wi-mark) 5%, var(--wi-surface));
+}
+
+.work-item-verdict-sent-back {
+  border-left-color: var(--wi-alert);
+  background: color-mix(in oklch, var(--wi-alert) 5%, var(--wi-surface));
+}
+
+.work-item-verdict-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wi-space-8);
+  flex-wrap: wrap;
+  margin-bottom: var(--wi-space-8);
+}
+
+.work-item-verdict-label {
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wi-fg);
+}
+
+.work-item-verdict-round,
+.work-item-verdict-time {
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--wi-muted);
+}
+
+.work-item-verdict-note {
+  font-family: var(--wi-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--wi-fg);
+}
+
+.work-item-verdict-note > :first-child {
+  margin-top: 0;
+}
+
+.work-item-verdict-guidance {
+  margin-top: var(--wi-space-12);
+  padding-top: var(--wi-space-8);
+  border-top: 1px solid var(--wi-border);
+  font-family: var(--wi-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--wi-fg);
+}
+
+.work-item-verdict-guidance-label {
+  display: block;
+  margin-bottom: var(--wi-space-4);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wi-muted);
+}
+
+.work-item-verdict-final {
+  margin: var(--wi-space-8) 0 0;
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  color: var(--wi-muted);
+}
+
+/* ── Step 8: the composer as quick replies ────────────────────────────────
+   Above the box, and they change with the same turn the bar reads. */
+
+.work-item-chips {
+  display: flex;
+  gap: var(--wi-space-8);
+  margin-bottom: var(--wi-space-8);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.work-item-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.work-item-chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: var(--wi-space-4) var(--wi-space-12);
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-input);
+  background: transparent;
+  color: var(--wi-fg);
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.work-item-chip:hover {
+  background: color-mix(in oklch, var(--wi-fg) 8%, var(--wi-surface));
+}
+
+/* ── Step 10: phone ───────────────────────────────────────────────────────
+   One column. The turn bar rides the top of the screen so the decision is
+   always in reach; the tabs become a segmented control; the chips scroll. */
+
+@media (max-width: 720px) {
+  .work-item-turn-bar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--wi-surface);
+    margin-left: calc(-1 * var(--wi-space-24));
+    margin-right: calc(-1 * var(--wi-space-24));
+    padding-left: var(--wi-space-24);
+    padding-right: var(--wi-space-24);
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .work-item-tab-strip {
+    gap: 0;
+    padding: var(--wi-space-4);
+    border: 1px solid var(--wi-border);
+    border-radius: var(--wi-radius-input);
+    background: color-mix(in oklch, var(--wi-fg) 4%, var(--wi-bg));
+  }
+
+  .work-item-tab {
+    flex: 1 1 0;
+    padding: var(--wi-space-8) var(--wi-space-4);
+    border-radius: var(--wi-radius-stamp);
+    text-align: center;
+  }
+
+  .work-item-tab-current {
+    background: var(--wi-surface);
+  }
+
+  .work-item-tab-current::after {
+    content: none;
+  }
+
+  .work-item-deliverable-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

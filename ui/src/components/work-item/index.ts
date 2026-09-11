@@ -20,3 +20,7 @@ export { turnSentence, planApproveLabel, timerIntervalText } from "./turn-senten
 export type { TurnSentenceView, TurnSentenceResult, TurnAction, TurnActionId, TurnTone } from "./turn-sentence";
 export { parseWorkItemBrief, isWorkItemBrief } from "./work-item-brief";
 export type { WorkItemBrief, WorkItemBriefLine } from "./work-item-brief";
+export { chainOfWhy } from "./work-item-chain";
+export type { ChainLink, TaskGoal } from "./work-item-chain";
+export { extractRoundFromDescription } from "./work-item-verdict";
+export { WhatTheAgentSeesSection } from "./WhatTheAgentSeesSection";
