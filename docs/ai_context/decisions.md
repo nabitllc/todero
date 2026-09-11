@@ -394,3 +394,33 @@ instead of guessing.
 - **Source:** `server/src/todero/model-routing.ts`, `server/src/todero/orchestration-rules.ts`,
   `server/src/todero/orchestration-rules.json`, `server/src/adapters/http/chat-completions.ts`,
   `server/src/adapters/http/execute.ts`, `server/src/services/heartbeat.ts`.
+
+## ADR-015 — The Board is a second board component, not a mapping over `KanbanBoard`
+
+- **Date:** 2026-09-11
+- **Status:** Accepted
+- **Context:** The Board wave's own brief said the new page "reuses `KanbanBoard` with the mapping
+  below rather than forking it". `ui/src/components/KanbanBoard.tsx` is keyed to raw `IssueStatus`
+  at every level: `boardStatuses` is a list of statuses, each column registers its droppable with
+  `useDroppable({ id: status })`, a drop calls `onUpdateIssue(id, { status })`, and the column tones
+  are a `Partial<Record<IssueStatus, …>>`. The new page is a different shape — rows (one per feature
+  goal) crossed with five *turn* columns that are computed from `turnSentence`, not from a status;
+  a drop asks a question and calls Accept / Start now / Park; the Agent working header carries a
+  per-agent work-in-progress badge. Reaching that through `KanbanBoard`'s props means replacing its
+  column model, its droppable ids, its drop handler and its header — inside a file that is already
+  502 lines, past the 400-line hard cap for a component, and owned by the Tasks page's board mode.
+- **Decision:** `ui/src/pages/Board.tsx` plus `ui/src/components/board/*` is a second board
+  component. It reuses the same `@dnd-kit` primitives and the same card language, and — more
+  importantly — reuses the product logic that matters: `turnSentence` (through `columnFor` and
+  `reviewerHasIt`), the goals data, the task page's own API calls and `patchFromBlockedBy`.
+  `KanbanBoard` is untouched; the Tasks board mode keeps working exactly as it did.
+- **Consequences:**
+  - Two board components exist. A change to card chrome has to be made twice, and a third view
+    (the manager wave) should extract the shared card rather than adding a third copy.
+  - `KanbanBoard` does not grow, and the Tasks page carries no risk from this wave.
+  - The rows × turn-columns model stays free to change without negotiating with a status-keyed
+    component that a different page owns.
+  - If the two boards are ever merged, the merge is the planned refactor `file_size_limits.md`
+    describes for an outlier file, with its own PR — not a side effect of a feature wave.
+- **Source:** `ui/src/components/KanbanBoard.tsx`, `ui/src/pages/Board.tsx`,
+  `ui/src/components/board/`, `ui/src/lib/board-model.ts`.

@@ -59,6 +59,8 @@ export type WorkItemViewProps = {
   blockerCount?: number;
   /** A run is live on this task: the agent is writing. */
   agentWorking?: boolean;
+  /** The work is handed over and the reviewer has it; the bar says so. */
+  reviewRunning?: boolean;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
   trail: WorkItemTrailEntry[];
@@ -123,6 +125,7 @@ export function WorkItemView(props: WorkItemViewProps) {
     planPending = false,
     blockerCount = 1,
     agentWorking = false,
+    reviewRunning = false,
     sections,
     checklist,
     trail,
@@ -223,6 +226,7 @@ export function WorkItemView(props: WorkItemViewProps) {
         planTasksKept: keptPlanTasks.length,
         waitingOnYou,
         agentWorking,
+        reviewRunning,
         assigneeName: assigneeLabel,
         assigneeId,
         paused,
@@ -243,6 +247,7 @@ export function WorkItemView(props: WorkItemViewProps) {
       keptPlanTasks,
       waitingOnYou,
       agentWorking,
+      reviewRunning,
       assigneeLabel,
       assigneeId,
       paused,

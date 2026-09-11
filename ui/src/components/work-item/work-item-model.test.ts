@@ -159,6 +159,10 @@ describe("work-item model", () => {
     expect(visibleCopyHasForbiddenWord("This issue is ready")).toBe(true);
     expect(visibleCopyHasForbiddenWord("disposition")).toBe(true);
     expect(visibleCopyHasForbiddenWord("This task is the work item")).toBe(false);
+    for (const word of ["handoff", "run", "wake", "heartbeat"]) {
+      expect(visibleCopyHasForbiddenWord(`Nothing says ${word} out loud`)).toBe(true);
+    }
+    expect(visibleCopyHasForbiddenWord("The reviewer is running it now")).toBe(false);
   });
 });
 
