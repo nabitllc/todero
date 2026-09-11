@@ -2,6 +2,7 @@
 // in the wave-1 live loop that failed did so at the http adapter's 180 s
 // limit while the model was busy; the recovery paths then took over. A
 // local runtime gets a floor well above that, whatever the hire wrote down.
+// Fails until server/src/adapters/http/local-model-timeout.ts exists.
 import { describe, expect, it } from "vitest";
 import { LOCAL_MODEL_TIMEOUT_FLOOR_MS, resolveHttpAdapterTimeoutMs } from "./local-model-timeout.js";
 
