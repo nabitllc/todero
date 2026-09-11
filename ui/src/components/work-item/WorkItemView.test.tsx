@@ -436,3 +436,38 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
     expect(container.querySelector('[data-testid="work-item-working"]')!.textContent).toContain("Nova is writing a reply");
   });
 });
+
+describe("bolt and the next-project card", () => {
+  it("shows the placeholder before a plan exists, then the gate count once one does", async () => {
+    await render(fixture());
+    expect(container.querySelector('[data-testid="work-item-bolt"]')!.textContent).toBe(BOLT_VALUE);
+
+    const plan = { goal: "Ship it.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "" }] };
+    await render(
+      fixture({
+        plan,
+        planRevisionNumber: 2,
+        tasks: [{ id: "a", identifier: "ZZW-2", title: "First", status: "done", href: "/ZZW/issues/ZZW-2" }],
+        status: "done",
+      }),
+    );
+    const bolt = container.querySelector('[data-testid="work-item-bolt"]')!;
+    expect(bolt.textContent).toBe("Bolt 2 · 3 of 3 gates");
+    expect(bolt.getAttribute("title")).toContain("Plan approved");
+  });
+
+  it("offers Start a project only once the task is done and a Next suggestion exists", async () => {
+    await render(fixture({ status: "in_progress", nextProjectSuggestion: "a billing dashboard" }));
+    expect(container.querySelector('[data-testid="work-item-next-card"]')).toBeNull();
+
+    const onStartProject = vi.fn();
+    await render(fixture({ status: "done", nextProjectSuggestion: "a billing dashboard", onStartProject }));
+    const card = container.querySelector('[data-testid="work-item-next-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain("a billing dashboard");
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-next-start"]') as HTMLButtonElement).click();
+    });
+    expect(onStartProject).toHaveBeenCalledWith("a billing dashboard");
+  });
+});

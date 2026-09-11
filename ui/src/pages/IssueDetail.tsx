@@ -1185,6 +1185,39 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
       void workItemQueryClient.invalidateQueries({ queryKey: ["issues"] });
     },
   });
+  // The agent's wrap-up may end with a `Next:` line, saved as this task's
+  // `next` document. Only worth fetching once the task is actually done.
+  const { data: nextProjectDocument } = useQuery({
+    queryKey: ["issues", issueId, "documents", "next", "work-item"],
+    queryFn: async () => {
+      try {
+        return await issuesApi.getDocument(issueId, "next");
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: !classicTaskInterfaceEnabled && Boolean(issueId) && issueStatus === "done",
+  });
+  const { openNewIssue } = useDialogActions();
+  const nextProjectSuggestion = nextProjectDocument?.body?.trim() || null;
+  const handleStartProject = useCallback(
+    async (name: string) => {
+      const project = await projectsApi.create(companyId, { name, status: "in_progress" });
+      void workItemQueryClient.invalidateQueries({ queryKey: queryKeys.projects.list(companyId) });
+      // Delete the note so the card does not reappear or offer a second
+      // project from the same suggestion once one has been started.
+      try {
+        await issuesApi.deleteDocument(issueId, "next");
+      } catch {
+        // Best effort: the card is keyed off this query below, which we
+        // clear directly regardless of whether the delete round-trips.
+      }
+      void workItemQueryClient.setQueryData(["issues", issueId, "documents", "next", "work-item"], null);
+      openNewIssue({ projectId: project.id });
+    },
+    [companyId, issueId, openNewIssue, workItemQueryClient],
+  );
   const { data: activity } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
@@ -1408,9 +1441,13 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
             status: displayStatus(child),
             queued: (child.blockedBy ?? []).length > 0,
             href: createIssueDetailPath(child.identifier ?? child.id),
+            createdAt: child.createdAt,
           }))}
+          planRevisionNumber={proposedPlanDocument?.latestRevisionNumber ?? null}
+          nextProjectSuggestion={nextProjectSuggestion}
           agentWorking={liveIssueIds.has(issue.id)}
           onPlanApprove={(keep) => approveProposedPlan.mutate(keep)}
+          onStartProject={(name) => { void handleStartProject(name); }}
           onAccept={() => onUpdate({ status: "done" })}
           onSendBack={(note) => {
             onUpdate({ status: "todo" });

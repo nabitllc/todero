@@ -128,6 +128,8 @@ import {
   buildPlanSummaryTurnInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
   loadPlanChildren,
+  NEXT_PROJECT_DOCUMENT_KEY,
+  parseNextProjectLine,
   planConversationOutcome,
 } from "../todero/conversation-outcome.js";
 import { documentService } from "./documents.js";
@@ -17213,6 +17215,55 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                     ? "[todero] Handed in the output for the user to accept.\n"
                     : "[todero] Handed the turn back to the user.\n",
               );
+              // The conversation task is the whole project for a chat-only
+              // agent: `planConversationOutcome` only returns "done" from
+              // "in_progress" with `closeAllowed`, so this fires exactly once,
+              // at the wrap-up. A parentless task (not one of the plan's own
+              // chained children) closing means the project it belongs to is
+              // done too.
+              if (plan.outcome === "done" && currentIssue && !currentIssue.parentId && currentIssue.projectId) {
+                const projectId = currentIssue.projectId;
+                try {
+                  const completedProject = await projectService(db).update(projectId, { status: "completed" });
+                  if (completedProject) {
+                    await issuesSvc.addComment(
+                      issueId,
+                      `Project ${completedProject.name} is complete.`,
+                      { agentId: agent.id, runId: livenessRun.id },
+                    );
+                  }
+                } catch (err) {
+                  await onLog(
+                    "stderr",
+                    `[todero] Failed to complete the project: ${err instanceof Error ? err.message : String(err)}\n`,
+                  );
+                }
+                // The wrap-up reply may end with a `Next:` line naming a
+                // follow-on project (see buildPlanSummaryTurnInstruction);
+                // save it so the work-item view can offer "Start a project".
+                try {
+                  const wrapUpSummary = readNonEmptyString(parseObject(persistedResultJson).summary);
+                  const nextProject = wrapUpSummary ? parseNextProjectLine(wrapUpSummary) : null;
+                  if (nextProject) {
+                    await documentService(db).upsertIssueDocument({
+                      issueId,
+                      key: NEXT_PROJECT_DOCUMENT_KEY,
+                      title: "Next",
+                      format: "markdown",
+                      body: nextProject,
+                      changeSummary: "Proposed by the agent in the wrap-up.",
+                      createdByAgentId: agent.id,
+                      createdByRunId: livenessRun.id,
+                      lockedDocumentStrategy: "conflict",
+                    });
+                  }
+                } catch (err) {
+                  await onLog(
+                    "stderr",
+                    `[todero] Failed to save the next-project note: ${err instanceof Error ? err.message : String(err)}\n`,
+                  );
+                }
+              }
             }
           } catch (err) {
             await onLog(

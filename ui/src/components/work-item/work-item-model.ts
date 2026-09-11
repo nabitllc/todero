@@ -454,6 +454,8 @@ export type WorkItemTaskRow = {
   /** Waiting behind another task; shown as Queued rather than To do. */
   queued?: boolean;
   href: string;
+  /** When the plan approval created this task — the bolt's start time. */
+  createdAt?: Date | string | null;
 };
 
 export const QUEUED_LABEL = "Queued";
@@ -461,4 +463,65 @@ export const QUEUED_LABEL = "Queued";
 export function taskRowLabel(task: Pick<WorkItemTaskRow, "status" | "queued">): string {
   if (task.queued && task.status !== "done" && task.status !== "cancelled") return QUEUED_LABEL;
   return WORK_ITEM_STATUS_LABELS[task.status];
+}
+
+/** One pass/fail step shown in the Bolt fact's tooltip. */
+export type WorkItemBoltGate = {
+  label: string;
+  passed: boolean;
+};
+
+export type WorkItemBolt = {
+  /** How many times the plan has been proposed (a revised plan starts a new bolt). */
+  number: number;
+  /** The first plan task's createdAt — when the approved plan started running. */
+  startedAt: Date | string | null;
+  gates: WorkItemBoltGate[];
+  gatesPassed: number;
+  gatesTotal: number;
+  /** "Bolt 1 · 3 of 3 gates" */
+  label: string;
+};
+
+/**
+ * A bolt is one approved plan run to its wrap-up: propose, approve, work,
+ * ship. There is nothing to show until a plan exists, so this returns null
+ * for a task that never proposed one — the caller keeps the "Coming"
+ * placeholder in that case.
+ */
+export function computeWorkItemBolt(input: {
+  hasPlan: boolean;
+  planRevisionNumber: number | null;
+  tasks: Array<{ status: WorkItemStatus; createdAt?: Date | string | null }>;
+  parentStatus: WorkItemStatus;
+}): WorkItemBolt | null {
+  if (!input.hasPlan) return null;
+  const number =
+    input.planRevisionNumber && input.planRevisionNumber > 0 ? Math.trunc(input.planRevisionNumber) : 1;
+  const planApproved = input.tasks.length > 0;
+  // Cancelled child tasks (dropped from the plan before approval, or later
+  // abandoned) do not block the Evaluation gate — only "done" is required of
+  // the tasks that are still part of the plan.
+  const evaluation =
+    planApproved && input.tasks.every((task) => task.status === "done" || task.status === "cancelled");
+  const shipped = input.parentStatus === "done";
+  const gates: WorkItemBoltGate[] = [
+    { label: "Plan approved", passed: planApproved },
+    { label: "Evaluation", passed: evaluation },
+    { label: "Shipped", passed: shipped },
+  ];
+  const gatesPassed = gates.filter((gate) => gate.passed).length;
+  return {
+    number,
+    startedAt: planApproved ? input.tasks[0]?.createdAt ?? null : null,
+    gates,
+    gatesPassed,
+    gatesTotal: gates.length,
+    label: `Bolt ${number} · ${gatesPassed} of ${gates.length} gates`,
+  };
+}
+
+/** Newline-joined gate checklist for the Bolt fact's title (tooltip) attribute. */
+export function boltTooltip(bolt: WorkItemBolt): string {
+  return bolt.gates.map((gate) => `${gate.passed ? "✓" : "○"} ${gate.label}`).join("\n");
 }

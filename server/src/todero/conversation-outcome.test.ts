@@ -5,6 +5,7 @@ import {
   buildPlanSummaryTurnInstruction,
   descriptionWithPlanMarker,
   descriptionWithReviewMarker,
+  parseNextProjectLine,
   PLAN_PENDING_MARKER,
   planConversationOutcome,
   REVIEW_PENDING_MARKER,
@@ -94,5 +95,26 @@ describe("plan wrap-up turn", () => {
     const turn = buildPlanSummaryTurnInstruction(children);
     expect(turn).toContain("- T-2 Spec (done)");
     expect(turn).toContain("STATUS: done");
+    expect(turn).toContain("Next:");
+  });
+});
+
+describe("parseNextProjectLine", () => {
+  it("reads the last Next: line in a wrap-up reply", () => {
+    const reply = "Shipped the onboarding flow.\n\nNext: a billing dashboard\nSTATUS: done";
+    expect(parseNextProjectLine(reply)).toBe("a billing dashboard");
+  });
+
+  it("returns null when there is no Next: line", () => {
+    expect(parseNextProjectLine("All done here.\nSTATUS: done")).toBeNull();
+  });
+
+  it("ignores an earlier, unrelated use of the word next", () => {
+    const reply = "The next step was already done.\nEverything shipped.\nSTATUS: done";
+    expect(parseNextProjectLine(reply)).toBeNull();
+  });
+
+  it("returns null for a Next: line with nothing after the colon", () => {
+    expect(parseNextProjectLine("Next:   \nSTATUS: done")).toBeNull();
   });
 });
