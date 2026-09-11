@@ -188,6 +188,43 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, builtInAgentIds: Set<st
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Group agents by role for list view (Manager / Workers / Reviewer / Team fallback)
+function groupAgentsByRole(agents: Agent[]): Map<string, Agent[]> {
+  const groups = new Map<string, Agent[]>();
+
+  // Define role groups with display order
+  const roleOrder: (string | null)[] = ["ceo", "worker", "reviewer"];
+  for (const role of roleOrder) {
+    groups.set(role || "Team", []);
+  }
+
+  // Group agents
+  for (const agent of agents) {
+    const key = (roleOrder.includes(agent.role) ? agent.role : null) || "Team";
+    const group = groups.get(key);
+    if (group) {
+      group.push(agent);
+    } else {
+      groups.set(key, [agent]);
+    }
+  }
+
+  // Sort each group alphabetically
+  for (const group of groups.values()) {
+    group.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  return groups;
+}
+
+// Get display label for a role group
+function getRoleGroupLabel(role: string): string {
+  if (role === "ceo") return "Manager";
+  if (role === "worker") return "Workers";
+  if (role === "reviewer") return "Reviewer";
+  return "Team";
+}
+
 export function Agents() {
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialogActions();
@@ -559,8 +596,23 @@ export function Agents() {
 
       {/* List view */}
       {effectiveView === "list" && filtered.length > 0 && (
-        <div>
-          {filtered.map(renderAgentRow)}
+        <div className="space-y-6">
+          {Array.from(groupAgentsByRole(filtered).entries()).map(([roleKey, agents]) => {
+            if (agents.length === 0) return null;
+            const label = getRoleGroupLabel(roleKey);
+            return (
+              <div key={roleKey}>
+                <div className="px-1 py-2 mb-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {label} <span className="text-muted-foreground font-normal">({agents.length})</span>
+                  </h3>
+                </div>
+                <div>
+                  {agents.map(renderAgentRow)}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

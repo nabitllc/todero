@@ -107,8 +107,9 @@ export async function ensureJudgeAgentForLead(
   if (existing) return existing;
   const created = await agentsSvc.create(lead.companyId, {
     name: buildJudgeAgentName(lead.name),
-    role: "general",
+    role: "reviewer",
     title: "Reviewer",
+    reportsTo: lead.id,
     status: options.status ?? "idle",
     adapterType: lead.adapterType,
     adapterConfig:

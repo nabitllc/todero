@@ -677,6 +677,18 @@ export async function startServer(): Promise<StartedServer> {
         "Backfilled backlog issues to todo for plan-carrying parents (total)",
       );
     }
+    for (const row of backfillResult.roleBackfill.perCompany) {
+      logger.info(row, "Backfilled agent roles for teams hired before the manager wave");
+    }
+    if (backfillResult.roleBackfill.agentsRetagged > 0) {
+      logger.info(
+        {
+          companiesProcessed: backfillResult.roleBackfill.companiesProcessed,
+          agentsRetagged: backfillResult.roleBackfill.agentsRetagged,
+        },
+        "Backfilled agent roles for teams hired before the manager wave (total)",
+      );
+    }
   } catch (err) {
     logger.error({ err }, "Failed to run startup backfills (non-blocking)");
   }

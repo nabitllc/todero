@@ -242,6 +242,36 @@ describe("createPlanChildren", () => {
     ]);
   });
 
+  it("never leaves a task with the manager once the organization has a worker", async () => {
+    const result = await createPlanChildren(db, {
+      ...baseInput,
+      workers: [{ id: "worker-1", name: "Ash 2" }],
+    });
+
+    expect(result.children.map((child) => child.assigneeAgentId)).toEqual([
+      "worker-1",
+      "worker-1",
+      "worker-1",
+    ]);
+    expect(result.children.some((child) => child.assigneeAgentId === "agent-1")).toBe(false);
+  });
+
+  it("keeps one feature with one worker and gives the next to the lighter one", async () => {
+    const result = await createPlanChildren(db, {
+      ...baseInput,
+      workers: [
+        { id: "worker-1", name: "Ash 2" },
+        { id: "worker-2", name: "Ash 3" },
+      ],
+    });
+
+    expect(result.children.map((child) => child.assigneeAgentId)).toEqual([
+      "worker-1",
+      "worker-1",
+      "worker-2",
+    ]);
+  });
+
   it("creates only the tasks the person kept", async () => {
     const kept = selectApprovedPlanTasks(CHAIN_PLAN, ["t1"]);
     const result = await createPlanChildren(db, { ...baseInput, kept });

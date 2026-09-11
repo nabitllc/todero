@@ -17,8 +17,10 @@ export type ChatCompletionsDisposition = "done" | "waiting";
 export const CHAT_COMPLETIONS_STATUS_DONE = "STATUS: done";
 export const CHAT_COMPLETIONS_STATUS_WAITING = "STATUS: waiting";
 
-const STATUS_LINE_RE = /^\s*\**\s*status\s*:\s*\**\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*\**\s*\.?\s*$/i;
-const STATUS_SUFFIX_RE = /\s+\**\s*status\s*:\s*\**\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*\**\s*\.?\s*$/i;
+// Models copy the instruction's formatting: `STATUS: done`, **STATUS: done**,
+// `STATUS: done.` all count. Backticks and asterisks are decoration.
+const STATUS_LINE_RE = /^\s*[*`]*\s*status\s*:\s*[*`]*\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*[*`]*\s*\.?\s*[*`]*\s*$/i;
+const STATUS_SUFFIX_RE = /\s+[*`]*\s*status\s*:\s*[*`]*\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*[*`]*\s*\.?\s*[*`]*\s*$/i;
 
 /**
  * Local LLM hire points the http adapter at `/v1/chat/completions`.

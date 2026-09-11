@@ -14,6 +14,9 @@ import {
   type PlanFeatureGoalDraft,
 } from "../todero/plan-approval.js";
 import type { IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
+import { getManager, listWorkers } from "../todero/manager-mode.js";
+import { MANAGER_ASSIGNMENT_WAKE_REASON } from "../todero/manager-wave.js";
+import { logger } from "../middleware/logger.js";
 
 // Re-export from plan-approval for backward compatibility with existing tests
 export { selectApprovedPlanTasks, buildPlanFeatureGoalDrafts, type PlanFeatureGoalDraft } from "../todero/plan-approval.js";
@@ -98,6 +101,13 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
         actorUserId: req.actor.userId ?? null,
       });
 
+    // Manager mode: the organization has a worker, so the first agent manages
+    // rather than does. Read the team after hiring, so a second agent added
+    // just now is counted.
+    const workers = await listWorkers(db, issue.companyId).catch(() => []);
+    const manager = workers.length > 0 ? await getManager(db, issue.companyId).catch(() => null) : null;
+    const managerMode = workers.length > 0 && Boolean(manager) && manager?.id === issue.assigneeAgentId;
+
     // Create feature goals and child issues
     const planResult = await createPlanChildren(db, {
       issue: {
@@ -115,12 +125,45 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       actorUserId: req.actor.userId ?? null,
       extraWorker,
       extraWorkerFeatureKey,
+      workers: managerMode ? workers.map((worker) => ({ id: worker.id, name: worker.name })) : [],
     });
 
+    // In manager mode the first agent hands the work out before anybody starts:
+    // one turn on the conversation task, in the fixed `assignments:` shape.
+    // Whoever it names ends up with the task, and the tasks that can start now
+    // are brought to their workers on the back of that reply. If that turn
+    // cannot even be queued, the tasks start on the rule's own sharing-out
+    // rather than sitting still.
+    let assignmentTurnQueued = false;
+    if (managerMode && manager) {
+      try {
+        await deps.heartbeat.wakeup(manager.id, {
+          source: "assignment",
+          triggerDetail: "system",
+          reason: MANAGER_ASSIGNMENT_WAKE_REASON,
+          payload: { issueId: issue.id, mutation: "update" },
+          requestedByActorType: "user",
+          requestedByActorId: req.actor.userId ?? null,
+          contextSnapshot: {
+            issueId: issue.id,
+            taskId: issue.id,
+            source: "issue.plan_approve",
+            wakeReason: MANAGER_ASSIGNMENT_WAKE_REASON,
+            readyChildIssueIds: planResult.children.filter((child) => child.canStartNow).map((child) => child.id),
+          },
+        });
+        assignmentTurnQueued = true;
+      } catch (err) {
+        logger.warn({ err, issueId: issue.id }, "failed to ask the manager to hand the plan out");
+      }
+    }
+
     // Wake ready children
-    await wakeReadyChildren(deps.heartbeat, planResult.children, {
-      actorUserId: req.actor.userId ?? null,
-    });
+    if (!assignmentTurnQueued) {
+      await wakeReadyChildren(deps.heartbeat, planResult.children, {
+        actorUserId: req.actor.userId ?? null,
+      });
+    }
 
     res.status(201).json({
       parent: planResult.parent,

@@ -259,6 +259,17 @@ describe("http adapter chat completions identity", () => {
 });
 
 describe("status line tacked onto the last sentence", () => {
+  it("reads a status wrapped in backticks, as the instruction itself shows it", () => {
+    const line = parseChatCompletionsReply("Here is the concept document.\n\n`STATUS: done`");
+    expect(line.disposition).toBe("done");
+    expect(line.body).toBe("Here is the concept document.");
+    const suffix = parseChatCompletionsReply("Thank you for your review. Here is the final document. `STATUS: done`");
+    expect(suffix.disposition).toBe("done");
+    expect(suffix.body).toBe("Thank you for your review. Here is the final document.");
+    const waiting = parseChatCompletionsReply("If any changes are needed, please let me know. `STATUS: waiting`");
+    expect(waiting.disposition).toBe("waiting");
+  });
+
   it("strips a trailing status suffix and reads it", () => {
     const reply = parseChatCompletionsReply("Which provider do you want? Please choose one. STATUS: waiting");
     expect(reply.body).toBe("Which provider do you want? Please choose one.");

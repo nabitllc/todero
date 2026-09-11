@@ -20,6 +20,7 @@ import {
   queueIssueAssignmentWakeup,
   type IssueAssignmentWakeupDeps,
 } from "../services/issue-assignment-wakeup.js";
+import { assignTasksByRule, type AssignableWorker } from "./manager-wave.js";
 import { descriptionWithWaitingMarker } from "./conversation-thread.js";
 import { descriptionWithPlanMarker } from "./conversation-outcome.js";
 import { ensureJudgeAgentForLead, findJudgeAgentForLead } from "./judge-agent.js";
@@ -121,6 +122,12 @@ export async function createPlanChildren(
     actorUserId: string | null;
     extraWorker: { id: string; name: string } | null;
     extraWorkerFeatureKey: string | null;
+    /**
+     * The organization's workers. When there is at least one the first agent is
+     * the manager, and every task of the plan goes to a worker — the manager
+     * never picks one up. Empty keeps the do-all behaviour of the earlier waves.
+     */
+    workers?: AssignableWorker[];
   },
 ): Promise<{
   children: Array<{
@@ -164,6 +171,15 @@ export async function createPlanChildren(
   // so the first task of every feature can start at the same time.
   const ordered = resolveToderoPlanTaskDependencies(input.kept);
 
+  // Manager mode: the first agent manages, so Todero's rule shares the plan out
+  // across the workers before the manager has said a word. Its own reply can
+  // still move any of them (see applyManagerAssignmentReply).
+  const workers = input.workers ?? [];
+  const ruleAssignments = assignTasksByRule(
+    ordered.map((entry) => ({ id: entry.task.id, feature: entry.task.feature })),
+    workers,
+  );
+
   const children: Array<{
     id: string;
     identifier: string | null;
@@ -178,11 +194,12 @@ export async function createPlanChildren(
       .map((planTaskId) => issueIdByPlanTaskId.get(planTaskId))
       .filter((id): id is string => Boolean(id));
     const assigneeAgentId =
-      input.extraWorkerFeatureKey !== null &&
+      ruleAssignments.get(entry.task.id) ??
+      (input.extraWorkerFeatureKey !== null &&
       entry.task.feature.trim().toLowerCase() === input.extraWorkerFeatureKey &&
       input.extraWorker
         ? input.extraWorker.id
-        : input.issue.assigneeAgentId;
+        : input.issue.assigneeAgentId);
     const child = await issuesSvc.create(input.issue.companyId, {
       title: entry.task.title,
       description: buildToderoPlanTaskDescription(input.plan, entry.task, {
@@ -416,9 +433,9 @@ async function hireExtraWorker(
   const agentsSvc = agentService(db);
   return agentsSvc.create(primary.companyId, {
     name: buildExtraWorkerName(primary.name),
-    role: primary.role ?? "",
+    role: "worker",
     title: primary.title ?? null,
-    reportsTo: primary.reportsTo ?? null,
+    reportsTo: primary.id,
     adapterType: primary.adapterType,
     adapterConfig: primary.adapterConfig ?? {},
     runtimeConfig: primary.runtimeConfig ?? {},

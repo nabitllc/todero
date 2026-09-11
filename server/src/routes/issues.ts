@@ -106,6 +106,8 @@ import {
   type IssueWriteDenialContext,
 } from "@todero/shared";
 import { trackAgentTaskCompleted } from "@todero/shared/telemetry";
+import { applyPersonCommentInManagerMode } from "../todero/manager-person-comment.js";
+import { MANAGER_ASSIGNMENT_WAKE_REASON, MANAGER_SENDBACK_WAKE_REASON } from "../todero/manager-wave.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { isUniqueViolation } from "../db-errors.js";
 import type { StorageService } from "../storage/types.js";
@@ -1114,6 +1116,11 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "heartbeat.disabled",
   "heartbeat.timer.no_actionable_work",
   "heartbeat.wakeOnDemand.disabled",
+  // Manager mode: handing the plan's tasks out, and rewriting the brief for a
+  // task that came back. Named here so they read as themselves rather than
+  // "other".
+  MANAGER_ASSIGNMENT_WAKE_REASON,
+  MANAGER_SENDBACK_WAKE_REASON,
 ]);
 
 const ISSUE_WAKE_DIAGNOSTIC_KNOWN_STATUSES = new Set([
@@ -12804,6 +12811,49 @@ export function issueRoutes(
                 : {}),
             },
           });
+        }
+      }
+
+      // Manager mode: once the organization has a worker, what a person writes
+      // on a worker's task is copied to the conversation in one line, and a
+      // task they sent back goes to the manager to have its brief rewritten
+      // before the worker sees it again.
+      if (!actorIsAgent && typeof req.body.body === "string" && req.body.body.trim()) {
+        try {
+          const managerRouting = await applyPersonCommentInManagerMode(
+            db,
+            {
+              updateIssue: (issueIdToPatch, patch) =>
+                svc.update(issueIdToPatch, { ...patch, actorUserId: actor.actorType === "user" ? actor.actorId : null }),
+              addComment: (issueIdToComment, body, agentId) =>
+                svc.addComment(issueIdToComment, body, { agentId }),
+            },
+            {
+              issue: {
+                id: wakeIssueSnapshot.id,
+                companyId: wakeIssueSnapshot.companyId,
+                parentId: wakeIssueSnapshot.parentId ?? null,
+                identifier: wakeIssueSnapshot.identifier ?? null,
+                title: wakeIssueSnapshot.title,
+                description: wakeIssueSnapshot.description ?? null,
+                assigneeAgentId: wakeIssueSnapshot.assigneeAgentId ?? null,
+              },
+              note: String(req.body.body),
+            },
+          );
+          if (managerRouting.wake) {
+            addWakeup(managerRouting.wake.agentId, {
+              source: "assignment",
+              triggerDetail: "system",
+              reason: managerRouting.wake.reason,
+              payload: { issueId: managerRouting.wake.issueId, mutation: "update" },
+              requestedByActorType: actor.actorType,
+              requestedByActorId: actor.actorId,
+              contextSnapshot: managerRouting.wake.contextSnapshot,
+            });
+          }
+        } catch (err) {
+          logger.warn({ err, issueId: id }, "failed to route what the person wrote through the manager");
         }
       }
 
