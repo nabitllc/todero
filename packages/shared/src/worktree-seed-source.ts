@@ -83,15 +83,32 @@ export function baseWorkspaceDeclaresInstanceConfig(baseWorkspaceCwd: string): b
   // name another source; a link that hides whatever it points at is malformed, not empty.
   const configDirEntry = inspectDeclaredEntry(configDir, configPath, " on its .todero entry");
   if (configDirEntry?.isSymbolicLink()) {
+    let linkTarget: Stats;
     try {
-      statSync(configDir);
+      linkTarget = statSync(configDir);
     } catch (error) {
       throw new Error(
         `Registered base project workspace Todero config at ${configPath} cannot be inspected (${errorCode(error)} on its .todero symlink target).`,
       );
     }
+    assertTraversableConfigDir(linkTarget, configPath, " on its .todero symlink target");
+  } else if (configDirEntry) {
+    // `.todero` exists but is not a directory, so nothing under it can be read.
+    // POSIX says ENOTDIR for the config probe above and has already thrown;
+    // Windows says ENOENT, which is indistinguishable from a plain checkout.
+    // Deciding on the entry itself fails closed on both, rather than seeding
+    // this worktree from whatever other instance the caller happened to name.
+    assertTraversableConfigDir(configDirEntry, configPath, "");
   }
   return false;
+}
+
+/** A `.todero` that is not a directory cannot hold a config; that is drift, not absence. */
+function assertTraversableConfigDir(entry: Stats, configPath: string, detail: string): void {
+  if (entry.isDirectory()) return;
+  throw new Error(
+    `Registered base project workspace Todero config at ${configPath} cannot be inspected (ENOTDIR${detail}).`,
+  );
 }
 
 function canonicalRegularFile(filePath: string, label: string): string {

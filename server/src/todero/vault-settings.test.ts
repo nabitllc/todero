@@ -92,6 +92,10 @@ describe("ensureRecommendedVault", () => {
     else process.env.TODERO_SETTINGS_DIR = prevSettings;
     if (prevVaultDir === undefined) delete process.env.TODERO_VAULT_DIR;
     else process.env.TODERO_VAULT_DIR = prevVaultDir;
+    // This used to fail with EPERM on Windows because vault-settings.ts opened
+    // the settings SQLite file and never closed it, so the folder was still
+    // locked here. The source closes its handle now, and this is a plain
+    // removal again — if it ever throws, that is a handle leak worth seeing.
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 

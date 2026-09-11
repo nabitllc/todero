@@ -6,6 +6,23 @@ import { resolveCanonicalWorktreeSeedSource } from "./worktree-seed-source.js";
 
 const cleanup: string[] = [];
 
+/**
+ * Windows refuses an ordinary symlink unless the shell is elevated or
+ * Developer Mode is on, and never refuses a junction — which carries the same
+ * lstat/stat behaviour these cases are about (a link, and ENOENT when what it
+ * points at is not there). Detected at runtime by trying the real thing first,
+ * so a machine that can make symlinks still tests symlinks.
+ */
+function makeLink(target: string, linkPath: string): void {
+  try {
+    fs.symlinkSync(target, linkPath);
+    return;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EPERM") throw err;
+  }
+  fs.symlinkSync(target, linkPath, "junction");
+}
+
 function makeInstance(prefix: string, instanceId: string) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   cleanup.push(cwd);
@@ -82,7 +99,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
   it("rejects a dangling config symlink instead of falling back to the named source", () => {
     const baseCwd = makePlainCheckout();
     fs.mkdirSync(path.join(baseCwd, ".todero"), { recursive: true });
-    fs.symlinkSync(path.join(baseCwd, "absent.json"), path.join(baseCwd, ".todero", "config.json"));
+    makeLink(path.join(baseCwd, "absent.json"), path.join(baseCwd, ".todero", "config.json"));
     const source = makeInstanceRoot("default");
     const target = makeInstance("todero-seed-dangling-target-", "target-instance");
 
@@ -96,9 +113,14 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     })).toThrow(/Registered source Todero config does not exist/);
   });
 
+  // Windows reports ENOENT, not ENOTDIR, for a path underneath a regular file,
+  // so the config probe alone cannot tell a malformed workspace from a plain
+  // checkout. The resolver decides on the `.todero` entry itself, which fails
+  // closed on both platforms — so this case runs everywhere.
   it("fails closed when the declared config cannot be inspected", () => {
     const baseCwd = makePlainCheckout();
-    // `.todero` as a regular file makes lstat report ENOTDIR, not ENOENT.
+    // `.todero` as a regular file: nothing can live under it, whatever errno
+    // the platform reports for the path below it.
     fs.writeFileSync(path.join(baseCwd, ".todero"), "not a directory\n");
     const source = makeInstanceRoot("default");
     const target = makeInstance("todero-seed-unreadable-target-", "target-instance");
@@ -117,7 +139,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     const baseCwd = makePlainCheckout();
     // Resolving `.todero` fails before the probe reaches config.json, so the config
     // entry reports ENOENT even though this workspace is malformed rather than plain.
-    fs.symlinkSync(path.join(baseCwd, "absent-dir"), path.join(baseCwd, ".todero"));
+    makeLink(path.join(baseCwd, "absent-dir"), path.join(baseCwd, ".todero"));
     const source = makeInstanceRoot("default");
     const target = makeInstance("todero-seed-dangling-parent-target-", "target-instance");
 
@@ -135,7 +157,7 @@ describe("resolveCanonicalWorktreeSeedSource", () => {
     const baseCwd = makePlainCheckout();
     const linked = path.join(baseCwd, "linked-config-dir");
     fs.mkdirSync(linked, { recursive: true });
-    fs.symlinkSync(linked, path.join(baseCwd, ".todero"));
+    makeLink(linked, path.join(baseCwd, ".todero"));
     const source = makeInstanceRoot("default");
     const target = makeInstance("todero-seed-linked-empty-target-", "target-instance");
 

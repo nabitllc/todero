@@ -34,6 +34,12 @@ describe("toderoLocalLlmRoutes", () => {
 });
 
 describe("POST /api/todero/local-llm/test", () => {
+  beforeEach(() => {
+    mockDetectLocalLlms.mockReset();
+    mockDetectLocalLlms.mockResolvedValue({ runtimes: [] });
+    mockTestLocalLlmConnection.mockReset();
+  });
+
   it("is mounted, validates its body, and returns the tester's verdict", async () => {
     const app = express();
     app.use(express.json());
@@ -47,10 +53,81 @@ describe("POST /api/todero/local-llm/test", () => {
       .post("/api/todero/local-llm/test")
       .send({ baseUrl: "http://127.0.0.1:11434", modelId: "qwen2.5-coder:latest" });
     expect(ok.status).toBe(200);
-    expect(ok.body).toEqual({ ok: true, reply: "OK", latencyMs: 12 });
+    expect(ok.body).toEqual({ ok: true, reply: "OK", latencyMs: 12, availableModels: [] });
     expect(mockTestLocalLlmConnection).toHaveBeenCalledWith({
       baseUrl: "http://127.0.0.1:11434",
       modelId: "qwen2.5-coder:latest",
     });
+  });
+
+  /**
+   * Wave J item G: model routing ranks the models this machine serves, so a
+   * passing test is where that list gets written down.
+   */
+  it("reports the models this machine serves and remembers them for the organization", async () => {
+    mockTestLocalLlmConnection.mockResolvedValue({ ok: true, reply: "OK", latencyMs: 9 });
+    mockDetectLocalLlms.mockResolvedValue({
+      runtimes: [
+        {
+          id: "ollama",
+          baseUrl: "http://127.0.0.1:11434",
+          models: [{ id: "llama3.2:1b" }, { id: "qwen2.5-coder:14b" }],
+        },
+      ],
+    });
+    const updates: Array<Record<string, unknown>> = [];
+    const db = {
+      select: () => ({
+        from: () => ({ where: () => ({ limit: async () => [{ governance: {} }] }) }),
+      }),
+      update: () => ({
+        set: (values: Record<string, unknown>) => {
+          updates.push(values);
+          return { where: async () => undefined };
+        },
+      }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/api", toderoLocalLlmRoutes(db as never));
+
+    const res = await request(app)
+      .post("/api/todero/local-llm/test")
+      .send({ baseUrl: "http://127.0.0.1:11434", modelId: "qwen2.5-coder:14b", companyId: "company-1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.availableModels).toEqual(["llama3.2:1b", "qwen2.5-coder:14b"]);
+    expect(updates).toEqual([
+      {
+        interactionResolverGovernance: {
+          toderoLocalLlmAvailableModelIds: ["llama3.2:1b", "qwen2.5-coder:14b"],
+        },
+      },
+    ]);
+  });
+
+  it("remembers nothing when the test does not pass", async () => {
+    mockTestLocalLlmConnection.mockResolvedValue({ ok: false, error: "no answer", latencyMs: 30 });
+    const updates: unknown[] = [];
+    const db = {
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ governance: {} }] }) }) }),
+      update: () => ({
+        set: (values: unknown) => {
+          updates.push(values);
+          return { where: async () => undefined };
+        },
+      }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use("/api", toderoLocalLlmRoutes(db as never));
+
+    const res = await request(app)
+      .post("/api/todero/local-llm/test")
+      .send({ baseUrl: "http://127.0.0.1:11434", modelId: "qwen2.5-coder:14b", companyId: "company-1" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.availableModels).toEqual([]);
+    expect(updates).toEqual([]);
   });
 });

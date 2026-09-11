@@ -462,3 +462,106 @@ Jira and Azure DevOps both do this one way: the main column is the content and t
 **Tests.** `turnSentence` for every state; cluster collapsing; verdict card rendering; chips change with state; the deliverable tab defaults once handed in; phone layout snapshot.
 
 **Dependencies.** Steps 1, 2, 4, 5, 8, 9, 10 need nothing new. Step 3 needs the output document (wave C, shipped). Step 6 needs the goals wave (D). Step 7 needs the judge wave (E).
+
+### Wave J: Hardening
+
+Shipped on branch `hardening-wave` (2026-09-11), built by four sessions and landed together. No
+schema change, no migration; every backfill and marker uses a column that already existed.
+
+**A. Timer backfill — shipped.** `server/src/todero/startup-backfills.ts` gives every chat-only
+conversational agent whose timer is off the wave-F defaults (on, 120 s, one at a time, skip when
+there is nothing to do), keeps `cooldownSec`, and stamps `runtimeConfig.heartbeat.toderoBackfilledAt`
+so it never re-applies once a person turns the timer off. Archived and paused organizations are
+skipped. One log line per organization that changed, plus a total. Embedded-Postgres tests cover the
+backfill, the already-on agent, idempotency, `cooldownSec`, the archived organization, the paused
+organization, a stamped agent whose timer is off, and an agent hired today whose timer a person
+turned off afterwards.
+
+The stamp only separates "never configured" from "turned off on purpose" if every agent hired after
+wave F carries it from the start — the hire flow already sends `heartbeat.enabled: true`, so without
+that an agent hired today would look legacy the moment a person switched its timer off, and the next
+start would switch it back on. `server/src/todero/timer-backfill-stamp.ts` holds the stamp, and
+`normalizeRuntimeConfigForNewAgent` in `services/agents.ts` applies it at creation to exactly the
+population the backfill looks at (chat-only http agents) and to nothing else.
+
+**B. Backlog-to-To do backfill — shipped.** Same module. Every Backlog child whose parent carries a
+plan and which has an agent moves to To do; blockers are untouched, so the chain still holds order.
+The parent conversation task is stamped with `<!-- todero-backlog-backfill: done -->` in its own
+description (the marker device this codebase already uses; no new column), so a second start changes
+nothing and a person can park a child in Backlog on purpose afterwards. Tests cover the move, a
+chain of two children (both move, and the same readiness check the wake path uses says only the
+unblocked one can start), an unrelated Backlog task, a second start, an archived organization, a
+paused organization, and parking after the first pass.
+
+**C. Double wake — shipped.** `decideSuccessfulRunHandoff` skips a conversational turn whose outcome
+was already applied. The builder left only the reader; the writer is
+`server/src/todero/conversation-disposition-applied.ts`, called from the conversation-outcome block
+in `heartbeat.ts` the moment the reply's own disposition is applied. It stamps the stored run and
+the in-memory row the handoff decision reads, so a later recovery sweep reaches the same answer.
+
+**D. Drift-safe startup — shipped.** `server/src/todero/schema-drift-check.ts` compares every Drizzle
+table with `information_schema.columns` after migrations and warns per table: extra columns (NOT NULL
+without a default flagged as "inserts will fail"), and columns the code expects that are missing. One
+clean line when there is nothing to say. Never alters anything; wrapped so it cannot block startup.
+Fixed from the builder's version: it compared Drizzle's TypeScript property names (camelCase) with
+database column names (snake_case), so every real database would have reported total drift. The test
+now asserts that a freshly migrated database is clean, which is what caught it. A second fix: an
+extra *nullable* column left `issuesFound` false, and the startup logger prints nothing at all in
+that case — a database whose only drift was one unexpected nullable column reported clean and the
+column was never shown. Any extra column now counts, with a test for the nullable-only case.
+
+**E. Flaky tests on Windows — shipped, no skips.**
+- E1 `vault-settings.test.ts`: fixed at the cause. `vault-settings.ts` opened the settings SQLite
+  file on every read and write and never closed it — a leaked handle per call in production, and on
+  Windows a lock on the settings folder, which is what made the teardown's `rmSync` fail with EPERM.
+  Both paths close their handle now and the teardown is a plain removal again, so a future leak
+  shows up instead of being swallowed. 9/9 here.
+- E2 the symlink failures were in `packages/shared/src/worktree-seed-source.test.ts` (the server
+  spawn test already passed). They now try a real symlink and fall back to a junction, decided at
+  runtime by catching EPERM, not by checking the platform. 8/8, nothing skipped.
+  `scripts/provision-worktree.sh` got the same fallback.
+- E3 `CompanySettings.test.tsx`: the missing `deleteBlastRadius` / `secretRefs` mocks were the render
+  churn behind the timeout. 4/4.
+- E4 `heartbeat-paused-company-guard.test.ts`: the quiesce loop now waits for wakes that are
+  *claimed* (in flight, no run row yet). The builder waited for *queued* wakes, which never drain in
+  that file because the loop pauses every organization first — it hung the whole 30 s budget and
+  failed the next test. 3/3 in 13 s, no CONNECTION_ENDED output.
+
+**F. Automated hires respect board approval — shipped (not delivered by its builder).**
+`server/src/todero/plan-hire-approval.ts` plus the check inside `hireForPlan`: when the organization
+sets `requireBoardApprovalForNewAgents`, the reviewer and the second worker are created
+`pending_approval` and paired with a `hire_agent` approval, exactly as a person's own hire is. A
+teammate waiting on approval is given no work — the first agent keeps all of it — and the task gets
+one short line: "<name> waits for your approval in the Inbox before starting." Unchanged when the
+setting is off. Tests for on, off, and the wording.
+
+**G. Available models list — shipped (re-implemented).** `server/src/todero/available-models.ts`
+stores the model ids in the organization's `interactionResolverGovernance` and reads them back for
+the run context, so `model-routing.ts` finally has something to rank. Written when a connection test
+passes and the caller names the organization (the wizard now does), and looked up once from the
+runtime for an organization hired before this existed. The builder's version called a `db.query(...)`
+API that does not exist in this codebase and would have thrown on every conversational run, and
+nothing ever wrote the list.
+
+**H. Approve handler split — shipped.** `server/src/todero/plan-approval.ts` holds
+`selectApprovedPlanTasks`, `buildPlanFeatureGoalDrafts`, `createPlanChildren`, `hireForPlan` and
+`wakeReadyChildren`; `todero-plan-routes.ts` is a 130-line handler. Fixed from the builder's version:
+it imported `goalService` from `services/goal-completion.js`, which does not export it — every
+approve returned 500 and seven route tests failed.
+
+**I. Plan document noise — shipped.** The task page asks for the plan only for a task that can carry
+one (no parent, the plan-pending marker, or a plan already cached), so a child task no longer 404s
+every ten seconds. `IssueDetail.test.tsx` covers all four cases: a child asks for nothing, the
+conversation task asks, a child still waiting for a plan asks, and a child whose plan is already in
+hand keeps asking.
+
+**J. `resolveCanonicalWorktreeSeedSource` failed open on Windows — fixed.** With `.todero` as a
+regular file, Windows reports ENOENT for the path underneath it where POSIX reports ENOTDIR, so the
+resolver read the workspace as a plain checkout and seeded this worktree from whatever other
+instance the caller happened to name. It now decides on the `.todero` entry itself — a `.todero`
+that is not a directory (or a symlink to something that is not one) cannot hold a config, which is
+drift, not absence — so it fails closed on both platforms and the regression test runs everywhere.
+
+**Open.**
+- Live verification (restart against the real database, a throwaway organization through
+  plan → approve → chained tasks → judge → accept on Ollama) has not been run.

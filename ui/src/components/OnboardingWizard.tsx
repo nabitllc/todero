@@ -1813,6 +1813,7 @@ function OnboardingWizardInner({
       const result = await toderoLocalLlmApi.test({
         baseUrl: localLlmSelection.baseUrl,
         modelId: localLlmSelection.modelId,
+        companyId: createdCompanyId,
       });
       setLocalLlmTest(
         result.ok

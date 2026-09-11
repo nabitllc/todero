@@ -821,6 +821,27 @@ if [[ -f "$worktree_cwd/package.json" && -f "$worktree_cwd/pnpm-lock.yaml" ]]; t
   exit 0
 fi
 
+# Create a symlink, falling back to a junction on Windows if symlinks fail (EPERM without elevation or dev mode).
+# For directories only; returns 0 on success, 1 on failure.
+create_symlink_or_junction() {
+  local source="$1" target="$2"
+
+  # Try symlink first (works on POSIX and Windows with elevated/dev-mode privileges)
+  if ln -s "$source" "$target" 2>/dev/null; then
+    return 0
+  fi
+
+  # Symlink failed; fall back to junction on Windows for directories.
+  # mklink /J is only available on Windows, so only try if the command exists.
+  if command -v cmd &>/dev/null && cmd /C "mklink /J \"$target\" \"$source\"" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Neither symlink nor junction worked; report and return failure.
+  # The caller decides whether to skip or error out.
+  return 1
+}
+
 while IFS= read -r relative_path; do
   [[ -n "$relative_path" ]] || continue
   source_path="$base_cwd/$relative_path"
@@ -830,7 +851,9 @@ while IFS= read -r relative_path; do
   [[ -e "$target_path" || -L "$target_path" ]] && continue
 
   mkdir -p "$(dirname "$target_path")"
-  ln -s "$source_path" "$target_path"
+  create_symlink_or_junction "$source_path" "$target_path" || {
+    echo "Warning: could not create symlink or junction for $relative_path (symlinks unavailable, junctions failed, or not on Windows)" >&2
+  }
 done < <(
   list_base_node_modules_paths
 )

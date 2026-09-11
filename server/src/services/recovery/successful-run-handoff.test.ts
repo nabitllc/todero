@@ -390,6 +390,23 @@ describe("successful run handoff decision", () => {
     });
   });
 
+  it("does not queue when a conversational agent's disposition was already applied", () => {
+    // A conversational agent's outcome block applied the status change, so the
+    // issue is no longer stuck in_progress. The handoff should skip.
+    expect(decide({
+      run: {
+        ...run,
+        contextSnapshot: {
+          issueId: "issue-1",
+          toderoDispositionApplied: true,
+        },
+      } as any,
+    })).toEqual({
+      kind: "skip",
+      reason: "conversation disposition was already applied",
+    });
+  });
+
   it("does not queue for issue monitor maintenance runs", () => {
     expect(decide({
       run: {

@@ -138,6 +138,11 @@ import {
   planConversationOutcome,
   planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
+import {
+  markConversationDispositionApplied,
+  withConversationDispositionApplied,
+} from "../todero/conversation-disposition-applied.js";
+import { resolveAvailableModelIdsForRun } from "../todero/available-models.js";
 import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
 import { applyJudgeReview } from "../todero/judge-apply.js";
@@ -14917,11 +14922,25 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         turnInstructionPresent: Boolean(readNonEmptyString(context.toderoTurnInstruction)),
         hasParentIssue: Boolean(issueContext?.parentId),
       });
+      // What this machine can actually serve, so model routing can prefer a
+      // stronger or faster model for this kind of turn. Stored on the
+      // organization when a connection test passes, and looked up once from
+      // the runtime for an organization hired before that was kept.
+      const availableModels = await resolveAvailableModelIdsForRun(db, {
+        companyId: agent.companyId,
+        baseUrl: readNonEmptyString(parseObject(agent.adapterConfig).url),
+      }).catch(() => [] as string[]);
+      if (availableModels.length > 0) {
+        context.toderoAvailableModels = availableModels;
+      } else {
+        delete context.toderoAvailableModels;
+      }
     } else {
       delete context.toderoThread;
       delete context.toderoIdentity;
       delete context.toderoTurnInstruction;
       delete context.toderoTaskKind;
+      delete context.toderoAvailableModels;
     }
     if (issueRef) {
       context.toderoIssue = {
@@ -17245,6 +17264,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         // or hand the turn back to the person. Without this the run leaves the
         // issue in_progress and recovery blocks it as "missing disposition".
         const conversationDisposition = readConversationDisposition(persistedResultJson);
+        // Set once the reply's own disposition has been applied, so the
+        // successful-run handoff below does not raise a second wake for a turn
+        // that already reached its end state.
+        let conversationDispositionApplied = false;
         if (issueId && outcome === "succeeded" && conversationDisposition) {
           try {
             const currentIssue = await issuesSvc.getById(issueId);
@@ -17349,6 +17372,15 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 description: plan.description,
                 actorAgentId: agent.id,
               });
+              conversationDispositionApplied = true;
+              try {
+                await markConversationDispositionApplied(db, livenessRun.id);
+              } catch (markErr) {
+                await onLog(
+                  "stderr",
+                  `[todero] Failed to record that the reply's disposition was applied: ${markErr instanceof Error ? markErr.message : String(markErr)}\n`,
+                );
+              }
               await onLog(
                 "stdout",
                 plan.outcome === "done"
@@ -17474,13 +17506,17 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         await releaseIssueExecutionAndPromote(livenessRun);
         await handleRunLivenessContinuation(livenessRun);
         await handleIssueReviewPathDisposition(livenessRun);
-        await handleSuccessfulRunHandoff(
+        const runForHandoff =
           issueCommentPolicyResult.outcome === "retry_queued" || issueCommentPolicyResult.outcome === "retry_exhausted"
             ? {
               ...livenessRun,
               issueCommentStatus: issueCommentPolicyResult.outcome,
             }
-            : livenessRun,
+            : livenessRun;
+        await handleSuccessfulRunHandoff(
+          conversationDispositionApplied
+            ? withConversationDispositionApplied(runForHandoff)
+            : runForHandoff,
           agent,
         );
 

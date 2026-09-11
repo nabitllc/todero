@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate, useNavigationType, useParams } from "@/
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { ApiError } from "../api/client";
-import { displayStatus } from "@/components/work-item/work-item-model";
+import { displayStatus, parseWorkItemDescription } from "@/components/work-item/work-item-model";
 import { issuesApi } from "../api/issues";
 import { approvalsApi } from "../api/approvals";
 import { activityApi, type RunForIssue } from "../api/activity";
@@ -1161,6 +1161,12 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   // fenced block; the work-item view shows it as the approval card until the
   // person approves it and Todero creates the child tasks.
   const workItemQueryClient = useQueryClient();
+  // Only ask for the plan for a task that can carry one: the conversation task
+  // (no parent), a task still marked as waiting for a plan, or one whose plan
+  // we already have. A child task has none, and asking for it every ten seconds
+  // is what put a 404 in the console.
+  const canHavePlan = !issue.parentId || parseWorkItemDescription(issue.description).planPending;
+  const cachedPlanDocument = workItemQueryClient.getQueryData(["issues", issueId, "documents", "plan", "work-item"]);
   const { data: proposedPlanDocument } = useQuery({
     queryKey: ["issues", issueId, "documents", "plan", "work-item"],
     queryFn: async () => {
@@ -1171,7 +1177,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
         throw err;
       }
     },
-    enabled: !classicTaskInterfaceEnabled && Boolean(issueId),
+    enabled: !classicTaskInterfaceEnabled && Boolean(issueId) && (canHavePlan || Boolean(cachedPlanDocument)),
     refetchInterval: 10_000,
   });
   const proposedPlan = useMemo(() => {

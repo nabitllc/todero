@@ -21,6 +21,11 @@ export type InteractionResolverGovernance = Partial<
    * company's "who decides what" settings blob.
    */
   autoAcceptWhenJudgePasses?: boolean;
+  /**
+   * The list of available models on the local LLM runtime this company uses,
+   * populated when the connection test passes at onboarding.
+   */
+  toderoLocalLlmAvailableModelIds?: string[];
 };
 
 export interface Company {

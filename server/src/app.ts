@@ -556,7 +556,7 @@ export async function createApp(
   api.use(inboxDismissalRoutes(db));
   api.use(instanceSettingsRoutes(db));
   api.use(toderoVaultRoutes());
-  api.use(toderoLocalLlmRoutes());
+  api.use(toderoLocalLlmRoutes(db));
   if (opts.databaseBackupService) {
     api.use(instanceDatabaseBackupRoutes(opts.databaseBackupService));
   }

@@ -95,6 +95,13 @@ export async function ensureJudgeAgentForLead(
   db: Db,
   agentsSvc: JudgeAgentHireDeps,
   lead: { id: string; companyId: string; name: string; adapterType: string; adapterConfig: unknown },
+  options: {
+    /**
+     * `pending_approval` when the organization asks a person to approve a new
+     * teammate first; the caller pairs the record with the approval.
+     */
+    status?: "idle" | "pending_approval";
+  } = {},
 ): Promise<JudgeAgentRow | null> {
   const existing = await findJudgeAgentForLead(db, { companyId: lead.companyId, leadAgentId: lead.id });
   if (existing) return existing;
@@ -102,7 +109,7 @@ export async function ensureJudgeAgentForLead(
     name: buildJudgeAgentName(lead.name),
     role: "general",
     title: "Reviewer",
-    status: "idle",
+    status: options.status ?? "idle",
     adapterType: lead.adapterType,
     adapterConfig:
       lead.adapterConfig && typeof lead.adapterConfig === "object" && !Array.isArray(lead.adapterConfig)

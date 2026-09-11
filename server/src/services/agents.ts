@@ -33,6 +33,7 @@ import {
 } from "./agent-secret-bindings.js";
 import { logActivity } from "./activity-log.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
+import { stampTimerConfiguredOnNewAgent } from "../todero/timer-backfill-stamp.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 import {
   assertClaudeOAuthBindingInvariant,
@@ -224,7 +225,10 @@ function parseFiniteNumberLike(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizeRuntimeConfigForNewAgent(runtimeConfig: unknown): Record<string, unknown> {
+export function normalizeRuntimeConfigForNewAgent(
+  runtimeConfig: unknown,
+  agent?: { adapterType: string; adapterConfig: unknown },
+): Record<string, unknown> {
   const normalizedRuntimeConfig = isPlainRecord(runtimeConfig) ? { ...runtimeConfig } : {};
   const heartbeat = isPlainRecord(normalizedRuntimeConfig.heartbeat)
     ? { ...normalizedRuntimeConfig.heartbeat }
@@ -232,6 +236,11 @@ function normalizeRuntimeConfigForNewAgent(runtimeConfig: unknown): Record<strin
   if (parseFiniteNumberLike(heartbeat.maxConcurrentRuns) == null) {
     heartbeat.maxConcurrentRuns = AGENT_DEFAULT_MAX_CONCURRENT_RUNS;
   }
+  // A chat-only local agent has its timer decided right here, at the hire.
+  // Stamping it now is what lets the startup backfill tell an agent that was
+  // never configured from one a person turned off on purpose: without the
+  // stamp the next start would switch the timer back on behind their back.
+  if (agent) stampTimerConfiguredOnNewAgent(heartbeat, agent);
   normalizedRuntimeConfig.heartbeat = heartbeat;
   return normalizedRuntimeConfig;
 }
@@ -785,11 +794,14 @@ export function agentService(db: Db) {
 
       const role = data.role ?? "general";
       const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
-      const runtimeConfig = normalizeRuntimeConfigForNewAgent(data.runtimeConfig);
       const adapterType = data.adapterType ?? "process";
       const adapterConfig = isPlainRecord(data.adapterConfig)
         ? await secretsSvc.normalizeAdapterConfigForPersistence(companyId, data.adapterConfig, { adapterType })
         : {};
+      const runtimeConfig = normalizeRuntimeConfigForNewAgent(data.runtimeConfig, {
+        adapterType,
+        adapterConfig,
+      });
       // Run the server-enforced binding invariant after generic normalization
       // and before any database write. A create has no prior config.
       const bindingDecision = assertClaudeOAuthBindingInvariant({
