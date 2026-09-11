@@ -117,6 +117,7 @@ import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 import {
   isConversationalHttpAgent,
+  loadConversationIdentity,
   loadConversationThread,
   planConversationDisposition,
   readConversationDisposition,
@@ -14812,8 +14813,14 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         companyId: agent.companyId,
         issueId: issueRef.id,
       });
+      // Its standing brief, since the http adapter never reads AGENTS.md.
+      context.toderoIdentity = await loadConversationIdentity(db, {
+        agent,
+        issueId: issueRef.id,
+      });
     } else {
       delete context.toderoThread;
+      delete context.toderoIdentity;
     }
     if (issueRef) {
       context.toderoIssue = {

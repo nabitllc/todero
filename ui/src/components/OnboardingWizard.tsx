@@ -1129,7 +1129,9 @@ function OnboardingWizardInner({
           createdCompanyId,
           buildOnboardingIssuePayload({
             title: buildOnboardingFirstTaskTitle(companyGoal),
-            description: buildOnboardingFirstTaskDescription(companyGoal),
+            description: buildOnboardingFirstTaskDescription(companyGoal, {
+              conversational: connectKind === "local_llm",
+            }),
             assigneeAgentId: createdAgentId,
             projectId,
             goalId
@@ -1642,7 +1644,9 @@ function OnboardingWizardInner({
         adapterType: connectKind === "local_llm" ? "http" : adapterType,
         adapterConfig: hireAdapterConfig,
         ...(shouldApplyStoredClaudeLogin ? { applyStoredClaudeLogin: true } : {}),
-        runtimeConfig: buildNewAgentRuntimeConfig(),
+        runtimeConfig: buildNewAgentRuntimeConfig({
+          conversational: connectKind === "local_llm",
+        }),
         // The heartbeat reads the managed AGENTS.md materialized from this
         // bundle. A later overwrite is not the first work the lead sees.
         instructionsBundle: hireInstructionsBundle,
@@ -1663,8 +1667,10 @@ function OnboardingWizardInner({
       if (!stillTheSameCompany(createdCompanyId)) return;
       setCreatedAgentId(agent.id);
       // Advance to the Review step — the lead is now online. The user drives
-      // strategy + hiring from the planning chat after "Get started".
-      setStep(5);
+      // strategy + hiring from the planning chat after "Get started". A local
+      // model cannot read a Second Brain (only command-line adapters get the
+      // vault), so that step is skipped rather than shown as decoration.
+      setStep(connectKind === "local_llm" ? 6 : 5);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
     } finally {
@@ -1768,6 +1774,9 @@ function OnboardingWizardInner({
   // is true (it is not, on either first-run path).
   function backStepFrom(current: Step): Step {
     if (current === 3 && skipsMissionStep && entryStep !== 2) return 1;
+    // The Second Brain step is skipped for a local model, so Back from Review
+    // returns to Connect a model.
+    if (current === 6 && connectKind === "local_llm") return 4;
     return (current - 1) as Step;
   }
 
@@ -2725,6 +2734,11 @@ function OnboardingWizardInner({
                 <div className="mx-auto mb-6 w-full max-w-md space-y-1 text-center">
                   <p className="text-xs text-muted-foreground">Mission</p>
                   <p className="text-sm whitespace-pre-wrap">{companyGoal.trim()}</p>
+                  {connectKind === "local_llm" && (
+                    <p className="pt-2 text-xs text-muted-foreground" data-testid="local-llm-review-note">
+                      Your local model works from this conversation only. It cannot read a Second Brain yet, so that step was skipped.
+                    </p>
+                  )}
                 </div>
               )}
 

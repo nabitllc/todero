@@ -577,6 +577,36 @@ describe("OnboardingWizard first-run LLM lock", () => {
     await act(async () => root.unmount());
   });
 
+  it("a local-model hire skips the Second Brain step and lands on Review with the note", async () => {
+    mockLocalLlmApi.test.mockResolvedValue({ ok: true, reply: "OK", latencyMs: 900 });
+    const { root } = await openLiveLocalLlmStep();
+
+    await clickByText((t) => t === "Test connection");
+    for (let i = 0; i < 8; i++) {
+      await flushReact();
+      if (!connectButton()?.disabled) break;
+    }
+    await clickByText((t) => t.replace(/\s+/g, " ").trim() === "Connect");
+    for (let i = 0; i < 12; i++) {
+      await flushReact();
+      if (document.querySelector('[data-testid="local-llm-review-note"]')) break;
+    }
+
+    expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+    const hireCall = mockAgentsApi.hire.mock.calls[0] as unknown as [
+      string,
+      { adapterType: string; runtimeConfig: { heartbeat: { maxConcurrentRuns: number } } },
+    ];
+    const hireArgs = hireCall[1];
+    expect(hireArgs.adapterType).toBe("http");
+    expect(hireArgs.runtimeConfig.heartbeat.maxConcurrentRuns).toBe(1);
+    expect(document.body.textContent).not.toMatch(/Attach a read-only vault/i);
+    expect(document.querySelector('[data-testid="local-llm-review-note"]')?.textContent).toMatch(/cannot read a Second Brain yet/i);
+    expect(document.body.textContent).toMatch(/Let's get started/i);
+
+    await act(async () => root.unmount());
+  });
+
   it("a failed test shows why and keeps Connect disabled", async () => {
     mockLocalLlmApi.test.mockResolvedValue({
       ok: false,

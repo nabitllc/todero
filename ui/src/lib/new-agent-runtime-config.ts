@@ -6,6 +6,11 @@ export function buildNewAgentRuntimeConfig(input?: {
   intervalSec?: number;
   cheapModel?: string;
   cheapModelEnabled?: boolean;
+  /**
+   * A chat-only local model answers one thread at a time: a second run in
+   * parallel would just queue on the same GPU and confuse the conversation.
+   */
+  conversational?: boolean;
 }): Record<string, unknown> {
   const config: Record<string, unknown> = {
     heartbeat: {
@@ -14,7 +19,7 @@ export function buildNewAgentRuntimeConfig(input?: {
       wakeOnDemand: true,
       skipTimerWhenNoActionableWork: true,
       cooldownSec: 10,
-      maxConcurrentRuns: AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+      maxConcurrentRuns: input?.conversational ? 1 : AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
     },
   };
 

@@ -19,6 +19,16 @@ export type LocalLlmPickerProps = {
   onRuntimesDetected?: (runtimes: LocalLlmRuntime[]) => void;
 };
 
+/**
+ * A 7B model answers fast but often breaks the shapes Todero asks for; a 14B
+ * follows them and still fits a laptop GPU. Prefer the first 14B-class model
+ * the runtime already has, else the first model listed.
+ */
+export function pickDefaultLocalLlmModel<T extends { id: string }>(models: T[]): T | null {
+  if (models.length === 0) return null;
+  return models.find((model) => /(^|[^0-9])1[2-6]b(?![0-9a-z])/i.test(model.id)) ?? models[0]!;
+}
+
 export function LocalLlmPicker({ value, onChange, onRuntimesDetected }: LocalLlmPickerProps) {
   const [runtimes, setRuntimes] = useState<LocalLlmRuntime[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -100,13 +110,14 @@ export function LocalLlmPicker({ value, onChange, onRuntimesDetected }: LocalLlm
                 : "border-border hover:bg-accent/50",
             )}
             onClick={() => {
+              const preferred = pickDefaultLocalLlmModel(runtime.models);
               onChange(
-                runtime.models[0]
+                preferred
                   ? {
                       runtimeId: runtime.id,
                       runtimeLabel: runtime.label,
                       baseUrl: runtime.baseUrl,
-                      modelId: runtime.models[0].id,
+                      modelId: preferred.id,
                     }
                   : null,
               );

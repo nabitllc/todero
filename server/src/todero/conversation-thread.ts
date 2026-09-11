@@ -1,6 +1,6 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@todero/db";
-import { issueComments } from "@todero/db";
+import { companies, goals, issueComments, issues } from "@todero/db";
 import { isChatCompletionsUrl } from "../adapters/http/chat-completions.js";
 
 /**
@@ -119,4 +119,68 @@ export function planConversationDisposition(input: {
     return { status: "done", description: descriptionWithWaitingMarker(input.issue.description, false) };
   }
   return { status: "blocked", description: descriptionWithWaitingMarker(input.issue.description, true) };
+}
+
+export type ConversationIdentity = {
+  agentName: string;
+  roleTitle: string | null;
+  companyName: string | null;
+  mission: string | null;
+};
+
+/**
+ * What a chat-only agent should know about itself before it reads the task.
+ * The http adapter never reads the materialized AGENTS.md, so this is the
+ * agent's standing brief: name, title, company, and the company mission from
+ * the goal the issue hangs off (or the company's root goal when the issue has
+ * none). Every field is optional except the name; the prompt degrades to a
+ * plain introduction when a company has no goal yet.
+ */
+export async function loadConversationIdentity(
+  db: Db,
+  input: {
+    agent: { name: string; title?: string | null; role?: string | null; companyId: string };
+    issueId: string | null;
+  },
+): Promise<ConversationIdentity> {
+  const [companyRow] = await db
+    .select({ name: companies.name })
+    .from(companies)
+    .where(eq(companies.id, input.agent.companyId))
+    .limit(1);
+
+  let goalRow: { title: string; description: string | null } | null = null;
+  if (input.issueId) {
+    const [issueRow] = await db
+      .select({ goalId: issues.goalId })
+      .from(issues)
+      .where(and(eq(issues.companyId, input.agent.companyId), eq(issues.id, input.issueId)))
+      .limit(1);
+    if (issueRow?.goalId) {
+      const [row] = await db
+        .select({ title: goals.title, description: goals.description })
+        .from(goals)
+        .where(and(eq(goals.companyId, input.agent.companyId), eq(goals.id, issueRow.goalId)))
+        .limit(1);
+      goalRow = row ?? null;
+    }
+  }
+  if (!goalRow) {
+    const [row] = await db
+      .select({ title: goals.title, description: goals.description })
+      .from(goals)
+      .where(and(eq(goals.companyId, input.agent.companyId), eq(goals.level, "company"), isNull(goals.parentId)))
+      .orderBy(asc(goals.createdAt), asc(goals.id))
+      .limit(1);
+    goalRow = row ?? null;
+  }
+
+  const mission = goalRow ? (goalRow.description?.trim() || goalRow.title.trim() || null) : null;
+  const roleTitle = input.agent.title?.trim() || null;
+  return {
+    agentName: input.agent.name.trim(),
+    roleTitle,
+    companyName: companyRow?.name?.trim() || null,
+    mission,
+  };
 }
