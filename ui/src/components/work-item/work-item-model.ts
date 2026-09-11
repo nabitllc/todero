@@ -66,6 +66,7 @@ const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Brief|Feature|Story|Task|Bug)\s*
 const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
 const REVIEW_COMMENT_RE = /<!--\s*todero-review:\s*pending\s*-->/i;
 const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;
+const JUDGE_ROUNDS_COMMENT_RE = /<!--\s*todero-judge-rounds:\s*\d+\s*-->\s*\n?/gi;
 const SECTION_HEADING_RE = /^(#{1,6}\s+|\*\*)(Acceptance Criteria|In Scope|Out of Scope|Testing Strategies)(\*\*)?\s*$/i;
 const CHECK_ITEM_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/;
 
@@ -109,6 +110,9 @@ export function stripWorkItemMeta(description: string | null | undefined): strin
     .replace(WAITING_COMMENT_RE, "")
     .replace(REVIEW_COMMENT_RE, "")
     .replace(PLAN_COMMENT_RE, "")
+    // The reviewer counts its rounds in the description; the person never
+    // needs to see the tally.
+    .replace(JUDGE_ROUNDS_COMMENT_RE, "")
     .replace(/^\s+/, "");
 }
 

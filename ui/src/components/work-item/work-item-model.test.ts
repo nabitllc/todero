@@ -70,6 +70,14 @@ describe("work-item model", () => {
     expect(parsed.checklist).toEqual([]);
   });
 
+  it("keeps the reviewer's round tally out of the body", () => {
+    const parsed = parseWorkItemDescription(
+      "<!-- todero-type: Task -->\n<!-- todero-judge-rounds: 1 -->\nWrite the sign up words.",
+    );
+    expect(parsed.type).toBe("Task");
+    expect(parsed.body).toBe("Write the sign up words.");
+  });
+
   it("refuses In progress without an assignee and Blocked without blocked-by", () => {
     expect(
       commitWorkItemStatus({ status: "in_progress", assigned: false, blockedBy: null }),
