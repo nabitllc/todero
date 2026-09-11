@@ -45,8 +45,6 @@ export type {
 export {
   DEFAULT_MAX_SUCCESSFUL_RUN_HANDOFF_ATTEMPTS,
   FINISH_SUCCESSFUL_RUN_HANDOFF_REASON,
-  LEGACY_SUCCESSFUL_RUN_HANDOFF_NOTICE_PREFIXES,
-  LEGACY_SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY,
   SUCCESSFUL_RUN_HANDOFF_OPTIONS,
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
@@ -62,6 +60,10 @@ export {
   isSuccessfulRunHandoffRequiredNoticeBody,
   noticeMetadataReferencesRecoveryAction,
 } from "./successful-run-handoff.js";
+export {
+  LEGACY_SUCCESSFUL_RUN_HANDOFF_NOTICE_PREFIXES,
+  LEGACY_SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
+} from "./legacy-notice-text.js";
 export type {
   SuccessfulRunHandoffNotice,
   SuccessfulRunHandoffDecision,

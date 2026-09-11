@@ -328,7 +328,7 @@ function summarizeRunFailureForIssueComment(run: LatestIssueRun) {
   if (!run) return null;
 
   if (readNonEmptyString(run.error) || readNonEmptyString(run.errorCode)) {
-    return " Latest retry failure details were withheld from the issue thread; inspect the linked run for evidence.";
+    return " Latest failure details were withheld from the task thread; inspect the linked run for evidence.";
   }
   return null;
 }
@@ -707,12 +707,12 @@ function buildLivenessEscalationDescription(finding: IssueLivenessFinding) {
   const selectedOwner = finding.recommendedOwnerAgentId ?? "none";
 
   return [
-    "Todero detected a harness-level issue graph liveness incident.",
+    "Todero detected a harness-level dependency graph liveness incident.",
     "",
     "## Source",
     "",
-    `- Source issue: ${source?.identifier ?? source?.issueId ?? finding.issueId}`,
-    `- Recovery target issue: ${recovery?.identifier ?? recovery?.issueId ?? finding.recoveryIssueId}`,
+    `- Source task: ${source?.identifier ?? source?.issueId ?? finding.issueId}`,
+    `- Recovery target task: ${recovery?.identifier ?? recovery?.issueId ?? finding.recoveryIssueId}`,
     `- Incident key: \`${finding.incidentKey}\``,
     `- Detected invariant: \`${finding.state}\``,
     `- Dependency path: ${formatDependencyPath(finding)}`,
@@ -727,22 +727,22 @@ function buildLivenessEscalationDescription(finding: IssueLivenessFinding) {
     "",
     finding.recommendedAction,
     "",
-    "Resolve the blocked chain, then mark this escalation issue done so the original issue can resume when all blockers are cleared.",
+    "Resolve the blocked chain, then mark this escalation task done so the original task can resume when all blockers are cleared.",
   ].join("\n");
 }
 
 function buildLivenessOriginalIssueComment(finding: IssueLivenessFinding, escalation: typeof issues.$inferSelect) {
   return [
-    "Todero detected a harness-level liveness incident in this issue's dependency graph.",
+    "Todero detected a harness-level liveness incident in this task's dependency graph.",
     "",
-    `- Escalation issue: ${escalation.identifier ?? escalation.id}`,
+    `- Escalation task: ${escalation.identifier ?? escalation.id}`,
     `- Incident key: \`${finding.incidentKey}\``,
     `- Finding: \`${finding.state}\``,
     `- Dependency path: ${formatDependencyPath(finding)}`,
     `- Reason: ${finding.reason}`,
     `- Manager action requested: ${finding.recommendedAction}`,
     "",
-    "This issue now keeps its existing blockers and is also blocked by the escalation issue so dependency wakeups remain explicit.",
+    "This task now keeps its existing blockers and is also blocked by the escalation task so dependency wakeups remain explicit.",
   ].join("\n");
 }
 
@@ -1238,7 +1238,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         [
           "## Assigned Orphan Blocker",
           "",
-          `Todero found this issue is blocking ${blockingLinks} but had no assignee, so no heartbeat could pick it up.`,
+          `Todero found this task is blocking ${blockingLinks} but had no assignee, so it went unprocessed.`,
           "",
           "- Assigned it back to the agent that created the blocker.",
           "- Next action: resolve this blocker or reassign it to the right owner.",
@@ -1665,10 +1665,10 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       await issuesSvc.addComment(input.existingEvaluation.id, [
         "Source-resolved watchdog fold.",
         "",
-        `- Source issue: ${input.sourceIssue.identifier ?? input.sourceIssue.id}`,
+        `- Source task: ${input.sourceIssue.identifier ?? input.sourceIssue.id}`,
         `- Run: \`${input.run.id}\``,
         `- Same-run evidence: \`${input.evidence.kind}:${input.evidence.id}\` at ${input.evidence.createdAt.toISOString()}`,
-        "- Outcome: false positive; the source issue already reached a terminal disposition from this run.",
+        "- Outcome: false positive; the source task already reached a final state from this run.",
       ].join("\n"), { runId: input.run.id });
     }
 
@@ -1680,7 +1680,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         actionId: activeRecoveryAction.id,
         status: "resolved",
         outcome: "false_positive",
-        resolutionNote: "Source issue reached a terminal disposition through durable same-run activity; watchdog folded as source-resolved.",
+        resolutionNote: "Source task reached a final state through durable same-run activity; watchdog folded as source-resolved.",
       });
     }
 
@@ -1691,7 +1691,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         runId: input.run.id,
         evaluationIssueId: input.existingEvaluation?.id ?? null,
         decision: "dismissed_false_positive",
-        reason: "Source issue already reached a terminal disposition through durable same-run activity.",
+        reason: "Source task already reached a final state through durable same-run activity.",
         createdByRunId: input.run.id,
       })
       .returning();
@@ -2004,9 +2004,9 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
 
     return [
       "",
-      "- Nested recovery: suppressed because this issue is already a `stranded_issue_recovery` issue.",
+      "- Nested recovery: suppressed because this task is already a `stranded_issue_recovery` task.",
       sourceLine,
-      "- Next action: the assigned recovery owner or board operator should fix the runtime/adapter problem, resolve or reassign the original source issue, then mark this recovery issue done or cancelled.",
+      "- Next action: the assigned recovery owner or board operator should fix the runtime/adapter problem, resolve or reassign the original source task, then mark this recovery task done or cancelled.",
     ].join("\n");
   }
 
@@ -2154,11 +2154,11 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         ? {}
         : { routingPolicy: STRANDED_BOARD_ESCALATION_POLICY },
       nextAction: recoveryCause === SUCCESSFUL_RUN_MISSING_STATE_REASON
-        ? "Board operator: inspect the run evidence, then explicitly choose a valid issue disposition, retry the original owner, reassign, or intentionally resolve the task."
+        ? "Board operator: inspect the run evidence, then explicitly choose a valid next step, retry the original owner, reassign, or intentionally resolve the task."
         : recoveryCause === "process_lost"
           ? "Board operator: inspect the retry history, then explicitly retry the original owner, reassign, or intentionally resolve the task."
         : recoveryCause === "provider_quota"
-          ? "Wait for provider quota recovery, then retry the original assignee; do not wake a takeover owner."
+          ? "Wait for provider quota recovery, then retry the original assignee; do not start a takeover owner."
         : recoveryCause === "codex_output_inactivity_monitor"
           ? "Board operator: inspect the inactivity evidence, then explicitly retry the original owner, reassign, or intentionally resolve the task."
         : recoveryCause === "workspace_validation_failed"
@@ -2310,17 +2310,17 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     const failureSummary = summarizeRunFailureForIssueComment(input.latestRun);
 
     return [
-      "Todero stopped automatic stranded-work recovery for this recovery issue.",
+      "Todero stopped automatic stranded-work recovery for this recovery task.",
       "",
-      `- Recovery issue: ${issueUiLink({ identifier: input.issue.identifier, id: input.issue.id }, input.prefix)}`,
+      `- Recovery task: ${issueUiLink({ identifier: input.issue.identifier, id: input.issue.id }, input.prefix)}`,
       `- Previous status: \`${input.previousStatus}\``,
       `- Latest run: ${runLink}`,
       `- Latest run status: \`${input.latestRun?.status ?? "unknown"}\``,
       `- Retry reason: \`${retryReason}\``,
       failureSummary ? `- Failure: ${failureSummary.trim()}` : "- Failure: none recorded",
-      "- Guard: recovery issues do not create nested `stranded_issue_recovery` issues.",
+      "- Guard: recovery tasks do not create nested `stranded_issue_recovery` tasks.",
       "",
-      "Next action: the current recovery owner should inspect the failed run evidence, restore a live execution path or record the manual resolution, then move this recovery issue out of `blocked`.",
+      "Next action: the current recovery owner should inspect the failed run evidence, restore a live execution path or record the manual resolution, then move this recovery task out of `blocked`.",
     ].join("\n");
   }
 
@@ -2627,7 +2627,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
         terminalReason: null,
       },
       nextAction:
-        "The original owner must replace the parked summary with a terminal, live, blocked, monitored, or typed waiting disposition.",
+        "The original owner must replace the parked summary with a terminal, live, blocked, monitored, or typed waiting status.",
       wakePolicy: {
         type: "bounded_owner_disposition_repair",
         retryAgentId: input.issue.assigneeAgentId,
@@ -2666,7 +2666,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       dispositionRepairMaxAttempts: DISPOSITION_REPAIR_MAX_ATTEMPTS,
       bypassContinuationSummaryPark: true,
       dispositionRepairInstruction:
-        "Revalidate the issue and replace the invalid parked summary with a durable disposition. Continue productive work when appropriate.",
+        "Revalidate the task and replace the invalid parked summary with a durable status. Continue productive work when appropriate.",
     }, "normal_model");
 
     const findScheduledRun = () => db
@@ -3012,7 +3012,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
           routingPolicy: STRANDED_BOARD_ESCALATION_POLICY,
         },
         nextAction:
-          "Inspect the evidence and choose whether to repair, retry the original owner, explicitly reassign, or resolve the source issue.",
+          "Inspect the evidence and choose whether to repair, retry the original owner, explicitly reassign, or resolve the source task.",
         wakePolicy: {
           type: "board_escalation",
           reason: input.terminalReason,
@@ -3038,14 +3038,14 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     await issuesSvc.addComment(
       input.issue.id,
       [
-        "Todero exhausted the bounded original-owner disposition repair without a durable source-state change.",
+        "Todero exhausted the bounded original-owner status repair without a durable source-state change.",
         "",
         `- Attempts: ${input.attemptCount}/${DISPOSITION_REPAIR_MAX_ATTEMPTS}`,
         `- Terminal reason: \`${input.terminalReason}\``,
         "- Recovery owner: board",
         "- Source ownership: unchanged; reassignment requires an explicit decision or a policy-defined serious failure.",
         "",
-        "Next action: repair the liveness disposition or request an explicit source-owner decision.",
+        "Next action: repair the liveness status or request an explicit source-owner decision.",
       ].join("\n"),
       {},
       {
@@ -3736,7 +3736,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
             recoveryCause: "configuration_incomplete",
             comment:
               "Todero classified the latest adapter failure as `configuration_incomplete`. " +
-              "Moving the issue to `blocked` with the configuration fix recorded instead of creating a recovery takeover.",
+              "Moving the task to `blocked` with the configuration fix recorded instead of creating a recovery takeover.",
           });
           if (updated) {
             latestRun = await persistAdapterFailureRecoveryClassification(latestRun, adapterFailureClassification);
@@ -3831,8 +3831,8 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
               latestRun: latestPostResolutionRun,
               comment:
                 `Todero stopped requeueing accepted interaction \`${acceptedContinuationInteraction.id}\` after ` +
-                `${consecutive} consecutive continuation wakes were cancelled while waiting on review. ` +
-                "Moving the issue to `blocked` so the missing execution path is visible for intervention.",
+                `${consecutive} consecutive follow-up runs were cancelled while waiting on review. ` +
+                "Moving the task to `blocked` so the missing execution path is visible for intervention.",
             });
             if (updated) {
               result.escalated += 1;
@@ -3997,7 +3997,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
             currentStageId: pendingExecutionState.currentStageId ?? null,
             currentStageType: pendingExecutionState.currentStageType ?? null,
             reviewRecoveryInstruction:
-              "The previous reviewer run ended while this execution-review stage was still pending. Submit the review decision now, or mark the issue blocked with the exact unblock action.",
+              "The previous reviewer run ended while this execution-review stage was still pending. Submit the review decision now, or mark the task blocked with the exact unblock action.",
           },
         });
         if (queued) {
