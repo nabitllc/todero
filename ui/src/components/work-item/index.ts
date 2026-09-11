@@ -1,10 +1,5 @@
 export { WorkItemView } from "./WorkItemView";
-export type {
-  WorkItemViewProps,
-  WorkItemAssigneeOption,
-  WorkItemAgentOption,
-  WorkItemBlockerOption,
-} from "./WorkItemView";
+export type { WorkItemViewProps, WorkItemAgentOption } from "./WorkItemView";
 export {
   parseWorkItemDescription,
   serializeWorkItemDescription,
@@ -13,13 +8,15 @@ export {
   apiStatusFor,
   apiPriorityFor,
   commitWorkItemStatus,
-  blockedChipLabel,
   buildTrail,
   formatTokenUsage,
   formatTokenCost,
   agentSummaryRow,
   agentSummaryOverflowLine,
   COMPOSER_PLACEHOLDER,
-  BOLT_VALUE,
   WORK_ITEM_SECTION_TITLES,
 } from "./work-item-model";
+export { turnSentence, planApproveLabel, timerIntervalText } from "./turn-sentence";
+export type { TurnSentenceView, TurnSentenceResult, TurnAction, TurnActionId, TurnTone } from "./turn-sentence";
+export { parseWorkItemBrief, isWorkItemBrief } from "./work-item-brief";
+export type { WorkItemBrief, WorkItemBriefLine } from "./work-item-brief";

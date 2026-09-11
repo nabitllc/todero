@@ -104,8 +104,6 @@ function viewPropsFor(issue: Issue) {
     activity: [],
     agentMap: new Map(),
     userLabelMap: null,
-    projects: [],
-    costSummary: null,
   });
 }
 
@@ -131,5 +129,39 @@ describe("who may change the type", () => {
   it("keeps Brief out of the types a person can pick", () => {
     expect(WORK_ITEM_CHOOSABLE_TYPES).toEqual(["Feature", "Story", "Task", "Bug"]);
     expect(WORK_ITEM_TYPES).toContain("Brief");
+  });
+});
+
+describe("the three markers the turn bar reads", () => {
+  it("surfaces a question waiting on the person", () => {
+    const props = viewPropsFor(
+      issueFixture({ description: "<!-- todero-blocked-by: waiting-on-you -->\nWhich one?" }),
+    );
+    expect(props.waitingOnYou).toBe(true);
+    expect(props.reviewPending).toBe(false);
+    expect(props.planPending).toBe(false);
+  });
+
+  it("surfaces a hand-in waiting to be accepted", () => {
+    const props = viewPropsFor(
+      issueFixture({ description: "<!-- todero-review: pending -->\nHanded in." }),
+    );
+    expect(props.reviewPending).toBe(true);
+    expect(props.waitingOnYou).toBe(false);
+  });
+
+  it("surfaces a plan waiting for a yes", () => {
+    const props = viewPropsFor(
+      issueFixture({ description: "<!-- todero-plan: pending -->\nHere is the plan." }),
+    );
+    expect(props.planPending).toBe(true);
+    expect(props.waitingOnYou).toBe(false);
+  });
+
+  it("leaves all three off on a plain task", () => {
+    const props = viewPropsFor(issueFixture());
+    expect(props.waitingOnYou).toBe(false);
+    expect(props.reviewPending).toBe(false);
+    expect(props.planPending).toBe(false);
   });
 });

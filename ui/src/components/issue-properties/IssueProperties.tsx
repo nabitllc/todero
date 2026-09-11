@@ -98,6 +98,8 @@ import {
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
+import { WorkItemStatusRow } from "./WorkItemStatusRow";
+import { PANEL_EMPTY_VALUE, panelClosedAt, panelTokenCostLabel, panelTokenUsageLabel } from "./panel-cost";
 import { issueReviewPolicyBadge } from "../../lib/review-policy";
 import { IssueCasesPanel } from "../IssueCasesPanel";
 import { ExpandRelationListButton, RemovableIssueReferencePill } from "./relation-controls";
@@ -189,6 +191,14 @@ export function IssueProperties({
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
   const taskWatchdogsEnabled = experimentalSettings?.enableTaskWatchdogs === true;
+  // What the work cost. The card used to carry this on its own facts column;
+  // the panel is the one details surface now, so it reads the figure itself.
+  // Older builds without the endpoint simply leave the rows empty.
+  const { data: costSummary } = useQuery({
+    queryKey: queryKeys.issues.costSummary(issue.id),
+    queryFn: () => issuesApi.getCostSummary(issue.id),
+    enabled: typeof issuesApi.getCostSummary === "function",
+  });
   // Managed-sandbox-only policy: the workspace folder is a host filesystem
   // path, so the Folder row disappears. The Branch row above it stays. The gate
   // fails closed whenever the policy is unknown — in flight and also on a failed
@@ -2100,16 +2110,17 @@ export function IssueProperties({
     </button>
   );
 
+  // Done or cancelled, whichever closed it; null while the task is still open.
+  const closedAt = panelClosedAt(issue);
+
   const propertiesBody = (
     <div>
-      <PropertySection title="Triage" first>
+      <PropertySection title="Pinned" first>
         <PropertyRow label="Status">
-          <StatusIcon
-            status={issue.status}
-            size="lg"
+          <WorkItemStatusRow
+            issue={issue}
             blockerAttention={issue.blockerAttention}
-            onChange={(status) => onUpdate({ status })}
-            showLabel
+            onUpdate={onUpdate}
           />
         </PropertyRow>
 
@@ -2336,7 +2347,36 @@ export function IssueProperties({
         />
       </PropertySection>
 
-      <PropertySection title="Execution">
+      <PropertySection title="Cost and time">
+        <PropertyRow label="Token usage">
+          <span className="text-sm">{panelTokenUsageLabel(costSummary)}</span>
+        </PropertyRow>
+        <PropertyRow label="Token cost">
+          <span className="text-sm" data-testid="panel-token-cost">
+            {panelTokenCostLabel(costSummary?.costCents)}
+          </span>
+        </PropertyRow>
+        <PropertyRow label="Created">
+          <span className="text-sm">{formatDateTime(issue.createdAt)}</span>
+        </PropertyRow>
+        {issue.startedAt ? (
+          <PropertyRow label="Started">
+            <span className="text-sm">{formatDateTime(issue.startedAt)}</span>
+          </PropertyRow>
+        ) : null}
+        <PropertyRow label="Closed">
+          {closedAt ? (
+            <span className="text-sm">{formatDateTime(closedAt)}</span>
+          ) : (
+            <span className="text-sm text-muted-foreground">{PANEL_EMPTY_VALUE}</span>
+          )}
+        </PropertyRow>
+        <PropertyRow label="Updated">
+          <span className="text-sm">{timeAgo(issue.updatedAt)}</span>
+        </PropertyRow>
+      </PropertySection>
+
+      <PropertySection title="Review">
         {/* Read-only: agents set the policy, the board does not. */}
         {reviewPolicyBadge ? (
           <PropertyRow label="Approvals">
@@ -2530,22 +2570,6 @@ export function IssueProperties({
             )}
           </PropertyRow>
         ) : null}
-        {issue.startedAt && (
-          <PropertyRow label="Started">
-            <span className="text-sm">{formatDateTime(issue.startedAt)}</span>
-          </PropertyRow>
-        )}
-        {issue.completedAt && (
-          <PropertyRow label="Completed">
-            <span className="text-sm">{formatDateTime(issue.completedAt)}</span>
-          </PropertyRow>
-        )}
-        <PropertyRow label="Created">
-          <span className="text-sm">{formatDateTime(issue.createdAt)}</span>
-        </PropertyRow>
-        <PropertyRow label="Updated">
-          <span className="text-sm">{timeAgo(issue.updatedAt)}</span>
-        </PropertyRow>
         {issue.archivedAt && issue.archivedByActorType === "agent" && issue.archivedByAgentId ? (
           (() => {
             const archivedByAgent = (agents ?? []).find((candidate) => candidate.id === issue.archivedByAgentId);

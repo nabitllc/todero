@@ -11,7 +11,6 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AGENT_SUMMARY_LIMIT,
-  BOLT_VALUE,
   COMPOSER_PLACEHOLDER,
   EMPTY_ACTIVITY,
   WAITING_ON_YOU,
@@ -46,20 +45,11 @@ function fixture(overrides: Partial<WorkItemViewProps> = {}): WorkItemViewProps 
     checklist: [{ id: "c1", text: "Measure a real task screen", done: false }],
     trail: [{ id: "tesa-1", identifier: "TESA-1", href: "/TESA-1", current: true }],
     status: "new",
-    priority: "none",
     assigneeId: null,
     assigneeLabel: null,
     blockedBy: null,
-    projectName: "Todero",
-    projectCount: 1,
-    createdAt: new Date("2026-08-30T12:00:00.000Z"),
-    closedAt: null,
-    tokenUsage: "—",
-    tokenCost: "—",
     activity: [],
-    assigneeOptions: [{ id: "agent-ron", label: "Ron" }],
     agentOptions: [{ id: "agent-ron", name: "Ron" }],
-    blockerOptions: [{ id: "tesa-12", identifier: "TESA-12" }],
     ...overrides,
   };
 }
@@ -103,16 +93,6 @@ describe("WorkItemView TESA-1", () => {
     expect(composer.placeholder).toBe("Comment, or @ an agent");
   });
 
-  it("puts Coming on the Bolt rail as static copy, not a control", async () => {
-    await render(fixture());
-    const bolt = container.querySelector('[data-testid="work-item-bolt"]') as HTMLElement;
-    expect(bolt?.textContent?.trim()).toBe(BOLT_VALUE);
-    expect(bolt?.textContent?.trim()).toBe("Coming");
-    expect(bolt?.querySelector("a,button")).toBeNull();
-    expect(bolt.tagName).not.toBe("A");
-    expect(bolt.tagName).not.toBe("BUTTON");
-    expect(bolt.classList.contains("work-item-bolt")).toBe(true);
-  });
 
   it("renders the four section titles exactly and hides empty sections", async () => {
     await render(
@@ -217,13 +197,6 @@ describe("WorkItemView TESA-1", () => {
     expect(onStatusChange).not.toHaveBeenCalled();
   });
 
-  it("never invents $0.00 for token cost", async () => {
-    await render(fixture({ tokenCost: "—" }));
-    const cost = container.querySelector('[data-testid="work-item-token-cost"]');
-    expect(cost?.textContent).toContain("—");
-    expect(cost?.textContent).not.toContain("$0.00");
-    expect(visibleText()).not.toContain("$0.00");
-  });
 
   it("renders a long agent reply in full instead of hiding it behind a summary line", async () => {
     const reply = "x".repeat(312);
@@ -248,47 +221,21 @@ describe("WorkItemView TESA-1", () => {
     expect(text).not.toMatch(/\bdisposition\b/i);
   });
 
-  it("allows Unassigned on New and shows Waiting on you on the blocked chip", async () => {
+  it("keeps the chip to the status word and leaves the reason to the turn bar", async () => {
     await render(
       fixture({
         status: "blocked",
         blockedBy: { kind: "waiting-on-you" },
         assigneeId: null,
+        assigneeLabel: null,
       }),
     );
-    expect(container.querySelector('[data-testid="work-item-assignee"]')?.textContent).toBe("Unassigned");
-    expect(container.querySelector('[data-testid="work-item-status"]')?.textContent).toBe(
-      `Blocked · ${WAITING_ON_YOU}`,
-    );
-  });
-
-  it("omits the project row when only one project exists", async () => {
-    await render(fixture({ projectCount: 1, projectName: "Todero" }));
-    const labels = [...container.querySelectorAll(".work-item-fact-label")].map((node) => node.textContent);
-    expect(labels).not.toContain("Project");
-  });
-
-  it("hides Blocked by unless status is Blocked", async () => {
-    for (const status of ["new", "todo", "in_progress", "done", "cancelled"] as const) {
-      await render(fixture({ status, blockedBy: { kind: "item", id: "tesa-12", identifier: "TESA-12" } }));
-      expect(container.querySelector('[data-testid="work-item-blocked-by"]')).toBeNull();
-      expect(visibleText()).not.toContain("Blocked by");
-    }
-    await render(
-      fixture({
-        status: "blocked",
-        blockedBy: { kind: "item", id: "tesa-12", identifier: "TESA-12" },
-      }),
-    );
-    expect(container.querySelector('[data-testid="work-item-blocked-by"]')?.textContent).toContain("TESA-12");
-    expect(visibleText()).toContain("Blocked by");
-    await render(
-      fixture({
-        status: "blocked",
-        blockedBy: { kind: "waiting-on-you" },
-      }),
-    );
-    expect(container.querySelector('[data-testid="work-item-blocked-by"]')?.textContent).toContain(WAITING_ON_YOU);
+    expect(container.querySelector('[data-testid="work-item-status"]')?.textContent).toBe("Blocked");
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Your turn: answer the agent");
+    // The chip and the bar each say it once; neither repeats the other.
+    expect(visibleText()).not.toContain(`Blocked · ${WAITING_ON_YOU}`);
   });
 
   it("renders empty activity as a left-aligned caption, not a centered well", async () => {
@@ -378,7 +325,6 @@ describe("proposed plan card and tasks", () => {
 
     await render(fixture({ plan, planApprovable: false }));
     expect(container.querySelector('[data-testid="work-item-plan-card"]')).toBeNull();
-    expect(container.querySelector('[data-testid="work-item-plan-fact"]')?.textContent).toContain("2 features · 3 tasks");
   });
 
   it("lists the tasks created from the plan with their status", async () => {
@@ -438,6 +384,8 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
         status: "blocked",
         blockedBy: { kind: "item", id: "x", identifier: "ZZW-2" },
         blockerCount: 3,
+        assigneeId: "agent-nova",
+        assigneeLabel: "Nova",
         tasks: [
           { id: "a", identifier: "ZZW-2", title: "First", status: "todo", queued: false, href: "/ZZW/issues/ZZW-2" },
           { id: "b", identifier: "ZZW-3", title: "Second", status: "todo", queued: true, href: "/ZZW/issues/ZZW-3" },
@@ -449,7 +397,12 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
     expect(rows[0]!.textContent).toContain("To do");
     expect(rows[1]!.textContent).toContain("Queued");
     expect(rows[2]!.textContent).toContain("Done");
-    expect(visibleText()).toContain("Blocked · 3 tasks");
+    // The chip computes Queued the same way a task row does; the bar carries
+    // which task it is queued behind, and how many others.
+    expect(container.querySelector('[data-testid="work-item-status"]')?.textContent).toBe("Queued");
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Queued behind ZZW-2 and 2 more, then Nova picks it up");
   });
 
   it("labels the goal and prefills the composer when asking for changes", async () => {
@@ -463,9 +416,306 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
     expect(composer.value).toBe("Please change the plan: ");
   });
 
-  it("says the agent is writing while a run is live", async () => {
-    await render(fixture({ agentWorking: true, assigneeLabel: "Nova" }));
-    expect(container.querySelector('[data-testid="work-item-working"]')!.textContent).toContain("Nova is writing a reply");
+  it("says the agent is writing once, in the turn bar, and does not repeat it", async () => {
+    await render(fixture({ agentWorking: true, assigneeId: "agent-nova", assigneeLabel: "Nova" }));
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Nova is writing");
+    // The line above the composer keeps only what the bar does not say.
+    const notice = container.querySelector('[data-testid="work-item-working"]')!.textContent ?? "";
+    expect(notice).toContain("can take a minute while the model loads");
+    expect(notice).not.toContain("Nova");
+  });
+});
+
+describe("the Brief block", () => {
+  const briefBody = [
+    "Goal: Open a coffee shop on Mission Street",
+    "",
+    "What the person said when we planned this (use it; do not ask for it again):",
+    "- Keep the budget under forty thousand.",
+    "",
+    "Feature: Storefront",
+    "Done when: the lease is signed",
+    "Hand in: a one-page summary",
+    "",
+    "Do this task now, in this reply: write out the output described above in full. Nobody is waiting to give you more information. End with `STATUS: done` when the output is complete.",
+  ].join("\n");
+
+  it("reads a plan-made brief as labelled lines", async () => {
+    await render(fixture({ body: briefBody }));
+    const labels = [...container.querySelectorAll("[data-brief-label]")].map((node) =>
+      node.getAttribute("data-brief-label"),
+    );
+    expect(labels).toEqual(["Goal", "Feature", "Done when", "Hand in", "What you said"]);
+    expect(visibleText()).toContain("Open a coffee shop on Mission Street");
+    expect(visibleText()).toContain("Keep the budget under forty thousand.");
+  });
+
+  it("keeps the standing instruction out of the body", async () => {
+    await render(fixture({ body: briefBody }));
+    const text = visibleText();
+    expect(text).not.toContain("STATUS: done");
+    expect(text).not.toContain("Do this task now");
+    // The instruction told the reader nobody was waiting for them; the turn bar
+    // is the only thing on the card that says whose turn it is.
+    expect(text).not.toContain("Nobody is waiting");
+  });
+
+  it("still opens the brief as it was written when the person edits it", async () => {
+    await render(fixture({ body: briefBody, bodyEditable: true }));
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-brief-block"]') as HTMLElement).click();
+    });
+    const editor = container.querySelector('[data-testid="work-item-body-editor"]') as HTMLTextAreaElement;
+    expect(editor.value).toBe(briefBody);
+  });
+
+  it("leaves a body a person typed exactly as it is", async () => {
+    await render(fixture({ body: "Fix the header on the pricing page." }));
+    expect(container.querySelector('[data-testid="work-item-brief-block"]')).toBeNull();
+    expect(container.querySelector('[data-testid="work-item-body"]')?.textContent).toContain(
+      "Fix the header on the pricing page.",
+    );
+  });
+});
+
+describe("the turn bar", () => {
+  it("says whose turn it is and offers the buttons for that turn", async () => {
+    const onAccept = vi.fn();
+    await render(fixture({ status: "in_progress", reviewPending: true, onAccept }));
+    const bar = container.querySelector('[data-testid="work-item-turn-bar"]')!;
+    expect(bar.getAttribute("data-tone")).toBe("action");
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Your turn: accept or send back");
+    const labels = [...bar.querySelectorAll('[data-testid="work-item-turn-action"]')].map(
+      (node) => node.textContent,
+    );
+    expect(labels).toEqual(["Accept", "Send back"]);
+    await act(async () => {
+      (bar.querySelector('[data-action="accept"]') as HTMLButtonElement).click();
+    });
+    expect(onAccept).toHaveBeenCalledTimes(1);
+  });
+
+  it("announces the sentence, and announces it again when the turn changes", async () => {
+    await render(
+      fixture({
+        status: "in_progress",
+        assigneeId: "agent-nova",
+        assigneeLabel: "Nova",
+        agentWorking: true,
+      }),
+    );
+    const sentence = () => container.querySelector('[data-testid="work-item-turn-sentence"]')!;
+    expect(sentence().getAttribute("role")).toBe("status");
+    expect(sentence().getAttribute("aria-live")).toBe("polite");
+    expect(sentence().getAttribute("aria-atomic")).toBe("true");
+    expect(sentence().textContent).toBe("Nova is writing");
+
+    // The moment it becomes the person's turn. The same live region carries the
+    // new sentence, so assistive tech hears it without the page moving.
+    await render(
+      fixture({
+        status: "in_progress",
+        assigneeId: "agent-nova",
+        assigneeLabel: "Nova",
+        reviewPending: true,
+      }),
+    );
+    expect(sentence().getAttribute("aria-live")).toBe("polite");
+    expect(sentence().textContent).toBe("Your turn: accept or send back");
+  });
+
+  it("hints the keyboard on the buttons that have one, and does not on the rest", async () => {
+    await render(fixture({ status: "in_progress", reviewPending: true }));
+    const bar = container.querySelector('[data-testid="work-item-turn-bar"]')!;
+    expect(bar.querySelector('[data-action="accept"]')?.getAttribute("title")).toBe("Accept (A)");
+    await render(fixture({ status: "done" }));
+    await render(
+      fixture({
+        status: "todo",
+        assigneeId: "agent-nova",
+        assigneeLabel: "Nova",
+        timerEnabled: false,
+        onStartNow: vi.fn(),
+      }),
+    );
+    const start = container.querySelector('[data-action="start-now"]')!;
+    expect(start.getAttribute("title")).toBe("Start now");
+  });
+
+  it("offers Start now only when this screen can start the work", async () => {
+    const shared = {
+      status: "todo",
+      assigneeId: "agent-nova",
+      assigneeLabel: "Nova",
+      timerEnabled: false,
+    } as const;
+    await render(fixture(shared));
+    expect(container.querySelector('[data-action="start-now"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Nova’s timer is off; nothing will pick this up on its own");
+
+    const onStartNow = vi.fn();
+    await render(fixture({ ...shared, onStartNow }));
+    await act(async () => {
+      (container.querySelector('[data-action="start-now"]') as HTMLButtonElement).click();
+    });
+    expect(onStartNow).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Play on paused work only when it can resume, and not while resuming", async () => {
+    await render(fixture({ paused: true }));
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Paused");
+    expect(container.querySelector('[data-action="play"]')).toBeNull();
+
+    const onResume = vi.fn();
+    await render(fixture({ paused: true, onResume, resumePending: true }));
+    expect(container.querySelector('[data-action="play"]')).toBeNull();
+
+    await render(fixture({ paused: true, onResume }));
+    await act(async () => {
+      (container.querySelector('[data-action="play"]') as HTMLButtonElement).click();
+    });
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts the ticked plan tasks the same way in the bar and on the plan card", async () => {
+    const onPlanApprove = vi.fn();
+    await render(
+      fixture({
+        status: "in_progress",
+        planPending: true,
+        planApprovable: true,
+        onPlanApprove,
+        plan: {
+          goal: "Ship it",
+          features: [],
+          tasks: [
+            { id: "t1", title: "One" },
+            { id: "t2", title: "Two" },
+            { id: "t3", title: "Three" },
+          ],
+        } as unknown as WorkItemViewProps["plan"],
+      }),
+    );
+    expect(container.querySelector('[data-action="approve"]')?.textContent).toBe("Approve 3 of 3");
+    expect(container.querySelector('[data-testid="work-item-plan-approve"]')?.textContent).toBe(
+      "Approve 3 of 3",
+    );
+
+    await act(async () => {
+      (container.querySelector('[data-task-id="t2"]') as HTMLInputElement).click();
+    });
+    expect(container.querySelector('[data-action="approve"]')?.textContent).toBe("Approve 2 of 3");
+    expect(container.querySelector('[data-testid="work-item-plan-approve"]')?.textContent).toBe(
+      "Approve 2 of 3",
+    );
+
+    await act(async () => {
+      (container.querySelector('[data-action="approve"]') as HTMLButtonElement).click();
+    });
+    expect(onPlanApprove).toHaveBeenCalledWith(["t1", "t3"]);
+  });
+
+  it("asks for plan changes the way the plan card does, not by opening send back", async () => {
+    const onPlanChanges = vi.fn();
+    await render(
+      fixture({
+        status: "in_progress",
+        planPending: true,
+        planApprovable: true,
+        onPlanChanges,
+        plan: {
+          goal: "Ship it",
+          features: [],
+          tasks: [{ id: "t1", title: "One" }],
+        } as unknown as WorkItemViewProps["plan"],
+      }),
+    );
+    expect(container.querySelector('[data-action="send-back"]')?.textContent).toBe(
+      "Ask for changes",
+    );
+    await act(async () => {
+      (container.querySelector('[data-action="send-back"]') as HTMLButtonElement).click();
+    });
+    expect(onPlanChanges).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="work-item-sendback-note"]')).toBeNull();
+    expect(
+      (container.querySelector('[data-testid="work-item-composer-input"]') as HTMLTextAreaElement).value,
+    ).toBe("Please change the plan: ");
+  });
+
+  it("takes A and S while a hand-in is waiting, and leaves them alone while typing", async () => {
+    const onAccept = vi.fn();
+    await render(
+      fixture({ status: "blocked", blockedBy: null, reviewPending: true, onAccept }),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    });
+    expect(onAccept).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="work-item-sendback-note"]')).not.toBeNull();
+
+    // Select-all in the composer must never read as Accept.
+    onAccept.mockClear();
+    const composer = container.querySelector('[data-testid="work-item-composer-input"]') as HTMLTextAreaElement;
+    composer.focus();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true }));
+    });
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it("says a parent is waiting on the tasks its plan made", async () => {
+    await render(
+      fixture({
+        status: "in_progress",
+        assigneeId: "agent-nova",
+        assigneeLabel: "Nova",
+        tasks: [
+          { id: "a", identifier: "ZZW-2", title: "First", status: "done", href: "/ZZW/issues/ZZW-2" },
+          { id: "b", identifier: "ZZW-3", title: "Second", status: "todo", href: "/ZZW/issues/ZZW-3" },
+          { id: "c", identifier: "ZZW-4", title: "Third", status: "todo", href: "/ZZW/issues/ZZW-4" },
+        ],
+      }),
+    );
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Waiting on ZZW-3 and 1 more");
+  });
+
+  it("says when the agent picks an unblocked To do task up by itself", async () => {
+    await render(
+      fixture({ status: "todo", assigneeId: "agent-nova", assigneeLabel: "Nova", timerIntervalSec: 120 }),
+    );
+    const bar = container.querySelector('[data-testid="work-item-turn-bar"]')!;
+    expect(bar.getAttribute("data-tone")).toBe("waiting");
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Nova picks this up within 2 minutes");
+    expect(bar.querySelectorAll('[data-testid="work-item-turn-action"]').length).toBe(0);
+  });
+
+  it("says Done on a finished task and offers nothing", async () => {
+    await render(fixture({ status: "done" }));
+    const bar = container.querySelector('[data-testid="work-item-turn-bar"]')!;
+    expect(bar.getAttribute("data-tone")).toBe("done");
+    expect(
+      container.querySelector('[data-testid="work-item-turn-sentence"]')?.textContent,
+    ).toBe("Done");
+    expect(bar.querySelectorAll('[data-testid="work-item-turn-action"]').length).toBe(0);
   });
 });
 
