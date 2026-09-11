@@ -34,6 +34,8 @@ vi.mock("@/lib/router", () => ({
       {children}
     </a>
   ),
+  // The sidebar's Pause control opens the Inbox after a pause.
+  useNavigate: () => vi.fn(),
 }));
 
 vi.mock("../context/DialogContext", () => ({

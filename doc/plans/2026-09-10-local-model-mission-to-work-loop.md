@@ -279,3 +279,71 @@ ship with human gates after plan validation and after evaluation.
 | F | Parallel tasks, busy timer, second worker rule | 2 days |
 | G | Project close/open, bolts on the task and Timeline | 2 days |
 | H | Model routing table, orchestration rules as data | 1–2 days |
+
+### Wave I: Play / Pause
+
+**What exists.** A company already has a `paused` status with `pauseReason` and `pausedAt`, and
+the heartbeat only serves companies whose status is `active` (timers, wakes, and run starts all
+check it). Agents have their own `paused` status with `/agents/:id/pause` and `/resume`. Archiving
+a company cascades: pauses its agents, cancels queued and running runs, and restores on
+reactivation. Nothing exposes a company pause today, and nothing explains to the person what was
+stopped.
+
+**The switch, per organization.**
+
+- `POST /api/companies/:id/pause` `{ reason?: "manual" }` sets status `paused`, `pauseReason`,
+  `pausedAt`. Running runs finish; nothing new starts; queued wakes stay queued. No cascade onto
+  agents (archive keeps its cascade; pause is lighter and reversible).
+- `POST /api/companies/:id/resume` sets status `active`, clears the two columns. The next timer tick
+  and the queued wakes pick up where they stopped. Nothing is re-created.
+- Both are board-only and registered in OpenAPI; both write an activity line ("Paused by you at
+  10:42" / "Resumed by you").
+
+**The master switch, instance-wide.**
+
+- `POST /api/instance/pause-all` pauses every active company with `pauseReason: "master"`;
+  `POST /api/instance/resume-all` resumes only the companies whose reason is `master`, so an
+  organization you paused by hand stays paused. Shown as one control in the sidebar footer.
+
+**The button.** In the sidebar, right under the organization name: a single control that reads
+"Pause" while active and "Play" while paused, with a short caption ("Agents are working" /
+"Paused since 10:42"). The Dashboard header repeats the state. Pressing Pause asks nothing; it
+pauses immediately and opens the Inbox.
+
+**The Inbox while paused.** The Your-turn panel gains a header card, "Paused", with four lists,
+each with its buttons:
+
+1. **Was in flight.** Runs that were running when you pressed Pause and what they were on; they
+   finish on their own and show "finished" when they do.
+2. **Queued.** Tasks that would start on Play, in order, with their blockers. Button: "Skip"
+   (cancels that task) and "Move up" (reorders by clearing its blocker).
+3. **Waiting on you.** The existing Your-turn rows (plan to approve, output to accept, question to
+   answer), unchanged.
+4. **Recommendations.** Computed, not generated, so no run is needed while paused: tasks that
+   failed the judge twice, tasks that have been queued longer than the busy timer, the last
+   wrap-up's "Next:" line, and agents over budget. Each row links to its task or agent.
+
+Play closes the card and the panel goes back to the plain Your-turn list.
+
+**Mobile.** The button and the Paused card are the first thing on the phone; the four lists
+collapse to counts with a tap to expand.
+
+**Tests.**
+
+- Server: pause and resume flip the columns and refuse a second pause; master pause leaves a
+  manual pause alone on resume-all; the heartbeat timer tick skips a paused company (existing
+  `active` check, covered by a test that asserts no run is created); a queued wake survives a
+  pause and runs after resume.
+- UI: the button text and caption follow the status; the Paused card lists the four sections and
+  the Play button; Skip cancels through the API.
+
+**Copy.** "Pause", "Play", "Paused since", "Was in flight", "Queued", "Waiting on you",
+"Recommendations", "Pause everything", "Resume everything". No "heartbeat", "wake", or "run" in
+user-visible text.
+
+**Size.** About a day: two routes plus two instance routes, the sidebar control, the Paused card,
+tests. No schema change: the columns exist.
+
+**Out of scope.** Pausing a single agent from this card (the Agents page already does it); a
+scheduled pause ("pause at 6 pm"); a pause that asks the lead to write a status note (would need a
+run while paused; revisit after the judge wave).

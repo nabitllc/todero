@@ -12,6 +12,7 @@ import { activityApi } from "../api/activity";
 import { accessApi } from "../api/access";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { companiesApi } from "../api/companies";
 import { projectsApi } from "../api/projects";
 import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
@@ -36,6 +37,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
 import type { Agent, Issue } from "@todero/shared";
+import { formatPausedSinceTime } from "../components/todero/PauseControl";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 
@@ -71,7 +73,7 @@ export function derivePausedAgentBanner(agents: Agent[] | undefined): PausedAgen
 }
 
 export function Dashboard() {
-  const { selectedCompanyId, companies } = useCompany();
+  const { selectedCompanyId, selectedCompany, companies } = useCompany();
   const { openOnboarding } = useDialogActions();
   const location = useLocation();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -108,6 +110,14 @@ export function Dashboard() {
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(selectedCompanyId!) }),
       ]);
+    },
+  });
+
+  // Play, from the Dashboard's own repeat of the paused state.
+  const resumeCompany = useMutation({
+    mutationFn: () => companiesApi.resume(selectedCompanyId!),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
     },
   });
 
@@ -316,6 +326,32 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {/* The Dashboard repeats the sidebar's state so a person who lands here
+          first is never surprised by a quiet organization. */}
+      {selectedCompany?.status === "paused" ? (
+        <InlineBanner
+          tone="info"
+          icon={PauseCircle}
+          title={
+            formatPausedSinceTime(selectedCompany.pausedAt)
+              ? `Paused since ${formatPausedSinceTime(selectedCompany.pausedAt)}.`
+              : "Paused."
+          }
+          actions={
+            <Button
+              size="sm"
+              onClick={() => resumeCompany.mutate()}
+              disabled={resumeCompany.isPending}
+              data-testid="dashboard-resume-company"
+            >
+              Play
+            </Button>
+          }
+        >
+          Work already under way finishes on its own; nothing new starts until you press Play.
+        </InlineBanner>
+      ) : null}
 
       {pausedBanner?.kind === "imported" ? (
         <InlineBanner

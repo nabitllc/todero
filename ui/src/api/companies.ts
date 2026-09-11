@@ -110,6 +110,12 @@ export const companiesApi = {
   ) => api.patch<Company>(`/companies/${companyId}`, data),
   updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
     api.patch<Company>(`/companies/${companyId}/branding`, data),
+  /**
+   * Pause: work already under way finishes, nothing new starts, and whatever
+   * was queued is still queued when the person presses Play.
+   */
+  pause: (companyId: string) => api.post<Company>(`/companies/${companyId}/pause`, { reason: "manual" }),
+  resume: (companyId: string) => api.post<Company>(`/companies/${companyId}/resume`, {}),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (

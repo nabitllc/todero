@@ -8,8 +8,10 @@ import { projectsApi } from "@/api/projects";
 import { createIssueDetailPath } from "@/lib/issueDetailBreadcrumb";
 import { queryKeys } from "@/lib/queryKeys";
 import { parseWorkItemDescription } from "@/components/work-item/work-item-model";
+import { useCompany } from "@/context/CompanyContext";
 import { useDialogActions } from "@/context/DialogContext";
 import { Button } from "../ui/button";
+import { PausedCard } from "./PausedCard";
 
 export type YourTurnKind = "plan" | "review" | "question" | "next";
 
@@ -202,6 +204,8 @@ function RowActions({
  */
 export function YourTurnPanel({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
+  const { selectedCompany } = useCompany();
+  const paused = selectedCompany?.id === companyId && selectedCompany.status === "paused";
   const { data } = useQuery({
     queryKey: ["issues", companyId, "your-turn"],
     queryFn: () => issuesApi.list(companyId, { status: "blocked", includeBlockedBy: true }),
@@ -237,11 +241,44 @@ export function YourTurnPanel({ companyId }: { companyId: string }) {
     refetchInterval: 30_000,
   });
   const rows = [...yourTurnRows(data ?? []), ...nextTurnRows(nextCandidates ?? [])];
-  if (rows.length === 0) return null;
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["issues"] });
     void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all(companyId) });
   };
+  const list = (
+    <ul className="divide-y divide-border">
+      {rows.map((row) => (
+        <li key={row.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid="your-turn-row" data-kind={row.kind}>
+          <div className="min-w-0">
+            <div className="text-xs text-muted-foreground">{YOUR_TURN_LABELS[row.kind]}</div>
+            <Link to={row.href} className="block truncate text-sm hover:underline">
+              <span className="font-mono text-xs text-muted-foreground">{row.identifier}</span>{" "}
+              {row.kind === "next" ? row.nextProjectName : row.title}
+            </Link>
+          </div>
+          <RowActions row={row} companyId={companyId} onDone={refresh} />
+        </li>
+      ))}
+    </ul>
+  );
+
+  // While the organization is paused the card comes first and carries the
+  // Your-turn list inside it, so the person sees what was stopped before what
+  // is asked of them. It shows even with nothing waiting: "nothing is waiting
+  // on you" is exactly what a person who just pressed Pause wants to know.
+  if (paused) {
+    return (
+      <PausedCard
+        companyId={companyId}
+        pausedAt={selectedCompany?.pausedAt ?? null}
+        waitingOnYou={list}
+        waitingOnYouCount={rows.length}
+        nextSuggestions={nextCandidates ?? []}
+      />
+    );
+  }
+
+  if (rows.length === 0) return null;
   return (
     <section className="rounded-md border border-border p-3" data-testid="your-turn-panel">
       <div className="mb-2 flex items-baseline justify-between">
@@ -250,20 +287,7 @@ export function YourTurnPanel({ companyId }: { companyId: string }) {
           {rows.length} {rows.length === 1 ? "item" : "items"}
         </span>
       </div>
-      <ul className="divide-y divide-border">
-        {rows.map((row) => (
-          <li key={row.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid="your-turn-row" data-kind={row.kind}>
-            <div className="min-w-0">
-              <div className="text-xs text-muted-foreground">{YOUR_TURN_LABELS[row.kind]}</div>
-              <Link to={row.href} className="block truncate text-sm hover:underline">
-                <span className="font-mono text-xs text-muted-foreground">{row.identifier}</span>{" "}
-                {row.kind === "next" ? row.nextProjectName : row.title}
-              </Link>
-            </div>
-            <RowActions row={row} companyId={companyId} onDone={refresh} />
-          </li>
-        ))}
-      </ul>
+      {list}
     </section>
   );
 }
