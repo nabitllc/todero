@@ -142,6 +142,7 @@ import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
 import { applyJudgeReview } from "../todero/judge-apply.js";
 import { enqueueWakesForClosedIssue } from "./issue-closed-wakeups.js";
+import { resolveToderoTaskKind } from "../todero/model-routing.js";
 import { documentService } from "./documents.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -14895,10 +14896,19 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           context.toderoTurnInstruction = buildPlanSummaryTurnInstruction(planChildren);
         }
       }
+      // Model routing (server/src/todero/model-routing.ts) reads this to pick
+      // a model per turn. See resolveToderoTaskKind for the precedence: a
+      // closing instruction (set just above, when this wake is the wrap-up)
+      // always wins over the parent check.
+      context.toderoTaskKind = resolveToderoTaskKind({
+        turnInstructionPresent: Boolean(readNonEmptyString(context.toderoTurnInstruction)),
+        hasParentIssue: Boolean(issueContext?.parentId),
+      });
     } else {
       delete context.toderoThread;
       delete context.toderoIdentity;
       delete context.toderoTurnInstruction;
+      delete context.toderoTaskKind;
     }
     if (issueRef) {
       context.toderoIssue = {

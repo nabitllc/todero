@@ -106,6 +106,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const planned = parseToderoPlanBlock(reply.body);
     // Never post the bare status line as if it were the reply.
     const summary = (planned ? planned.body : reply.body) || CHAT_COMPLETIONS_NO_TEXT_FALLBACK;
+    // The routing choice (server/src/todero/model-routing.ts) already landed
+    // on `body.model`; record it so the run log shows which model actually
+    // answered, not just the agent's configured default.
+    const chosenModel = asString((body as Record<string, unknown>).model, "");
     return {
       exitCode: 0,
       signal: null,
@@ -114,6 +118,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       resultJson: {
         summary,
         toderoDisposition: reply.disposition,
+        ...(chosenModel ? { toderoModel: chosenModel } : {}),
         ...(planned ? { toderoPlanBlock: formatToderoPlanBlock(planned.plan) } : {}),
       },
     };
