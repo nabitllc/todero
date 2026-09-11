@@ -80,7 +80,7 @@ const FEATURE_PLAN = parseToderoPlanBlock(
 describe("buildPlanFeatureGoalDrafts", () => {
   it("makes one goal per feature that has work, in plan order", () => {
     const drafts = buildPlanFeatureGoalDrafts(FEATURE_PLAN, FEATURE_PLAN.tasks);
-    expect(drafts.map((draft) => draft.title)).toEqual(["Sign up", "Pick a dinner", "Launch"]);
+    expect(drafts.map((draft) => draft.title)).toEqual(["Sign up", "Pick a dinner"]);
   });
 
   it("describes the goal with how we know the feature is finished", () => {
@@ -93,12 +93,10 @@ describe("buildPlanFeatureGoalDrafts", () => {
     expect(drafts[0]!.taskIds).toEqual(["t1", "t2"]);
   });
 
-  it("still groups a feature the plan named only on a task", () => {
-    const launch = buildPlanFeatureGoalDrafts(FEATURE_PLAN, FEATURE_PLAN.tasks).find(
-      (draft) => draft.title === "Launch",
-    );
-    expect(launch?.description).toBeNull();
-    expect(launch?.taskIds).toEqual(["t4"]);
+  it("does not mint a goal for a feature the plan never declared; that task stays on the mission goal", () => {
+    const drafts = buildPlanFeatureGoalDrafts(FEATURE_PLAN, FEATURE_PLAN.tasks);
+    expect(drafts.find((draft) => draft.title === "Launch")).toBeUndefined();
+    expect(drafts.flatMap((draft) => draft.taskIds)).not.toContain("t4");
   });
 
   it("leaves a task that names no feature on the company goal", () => {

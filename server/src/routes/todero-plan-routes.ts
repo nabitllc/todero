@@ -86,10 +86,13 @@ export function buildPlanFeatureGoalDrafts(
     if (!feature.name.trim()) continue;
     add(feature.name, feature.doneWhen.trim() || feature.why.trim() || null);
   }
+  // Only the plan's declared features become goals. A task that names
+  // something else ("All", "Everything", a typo) stays under the mission
+  // goal rather than minting a feature nobody planned.
   for (const task of kept) {
     const name = task.feature.trim();
     if (!name) continue;
-    add(name, null).taskIds.push(task.id);
+    byKey.get(keyOf(name))?.taskIds.push(task.id);
   }
 
   return drafts.filter((draft) => draft.taskIds.length > 0);
