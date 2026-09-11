@@ -560,7 +560,9 @@ export type IssueExecutionMonitorClearReason = (typeof ISSUE_EXECUTION_MONITOR_C
 export const ISSUE_EXECUTION_DECISION_OUTCOMES = ["approved", "changes_requested"] as const;
 export type IssueExecutionDecisionOutcome = (typeof ISSUE_EXECUTION_DECISION_OUTCOMES)[number];
 
-export const GOAL_LEVELS = ["company", "team", "agent", "task"] as const;
+// "feature" is the level an approved plan creates: one goal per feature of the
+// plan, hanging under the company goal, with the plan's tasks linked to it.
+export const GOAL_LEVELS = ["company", "team", "feature", "agent", "task"] as const;
 export type GoalLevel = (typeof GOAL_LEVELS)[number];
 
 export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;

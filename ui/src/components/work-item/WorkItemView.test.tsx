@@ -176,6 +176,32 @@ describe("WorkItemView TESA-1", () => {
     );
   });
 
+  it("does not offer Brief as a type a person can pick", async () => {
+    const onTypeChange = vi.fn();
+    await render(fixture({ onTypeChange }));
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-type-stamp"]') as HTMLButtonElement).click();
+    });
+    const offered = [...container.querySelectorAll(".work-item-stamp-option")].map(
+      (node) => node.textContent,
+    );
+    expect(offered).toEqual(["Feature", "Story", "Task", "Bug"]);
+    expect(offered).not.toContain("Brief");
+  });
+
+  it("locks the type on the Brief so it cannot be renamed to a Task", async () => {
+    const onTypeChange = vi.fn();
+    await render(fixture({ type: "Brief", typeEditable: false, onTypeChange }));
+    const stamp = container.querySelector('[data-testid="work-item-type-stamp"]') as HTMLButtonElement;
+    expect(stamp.textContent).toBe("Brief");
+    expect(stamp.disabled).toBe(true);
+    await act(async () => {
+      stamp.click();
+    });
+    expect(container.querySelector(".work-item-stamp-menu")).toBeNull();
+    expect(onTypeChange).not.toHaveBeenCalled();
+  });
+
   it("does not allow Blocked with an empty blocked-by", async () => {
     const onStatusChange = vi.fn();
     await render(fixture({ blockedBy: null, onStatusChange }));

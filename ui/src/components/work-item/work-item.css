@@ -65,6 +65,13 @@
   flex-shrink: 0;
 }
 
+/* The Brief's stamp is a label, not a control: it reads the same, it just does
+   not invite a click. */
+.work-item-stamp:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
 .work-item-stamp-menu {
   position: absolute;
   z-index: 20;

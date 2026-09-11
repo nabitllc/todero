@@ -14,11 +14,11 @@ import {
   EMPTY_BODY_PLACEHOLDER,
   TITLE_PLACEHOLDER,
   WAITING_ON_YOU,
+  WORK_ITEM_CHOOSABLE_TYPES,
   WORK_ITEM_PRIORITIES,
   WORK_ITEM_PRIORITY_LABELS,
   WORK_ITEM_STATUS_LABELS,
   WORK_ITEM_STATUSES,
-  WORK_ITEM_TYPES,
   blockedChipLabel,
   commitWorkItemStatus,
   displayPriority,
@@ -47,6 +47,8 @@ export type WorkItemViewProps = {
   body: string;
   /** False on the onboarding first task, whose description is the agent's brief. */
   bodyEditable?: boolean;
+  /** False on the onboarding first task, which is always the Brief. */
+  typeEditable?: boolean;
   /** The plan the agent proposed, parsed from the task's Plan document. */
   plan?: ToderoPlan | null;
   /** True while the plan is waiting for the person: shows the approval card. */
@@ -128,6 +130,7 @@ export function WorkItemView(props: WorkItemViewProps) {
     title,
     body,
     bodyEditable = true,
+    typeEditable = true,
     plan = null,
     planApprovable = false,
     tasks = [],
@@ -259,15 +262,20 @@ export function WorkItemView(props: WorkItemViewProps) {
               type="button"
               className="work-item-stamp"
               data-testid="work-item-type-stamp"
-              aria-haspopup="menu"
-              aria-expanded={typeOpen}
-              onClick={() => setTypeOpen((open) => !open)}
+              aria-haspopup={typeEditable ? "menu" : undefined}
+              aria-expanded={typeEditable ? typeOpen : undefined}
+              disabled={!typeEditable}
+              data-work-item-type-editable={typeEditable ? "true" : "false"}
+              onClick={() => {
+                if (!typeEditable) return;
+                setTypeOpen((open) => !open);
+              }}
             >
               {type}
             </button>
-            {typeOpen ? (
+            {typeEditable && typeOpen ? (
               <div className="work-item-stamp-menu" role="menu">
-                {WORK_ITEM_TYPES.map((itemType) => (
+                {WORK_ITEM_CHOOSABLE_TYPES.map((itemType) => (
                   <button
                     key={itemType}
                     type="button"

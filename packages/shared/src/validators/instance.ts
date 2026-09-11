@@ -63,7 +63,9 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableSummaries: z.boolean().default(false),
   enableStatusCards: z.boolean().default(false),
   enableDecisions: z.boolean().default(false),
-  enableGoalsSidebarLink: z.boolean().default(false),
+  // Goals is a standard item in the Work menu. The setting stays as a way to
+  // hide it, so it defaults to on and only an explicit false removes the link.
+  enableGoalsSidebarLink: z.boolean().default(true),
   enableServerInfoDebugView: z.boolean().default(false),
   enableSimplifiedEnglishInteractions: z.boolean().default(false),
   autoRestartDevServerWhenIdle: z.boolean().default(false),

@@ -7,6 +7,8 @@ import {
   type ToderoPlanTask,
 } from "@todero/shared";
 import { documentService } from "../services/documents.js";
+import { FEATURE_GOAL_LEVEL, GOAL_STATUS_ACTIVE } from "../services/goal-completion.js";
+import { goalService } from "../services/goals.js";
 import { issueService } from "../services/issues.js";
 import {
   queueIssueAssignmentWakeup,
@@ -29,6 +31,59 @@ export function selectApprovedPlanTasks(plan: ToderoPlan, keep: string[] | null 
   return plan.tasks.filter((task) => wanted.has(task.id));
 }
 
+/** One goal to create for one feature of the plan, and the tasks that hang off it. */
+export type PlanFeatureGoalDraft = {
+  /** The feature name, matched case-insensitively against what the tasks named. */
+  key: string;
+  title: string;
+  /** How we know the feature is finished — the plan's `done_when`. */
+  description: string | null;
+  taskIds: string[];
+};
+
+/**
+ * The feature goals an approved plan needs. One goal per feature that has at
+ * least one kept task, in plan order, so the Goals page shows the shape of the
+ * work rather than a flat list of tasks. A task naming a feature the plan never
+ * declared still gets a goal, named after what the task said: a small model
+ * sometimes writes a feature into a task and forgets to declare it, and that is
+ * not a reason to lose the grouping. A task naming no feature gets no goal and
+ * stays on the company goal.
+ */
+export function buildPlanFeatureGoalDrafts(
+  plan: ToderoPlan,
+  kept: ToderoPlanTask[],
+): PlanFeatureGoalDraft[] {
+  const drafts: PlanFeatureGoalDraft[] = [];
+  const byKey = new Map<string, PlanFeatureGoalDraft>();
+
+  const keyOf = (name: string) => name.trim().toLowerCase();
+  const add = (title: string, description: string | null): PlanFeatureGoalDraft => {
+    const key = keyOf(title);
+    const existing = byKey.get(key);
+    if (existing) {
+      if (!existing.description && description) existing.description = description;
+      return existing;
+    }
+    const draft: PlanFeatureGoalDraft = { key, title: title.trim(), description, taskIds: [] };
+    byKey.set(key, draft);
+    drafts.push(draft);
+    return draft;
+  };
+
+  for (const feature of plan.features) {
+    if (!feature.name.trim()) continue;
+    add(feature.name, feature.doneWhen.trim() || feature.why.trim() || null);
+  }
+  for (const task of kept) {
+    const name = task.feature.trim();
+    if (!name) continue;
+    add(name, null).taskIds.push(task.id);
+  }
+
+  return drafts.filter((draft) => draft.taskIds.length > 0);
+}
+
 function readKeepIds(body: unknown): string[] | null {
   if (!body || typeof body !== "object") return null;
   const keep = (body as Record<string, unknown>).keep;
@@ -47,6 +102,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
   const router = Router();
   const issuesSvc = issueService(db);
   const documentsSvc = documentService(db);
+  const goalsSvc = goalService(db);
 
   router.post("/issues/:id/plan/approve", async (req, res) => {
     if (req.actor.type !== "board") {
@@ -87,6 +143,27 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
           .filter((body) => body.trim()),
       )
       .catch(() => [] as string[]);
+    // The plan's features become goals under the company goal, and each task
+    // is linked to its feature's goal. That is the hierarchy the Goals page
+    // shows: the company goal, the features under it, the tasks under those.
+    const companyGoal = issue.goalId
+      ? await goalsSvc.getById(issue.goalId).catch(() => null)
+      : await goalsSvc.getDefaultCompanyGoal(issue.companyId).catch(() => null);
+    const companyGoalId = companyGoal?.id ?? null;
+    const goalIdByTaskId = new Map<string, string>();
+    const featureGoals: Array<{ id: string; title: string }> = [];
+    for (const draft of buildPlanFeatureGoalDrafts(parsed.plan, kept)) {
+      const goal = await goalsSvc.create(issue.companyId, {
+        title: draft.title,
+        description: draft.description,
+        level: FEATURE_GOAL_LEVEL,
+        status: GOAL_STATUS_ACTIVE,
+        parentId: companyGoalId,
+        ownerAgentId: issue.assigneeAgentId,
+      });
+      featureGoals.push({ id: goal.id, title: goal.title });
+      for (const taskId of draft.taskIds) goalIdByTaskId.set(taskId, goal.id);
+    }
 
     const children: Array<{ id: string; identifier: string | null; title: string; status: string }> = [];
     let previousId: string | null = null;
@@ -101,7 +178,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
         parentId: issue.id,
         assigneeAgentId: issue.assigneeAgentId,
         projectId: issue.projectId ?? null,
-        goalId: issue.goalId ?? null,
+        goalId: goalIdByTaskId.get(task.id) ?? companyGoalId ?? issue.goalId ?? null,
         priority: issue.priority ?? null,
         blockedByIssueIds: previousId ? [previousId] : [],
       });
@@ -109,10 +186,13 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       previousId = child.id;
     }
 
+    // The conversation task stays on the company goal: it is the brief for the
+    // whole thing, not one feature of it.
     const parent = await issuesSvc.update(issue.id, {
       status: "blocked",
       blockedByIssueIds: children.map((child) => child.id),
       description: descriptionWithPlanMarker(descriptionWithWaitingMarker(issue.description, false), false),
+      ...(issue.goalId || !companyGoalId ? {} : { goalId: companyGoalId }),
       actorUserId: req.actor.userId ?? null,
     });
 
@@ -129,7 +209,7 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       requestedByActorId: req.actor.userId ?? null,
     });
 
-    res.status(201).json({ parent, children });
+    res.status(201).json({ parent, children, goals: featureGoals });
   });
 
   return router;

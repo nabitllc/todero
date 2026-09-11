@@ -200,10 +200,10 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   },
   enableGoalsSidebarLink: {
     title: "Goals Sidebar Link",
-    description: "Restore the Goals item in the main sidebar while the goals surface is being evaluated.",
+    description: "Show the Goals item in the Work menu. On by default; turn it off to hide Goals.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableSimplifiedEnglishInteractions: {
     title: "Simplified English Interactions",

@@ -12,3 +12,14 @@ export interface Goal {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * A goal as the Goals list returns it: the goal plus how much of the work under
+ * it is finished. `taskCount` leaves cancelled tasks out — they are work that
+ * was called off, not work still owed — so `doneTaskCount === taskCount` is
+ * what "everything under this goal is done" means.
+ */
+export interface GoalWithTaskCounts extends Goal {
+  taskCount: number;
+  doneTaskCount: number;
+}

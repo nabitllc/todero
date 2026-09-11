@@ -1,7 +1,18 @@
 import type { Issue, IssueComment, IssuePriority, IssueStatus } from "@todero/shared";
 
-export const WORK_ITEM_TYPES = ["Feature", "Story", "Task", "Bug"] as const;
+// "Brief" is the conversation an agent starts from: the first task of an
+// onboarding, where the person and the agent agree what the work is. Everything
+// the plan then creates is a Task.
+export const WORK_ITEM_TYPES = ["Brief", "Feature", "Story", "Task", "Bug"] as const;
 export type WorkItemType = (typeof WORK_ITEM_TYPES)[number];
+
+/**
+ * The types a person can pick. Brief is not one of them: Todero puts it on the
+ * onboarding conversation itself, and that item's type cannot be changed.
+ */
+export const WORK_ITEM_CHOOSABLE_TYPES = WORK_ITEM_TYPES.filter(
+  (type) => type !== "Brief",
+) as ReadonlyArray<WorkItemType>;
 
 export const WORK_ITEM_STATUSES = [
   "new",
@@ -51,7 +62,7 @@ export const AGENT_SUMMARY_LIMIT = 140;
 export const WAITING_ON_YOU = "Waiting on you.";
 export const APOSTROPHE = "\u2019";
 
-const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Feature|Story|Task|Bug)\s*-->/i;
+const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Brief|Feature|Story|Task|Bug)\s*-->/i;
 const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
 const REVIEW_COMMENT_RE = /<!--\s*todero-review:\s*pending\s*-->/i;
 const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;

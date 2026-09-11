@@ -134,12 +134,21 @@ export function parseChatCompletionsReply(text: string): {
  */
 export function buildChatCompletionsPrompt(context: Record<string, unknown>): string {
   const taskMarkdown = readNonEmptyString(context.toderoTaskMarkdown);
-  if (taskMarkdown) return taskMarkdown;
+  if (taskMarkdown) return stripToderoMarkers(taskMarkdown);
 
   const issue = parseObject(context.toderoIssue);
   const title = readNonEmptyString(issue.title);
   const description = readNonEmptyString(issue.description);
-  return [title, description].filter(Boolean).join("\n\n");
+  return stripToderoMarkers([title, description].filter(Boolean).join("\n\n"));
+}
+
+/**
+ * Todero writes small HTML comments on a task's description for its own views —
+ * the type, the waiting-on-you flag. They mean nothing to a chat model and a
+ * small one will try to explain them, so they never reach the prompt.
+ */
+export function stripToderoMarkers(text: string): string {
+  return text.replace(/<!--\s*todero-[a-z-]+:[^>]*-->\s*\n?/gi, "").trim();
 }
 
 export type ChatCompletionsIdentity = {

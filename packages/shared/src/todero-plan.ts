@@ -259,6 +259,14 @@ export function formatToderoPlanBlock(plan: ToderoPlan): string {
   return lines.join("\n");
 }
 
+/**
+ * The type marker Todero writes on every task it creates from an approved
+ * plan. The work-item view reads this marker instead of guessing a type from
+ * how deep the task sits, so a plan task always reads as a Task even though it
+ * hangs under the conversation the plan came from.
+ */
+export const TODERO_PLAN_TASK_TYPE_MARKER = "<!-- todero-type: Task -->";
+
 /** The description a child task gets, so it stands alone without the parent thread. */
 export const TODERO_PLAN_TASK_CONTEXT_MAX_CHARS = 1_500;
 
@@ -271,7 +279,7 @@ export function buildToderoPlanTaskDescription(
   } = {},
 ): string {
   const feature = plan.features.find((row) => row.name.toLowerCase() === task.feature.toLowerCase()) ?? null;
-  const parts = [`Goal: ${plan.goal}`];
+  const parts = [TODERO_PLAN_TASK_TYPE_MARKER, `Goal: ${plan.goal}`];
   const said = (options.personSaid ?? []).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (said.length > 0) {
     let budget = TODERO_PLAN_TASK_CONTEXT_MAX_CHARS;
