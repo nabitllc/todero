@@ -34,3 +34,25 @@ describe("buildOnboardingFirstTaskTitle", () => {
     expect(buildOnboardingFirstTaskTitle("   \n")).toBe(DEFAULT_TASK_TITLE);
   });
 });
+
+describe("conversational first task", () => {
+  it("gives a chat-only agent a brief it can follow: questions, then a prose plan, no tools", () => {
+    const brief = buildOnboardingFirstTaskDescription("Ship the marketplace.", { conversational: true });
+    expect(brief).toContain("Ship the marketplace.");
+    expect(brief).toContain("at most three questions");
+    expect(brief).toContain("propose one plan in plain text");
+    expect(brief).not.toContain("request_checkbox_confirmation");
+    expect(brief).not.toContain("plan` document");
+    expect(brief).not.toContain("hire the checked agents");
+    expect(brief).toContain("do not introduce yourself again");
+  });
+
+  it("asks for the mission first when none was typed", () => {
+    const brief = buildOnboardingFirstTaskDescription("   ", { conversational: true });
+    expect(brief).toContain("has not written a mission yet");
+  });
+
+  it("leaves the tool-agent brief unchanged by default", () => {
+    expect(buildOnboardingFirstTaskDescription("Ship the marketplace.")).toContain("request_checkbox_confirmation");
+  });
+});

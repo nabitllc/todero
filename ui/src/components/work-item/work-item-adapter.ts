@@ -1,4 +1,5 @@
 import type { ActivityEvent, Agent, Issue, IssueComment, IssueCostSummary, IssueWorkMode } from "@todero/shared";
+import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@todero/shared";
 import { createIssueDetailPath } from "@/lib/issueDetailBreadcrumb";
 import { relativeTime } from "@/lib/utils";
 import type { WorkItemActivityItem, WorkItemBlockedBy, WorkItemType } from "./work-item-model";
@@ -18,6 +19,22 @@ import {
   systemStatusLine,
 } from "./work-item-model";
 import type { WorkItemViewProps } from "./WorkItemView";
+
+export function isOnboardingFirstTask(issue: Pick<Issue, "originKind">): boolean {
+  return issue.originKind === ONBOARDING_FIRST_TASK_ORIGIN_KIND;
+}
+
+const MISSION_LINE_RE =
+  /^(?:The company mission, as the person typed it|Company mission \(from onboarding\)):[ \t]*\n([\s\S]*?)(?:\n[ \t]*\n|$)/m;
+
+/**
+ * The first task's description is the agent's brief. The one line in it the
+ * person wrote is the mission; show that and nothing else.
+ */
+export function missionFromFirstTaskDescription(description: string | null | undefined): string {
+  const match = (description ?? "").match(MISSION_LINE_RE);
+  return match?.[1]?.trim() ?? "";
+}
 
 function agentName(
   agentId: string | null | undefined,
@@ -135,6 +152,11 @@ export function toWorkItemViewProps(args: {
 > {
   const { issue } = args;
   const parsed = parseWorkItemDescription(issue.description, workItemTypeFor(issue));
+  // The onboarding first task's description is the agent's brief, written for
+  // the model. The person sees the mission it carries, not the script, and
+  // cannot edit it (editing would overwrite the brief).
+  const firstTask = isOnboardingFirstTask(issue);
+  const body = firstTask ? missionFromFirstTaskDescription(issue.description) : parsed.body;
   const status = displayStatus(issue);
   const blockedBy = resolveBlockedBy(issue);
   const assigneeId = issue.assigneeAgentId ?? (issue.assigneeUserId ? `user:${issue.assigneeUserId}` : null);
@@ -160,8 +182,9 @@ export function toWorkItemViewProps(args: {
     identifier,
     type: parsed.type,
     title: issue.title,
-    body: parsed.body,
-    sections: parsed.sections,
+    body,
+    bodyEditable: !firstTask,
+    sections: firstTask ? [] : parsed.sections,
     checklist: parsed.checklist,
     trail,
     status,

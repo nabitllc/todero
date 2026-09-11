@@ -46,7 +46,40 @@ const ASK_FOR_GOAL_STEP = `1. Ask a few focused, clarifying questions. Use an as
 
 const USE_MISSION_STEP = `1. Start from the company mission below. Do not ask what the company is for, and do not ask the user to pick a goal they have already given. Ask only for clarifying details you still need — scope, priorities, constraints, and what "done" looks like.`;
 
-export function buildOnboardingFirstTaskDescription(mission: string): string {
+/**
+ * The brief for a chat-only agent (a local model through the http adapter).
+ * It has no tools: no plan document, no checkbox card, no hiring. It asks,
+ * then proposes in prose, and the status line hands the turn back. The plan
+ * shape Todero parses arrives in a later wave; until then the brief stops at
+ * "propose".
+ */
+export function buildConversationalFirstTaskDescription(mission: string): string {
+  const trimmed = mission.trim();
+  const missionBlock = trimmed
+    ? `The company mission, as the person typed it:\n${trimmed}\n\nDo not ask what the company is for; they already told you.`
+    : "The person has not written a mission yet. Your first question is what they want to build and for whom.";
+  return `You are this company's first agent. This task is a conversation with the person who hired you. Your job is to understand what they want well enough to propose a plan. Do not start building anything.
+
+${missionBlock}
+
+A greeting has already been posted for you, so do not introduce yourself again.
+
+How to work:
+
+1. Ask at most three questions, only ones whose answers would change the plan: what must be in the first version, what can wait, and what "done" looks like. Then stop and wait for the answers.
+
+2. Once you have answers, propose one plan in plain text: the goal in one sentence, the three to seven pieces the first version needs, and the four to twelve tasks to get there, each tied to a piece. Keep it short enough to read on a phone. Then stop and wait for approval.
+
+3. If they ask for changes, revise the plan and stop again. Do not hire anyone, do not promise documents you cannot write, and do not describe your own process.
+
+Write for the person, not for a machine: short sentences, a list where a list helps.`;
+}
+
+export function buildOnboardingFirstTaskDescription(
+  mission: string,
+  options: { conversational?: boolean } = {},
+): string {
+  if (options.conversational) return buildConversationalFirstTaskDescription(mission);
   const trimmed = mission.trim();
   if (!trimmed) {
     return `You are the Todero agent. This is your first task. Your job here is to

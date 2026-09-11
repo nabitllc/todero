@@ -128,10 +128,48 @@ export function buildChatCompletionsPrompt(context: Record<string, unknown>): st
   return [title, description].filter(Boolean).join("\n\n");
 }
 
-export function buildChatCompletionsSystemPrompt(agentName: string): string {
-  const name = agentName.trim() || "the assistant";
+export type ChatCompletionsIdentity = {
+  agentName: string;
+  roleTitle?: string | null;
+  companyName?: string | null;
+  mission?: string | null;
+};
+
+export function readChatCompletionsIdentity(
+  context: Record<string, unknown>,
+  fallbackAgentName: string,
+): ChatCompletionsIdentity {
+  const raw = parseObject(context.toderoIdentity);
+  return {
+    agentName: readNonEmptyString(raw.agentName) || fallbackAgentName,
+    roleTitle: readNonEmptyString(raw.roleTitle) || null,
+    companyName: readNonEmptyString(raw.companyName) || null,
+    mission: readNonEmptyString(raw.mission) || null,
+  };
+}
+
+/**
+ * The standing brief for a chat-only agent. The http adapter never reads the
+ * materialized AGENTS.md, so this is where the agent learns who it is and what
+ * the company is for. Kept short on purpose: a 7B model loses the thread past
+ * a few hundred words of preamble.
+ */
+export function buildChatCompletionsSystemPrompt(identity: ChatCompletionsIdentity | string): string {
+  const id: ChatCompletionsIdentity =
+    typeof identity === "string" ? { agentName: identity } : identity;
+  const name = id.agentName.trim() || "the assistant";
+  const role = id.roleTitle?.trim();
+  const company = id.companyName?.trim();
+  const mission = id.mission?.replace(/\s+/g, " ").trim();
+  const who = [
+    `You are ${name}`,
+    role ? `, ${role}` : "",
+    company ? ` at ${company}` : "",
+    ", an AI teammate working inside Todero. You are talking with the person who hired you, in the thread of one task.",
+  ].join("");
   return [
-    `You are ${name}, an AI teammate working inside Todero. You are talking with the person who hired you, in the thread of one task.`,
+    who,
+    ...(mission ? [`The company mission: ${mission}`] : []),
     "You have no tools and cannot call any API, create tasks, or hire anyone. Do the work in plain text: answer, ask, propose, or draft. Never claim to have taken an action you could not take.",
     "Write for that person: short, direct, no narration of your own process. Use plain prose or a short list. If you need something from them, ask one clear question and stop.",
     "The first message is the task. Later messages are the conversation so far. Continue it naturally; do not re-introduce yourself or repeat what was already said.",
@@ -167,7 +205,12 @@ export function buildChatCompletionsMessages(
   options: { agentName?: string } = {},
 ): ChatCompletionsMessage[] {
   const messages: ChatCompletionsMessage[] = [
-    { role: "system", content: buildChatCompletionsSystemPrompt(options.agentName ?? "") },
+    {
+      role: "system",
+      content: buildChatCompletionsSystemPrompt(
+        readChatCompletionsIdentity(context, options.agentName ?? ""),
+      ),
+    },
     { role: "user", content: buildChatCompletionsPrompt(context) },
   ];
   // Consecutive turns from the same side collapse into one message: chat

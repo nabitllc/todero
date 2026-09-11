@@ -2,42 +2,28 @@ import { describe, expect, it } from "vitest";
 import { buildOnboardingGreeting } from "./onboarding-greeting.js";
 
 describe("buildOnboardingGreeting", () => {
-  it("introduces the agent by name as the user's first teammate and reflects the goals", () => {
+  it("introduces the agent by name and promises questions, in one line", () => {
     const greeting = buildOnboardingGreeting({
       agentName: "Nova",
       teamName: "Acme",
       goals: "Launch a marketplace for local makers.",
     });
 
-    expect(greeting).toContain(
-      "Welcome! I'm Nova, your first agent teammate on Todero.",
+    expect(greeting).toBe(
+      "Welcome! I'm Nova, your first agent teammate on Todero. Give me a moment to read the mission and I'll come back with a couple of questions.",
     );
-    expect(greeting).toContain("Here's what I understand you're aiming for:");
-    expect(greeting).toContain("> Launch a marketplace for local makers.");
-    expect(greeting).toContain("propose a team of agents");
-    expect(greeting).toContain("few focused questions");
+  });
+
+  it("does not quote the mission back: the title and the brief already carry it", () => {
+    const greeting = buildOnboardingGreeting({ agentName: "Nova", goals: "Launch a marketplace for local makers." });
+    expect(greeting).not.toContain("marketplace");
+    expect(greeting).not.toContain("aiming for");
+    expect(greeting).not.toContain("team of agents");
   });
 
   it("falls back to a generic teammate intro when no agent name is set", () => {
     const greeting = buildOnboardingGreeting({ agentName: null, goals: null });
-
-    expect(greeting).toContain(
-      "Welcome! I'm your first agent teammate on Todero.",
-    );
-  });
-
-  it("collapses whitespace in the reflected goals", () => {
-    const greeting = buildOnboardingGreeting({
-      goals: "  Build\n\n  a  SaaS product.  ",
-    });
-
-    expect(greeting).toContain("> Build a SaaS product.");
-  });
-
-  it("omits the reflect-back block when no goals are provided", () => {
-    const greeting = buildOnboardingGreeting({ agentName: "Nova", goals: null });
-
-    expect(greeting).not.toContain("aiming for");
-    expect(greeting).toContain("propose a team of agents");
+    expect(greeting).toContain("Welcome! I'm your first agent teammate on Todero.");
+    expect(greeting).toContain("couple of questions");
   });
 });

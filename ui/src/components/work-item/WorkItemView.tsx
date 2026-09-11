@@ -43,6 +43,8 @@ export type WorkItemViewProps = {
   type: WorkItemType;
   title: string;
   body: string;
+  /** False on the onboarding first task, whose description is the agent's brief. */
+  bodyEditable?: boolean;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
   trail: WorkItemTrailEntry[];
@@ -105,6 +107,7 @@ export function WorkItemView(props: WorkItemViewProps) {
     type,
     title,
     body,
+    bodyEditable = true,
     sections,
     checklist,
     trail,
@@ -330,7 +333,9 @@ export function WorkItemView(props: WorkItemViewProps) {
                 className={body.trim() ? "work-item-body" : "work-item-body work-item-body-empty"}
                 data-testid="work-item-body"
                 data-work-item-body-present={body.trim() ? "true" : "false"}
+                data-work-item-body-editable={bodyEditable ? "true" : "false"}
                 onClick={() => {
+                  if (!bodyEditable) return;
                   setBodyDraft(body);
                   setEditingBody(true);
                 }}

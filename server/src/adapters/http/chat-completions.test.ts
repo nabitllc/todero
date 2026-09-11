@@ -151,3 +151,30 @@ describe("http adapter chat completions conversation", () => {
     expect(reply.disposition).toBe("waiting");
   });
 });
+
+describe("http adapter chat completions identity", () => {
+  it("opens with who the agent is and the company mission when the heartbeat supplies them", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoIdentity: {
+          agentName: "Ash",
+          roleTitle: "Chief of Staff",
+          companyName: "PoGo Collection+",
+          mission: "Track every  Pokemon\nin the collection.",
+        },
+      },
+      { agentName: "fallback" },
+    );
+    const system = messages[0]!.content;
+    expect(system).toContain("You are Ash, Chief of Staff at PoGo Collection+");
+    expect(system).toContain("The company mission: Track every Pokemon in the collection.");
+  });
+
+  it("falls back to the agent name alone when no identity was supplied", () => {
+    const messages = buildChatCompletionsMessages({ toderoTaskMarkdown: TASK_MARKDOWN }, { agentName: "Ron" });
+    const system = messages[0]!.content;
+    expect(system).toContain("You are Ron, an AI teammate");
+    expect(system).not.toContain("The company mission:");
+  });
+});

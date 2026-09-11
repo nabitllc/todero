@@ -53,6 +53,11 @@ describe("buildNewAgentRuntimeConfig", () => {
     expect(config.heartbeat).toMatchObject({ enabled: true, intervalSec: 600 });
   });
 
+  it("runs a conversational local model one thread at a time", () => {
+    const config = buildNewAgentRuntimeConfig({ conversational: true });
+    expect(config.heartbeat).toMatchObject({ maxConcurrentRuns: 1, wakeOnDemand: true, enabled: false });
+  });
+
   it("omits modelProfiles when no cheap model is configured", () => {
     const config = buildNewAgentRuntimeConfig({ heartbeatEnabled: false });
     expect(config.modelProfiles).toBeUndefined();

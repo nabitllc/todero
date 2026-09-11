@@ -16,7 +16,7 @@ vi.mock("@/api/local-llm", async (importOriginal) => {
   return { ...actual, toderoLocalLlmApi: mockLocalLlmApi };
 });
 
-import { LocalLlmPicker, type LocalLlmSelection } from "./LocalLlmPicker";
+import { LocalLlmPicker, pickDefaultLocalLlmModel, type LocalLlmSelection } from "./LocalLlmPicker";
 import type { LocalLlmRuntime } from "@/api/local-llm";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -128,5 +128,22 @@ describe("LocalLlmPicker native model select contrast", () => {
     expect(optionBlock).not.toMatch(/^[ 	]*color:\s*(#fff|#ffffff|white|oklch\(1)/im);
 
     await act(async () => root.unmount());
+  });
+});
+
+describe("pickDefaultLocalLlmModel", () => {
+  it("prefers a 14B-class model when the runtime has one", () => {
+    const models = [
+      { id: "qwen2.5-coder:latest" },
+      { id: "nemotron-32k:latest" },
+      { id: "qwen2.5-coder:14b" },
+      { id: "qwen2.5-coder:32b" },
+    ];
+    expect(pickDefaultLocalLlmModel(models)?.id).toBe("qwen2.5-coder:14b");
+  });
+
+  it("falls back to the first model otherwise, and to null with none", () => {
+    expect(pickDefaultLocalLlmModel([{ id: "llama3.2:latest" }, { id: "phi4:latest" }])?.id).toBe("llama3.2:latest");
+    expect(pickDefaultLocalLlmModel([])).toBeNull();
   });
 });
