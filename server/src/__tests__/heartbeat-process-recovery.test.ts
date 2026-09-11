@@ -1044,7 +1044,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       expect(action.nextAction).toContain("explicitly retry the original owner");
     } else {
       expect(action.nextAction).toContain(
-        input.kind === "missing_disposition" ? "valid issue disposition" : "Board operator",
+        input.kind === "missing_disposition" ? "valid next step" : "Board operator",
       );
     }
 
@@ -2574,8 +2574,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     });
     expect(comments).toHaveLength(1);
     expect(comments[0]?.body).toContain("stopped automatic stranded-work recovery");
-    expect(comments[0]?.body).toContain("recovery issues do not create nested `stranded_issue_recovery` issues");
-    expect(comments[0]?.body).toContain("Latest retry failure details were withheld from the issue thread");
+    expect(comments[0]?.body).toContain("recovery tasks do not create nested `stranded_issue_recovery` tasks");
+    expect(comments[0]?.body).toContain("Latest failure details were withheld from the task thread");
     expect(comments[0]?.body).not.toContain("sk-test-recovery-secret");
     expect(JSON.stringify(comments[0]?.metadata)).not.toContain("sk-test-recovery-secret");
     expect(comments[0]?.presentation).toMatchObject({
@@ -6576,8 +6576,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
     expect(comments).toHaveLength(1);
     expect(comments[0]?.body).toContain("stopped automatic stranded-work recovery");
-    expect(comments[0]?.body).toContain("recovery issues do not create nested `stranded_issue_recovery` issues");
-    expect(comments[0]?.body).toContain(`Recovery issue: [${recoveryIssues[0]?.identifier}]`);
+    expect(comments[0]?.body).toContain("recovery tasks do not create nested `stranded_issue_recovery` tasks");
+    expect(comments[0]?.body).toContain(`Recovery task: [${recoveryIssues[0]?.identifier}]`);
     expect(comments[0]?.body).toContain("Next action:");
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
@@ -7312,8 +7312,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
     expect(comments).toHaveLength(1);
     expect(comments[0]?.body).toContain("stopped automatic stranded-work recovery");
-    expect(comments[0]?.body).toContain("Latest retry failure details were withheld from the issue thread");
-    expect(comments[0]?.body).toContain("recovery issues do not create nested `stranded_issue_recovery` issues");
+    expect(comments[0]?.body).toContain("Latest failure details were withheld from the task thread");
+    expect(comments[0]?.body).toContain("recovery tasks do not create nested `stranded_issue_recovery` tasks");
     await expect(sourceBlockerIssueIds(companyId, sourceIssueId)).resolves.toEqual([issueId]);
   });
 
@@ -7404,7 +7404,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
     expect(comments).toHaveLength(2);
-    expect(comments[1]?.body).toContain("Latest retry failure details were withheld from the issue thread");
+    expect(comments[1]?.body).toContain("Latest failure details were withheld from the task thread");
   });
 
   it("does not escalate paused-tree recovery when the automatic continuation retry was cancelled by the hold", async () => {
