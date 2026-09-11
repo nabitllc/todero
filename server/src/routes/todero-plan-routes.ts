@@ -3,11 +3,20 @@ import type { Db } from "@todero/db";
 import {
   buildToderoPlanTaskDescription,
   parseToderoPlanBlock,
+  resolveToderoPlanTaskDependencies,
   type ToderoPlan,
   type ToderoPlanTask,
 } from "@todero/shared";
+import { agentService } from "../services/agents.js";
 import { documentService } from "../services/documents.js";
 import { issueService } from "../services/issues.js";
+import {
+  buildExtraWorkerName,
+  countReadyPlanTasks,
+  decideExtraWorker,
+  planFeatureKeys,
+  readAgentParallelism,
+} from "../todero/orchestration-rules.js";
 import {
   queueIssueAssignmentWakeup,
   type IssueAssignmentWakeupDeps,
@@ -37,15 +46,52 @@ function readKeepIds(body: unknown): string[] | null {
 
 /**
  * Approving a proposed plan: Todero, not the model, creates one child task per
- * kept item under the conversation task, chained so each unlocks the next, and
- * wakes the agent on the first. The parent stays blocked on its children, which
- * is a valid disposition for recovery and what the dependency wake needs to
- * bring the agent back for a summary once the last child closes.
+ * kept item under the conversation task and wakes the agent on every task that
+ * can start straight away. Order comes from the plan: a task that named an
+ * `after` waits for it, and a task that named nothing waits only for the task
+ * before it inside its own feature — so separate features run side by side.
+ * When the machine can serve more than one model and there is more ready work
+ * than one agent can take, a second agent is added and takes the second
+ * feature. The parent stays blocked on its children, which is a valid
+ * disposition for recovery and what the dependency wake needs to bring the
+ * agent back for a summary once the last child closes.
  */
 export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeupDeps }) {
   const router = Router();
   const issuesSvc = issueService(db);
   const documentsSvc = documentService(db);
+  const agentsSvc = agentService(db);
+
+  /**
+   * A second agent for the same work: same kind of connection, same settings,
+   * same manager. Only for an agent that talks to a model over HTTP — that is
+   * the local-model case, where the connection is a URL and a model name and
+   * carries no credentials to copy.
+   */
+  async function hireExtraWorker(primary: {
+    id: string;
+    companyId: string;
+    name: string;
+    role: string;
+    title: string | null;
+    reportsTo: string | null;
+    adapterType: string;
+    adapterConfig: Record<string, unknown>;
+    runtimeConfig: Record<string, unknown>;
+    defaultEnvironmentId: string | null;
+  }) {
+    if (primary.adapterType !== "http") return null;
+    return agentsSvc.create(primary.companyId, {
+      name: buildExtraWorkerName(primary.name),
+      role: primary.role,
+      title: primary.title,
+      reportsTo: primary.reportsTo,
+      adapterType: primary.adapterType,
+      adapterConfig: primary.adapterConfig,
+      runtimeConfig: primary.runtimeConfig,
+      defaultEnvironmentId: primary.defaultEnvironmentId,
+    });
+  }
 
   router.post("/issues/:id/plan/approve", async (req, res) => {
     if (req.actor.type !== "board") {
@@ -75,24 +121,69 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       return;
     }
 
-    const children: Array<{ id: string; identifier: string | null; title: string; status: string }> = [];
-    let previousId: string | null = null;
-    for (const [index, task] of kept.entries()) {
+    // What waits for what. A task that named an `after` waits for it; a task
+    // that named nothing waits only for the task before it in its own feature,
+    // so the first task of every feature can start at the same time.
+    const ordered = resolveToderoPlanTaskDependencies(kept);
+    const featureKeys = planFeatureKeys(kept);
+
+    // Does a second agent help? Only if the machine can serve another model
+    // and there is ready work nobody can pick up. Decided before anything is
+    // created, so the tasks can be handed out as they are made.
+    const primaryAgent = await agentsSvc.getById(issue.assigneeAgentId).catch(() => null);
+    const decision = decideExtraWorker({
+      readyTasks: countReadyPlanTasks(ordered),
+      // Nothing is running on work that does not exist yet.
+      runningRuns: 0,
+      parallelism: readAgentParallelism(primaryAgent?.runtimeConfig),
+      workers: 1,
+    });
+    const extraWorker =
+      decision.hire && primaryAgent && featureKeys.length > 1
+        ? await hireExtraWorker(primaryAgent).catch(() => null)
+        : null;
+    // The added agent takes the second feature; the first agent keeps the rest.
+    const extraWorkerFeatureKey = extraWorker ? featureKeys[1] ?? null : null;
+
+    const children: Array<{
+      id: string;
+      identifier: string | null;
+      title: string;
+      status: string;
+      assigneeAgentId: string;
+    }> = [];
+    const issueIdByPlanTaskId = new Map<string, string>();
+    for (const entry of ordered) {
+      const blockedByIssueIds = entry.blockedByTaskIds
+        .map((planTaskId) => issueIdByPlanTaskId.get(planTaskId))
+        .filter((id): id is string => Boolean(id));
+      const assigneeAgentId =
+        extraWorkerFeatureKey !== null &&
+        entry.task.feature.trim().toLowerCase() === extraWorkerFeatureKey &&
+        extraWorker
+          ? extraWorker.id
+          : issue.assigneeAgentId;
       const child = await issuesSvc.create(issue.companyId, {
-        title: task.title,
-        description: buildToderoPlanTaskDescription(parsed.plan, task),
-        // The first task starts now; the rest wait in backlog behind the one
-        // before them and are promoted by the dependency wake when it closes.
-        status: index === 0 ? "todo" : "backlog",
+        title: entry.task.title,
+        description: buildToderoPlanTaskDescription(parsed.plan, entry.task),
+        // A task with nothing before it starts now; the rest wait in backlog
+        // and are promoted by the dependency wake when their blockers close.
+        status: blockedByIssueIds.length === 0 ? "todo" : "backlog",
         parentId: issue.id,
-        assigneeAgentId: issue.assigneeAgentId,
+        assigneeAgentId,
         projectId: issue.projectId ?? null,
         goalId: issue.goalId ?? null,
         priority: issue.priority ?? null,
-        blockedByIssueIds: previousId ? [previousId] : [],
+        blockedByIssueIds,
       });
-      children.push({ id: child.id, identifier: child.identifier ?? null, title: child.title, status: child.status });
-      previousId = child.id;
+      issueIdByPlanTaskId.set(entry.task.id, child.id);
+      children.push({
+        id: child.id,
+        identifier: child.identifier ?? null,
+        title: child.title,
+        status: child.status,
+        assigneeAgentId,
+      });
     }
 
     const parent = await issuesSvc.update(issue.id, {
@@ -102,18 +193,25 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       actorUserId: req.actor.userId ?? null,
     });
 
-    const first = children[0]!;
-    await queueIssueAssignmentWakeup({
-      heartbeat: deps.heartbeat,
-      issue: { id: first.id, assigneeAgentId: issue.assigneeAgentId, status: first.status },
-      reason: "issue_assigned",
-      mutation: "create",
-      contextSource: "issue.plan_approve",
-      requestedByActorType: "user",
-      requestedByActorId: req.actor.userId ?? null,
-    });
+    // Wake every task that can start, not only the first one.
+    for (const child of children.filter((row) => row.status === "todo")) {
+      await queueIssueAssignmentWakeup({
+        heartbeat: deps.heartbeat,
+        issue: { id: child.id, assigneeAgentId: child.assigneeAgentId, status: child.status },
+        reason: "issue_assigned",
+        mutation: "create",
+        contextSource: "issue.plan_approve",
+        requestedByActorType: "user",
+        requestedByActorId: req.actor.userId ?? null,
+      });
+    }
 
-    res.status(201).json({ parent, children });
+    res.status(201).json({
+      parent,
+      children,
+      extraWorker: extraWorker ? { id: extraWorker.id, name: extraWorker.name } : null,
+      extraWorkerReason: decision.reason,
+    });
   });
 
   return router;

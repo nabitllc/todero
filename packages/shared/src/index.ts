@@ -2718,5 +2718,11 @@ export {
   parseToderoPlanBlock,
   formatToderoPlanBlock,
   buildToderoPlanTaskDescription,
+  resolveToderoPlanTaskDependencies,
 } from "./todero-plan.js";
-export type { ToderoPlan, ToderoPlanFeature, ToderoPlanTask } from "./todero-plan.js";
+export type {
+  ToderoPlan,
+  ToderoPlanFeature,
+  ToderoPlanTask,
+  ToderoPlanTaskDependency,
+} from "./todero-plan.js";

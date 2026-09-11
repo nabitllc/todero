@@ -17,7 +17,21 @@ export type LocalLlmRuntime = {
   label: string;
   baseUrl: string;
   models: LocalLlmModel[];
+  /** How many models this machine can serve at the same time. Missing means one. */
+  parallelism?: number;
 };
+
+/** What the picked runtime can serve at once, or 1 when nothing said otherwise. */
+export function localLlmSelectionParallelism(params: {
+  runtimes: LocalLlmRuntime[];
+  runtimeId: string | null | undefined;
+}): number {
+  const runtime = params.runtimes.find((row) => row.id === params.runtimeId);
+  const reported = runtime?.parallelism;
+  return typeof reported === "number" && Number.isFinite(reported) && reported >= 1
+    ? Math.floor(reported)
+    : 1;
+}
 
 export type LocalLlmConnectedSelection = {
   runtimeId: string;

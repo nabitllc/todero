@@ -22,6 +22,13 @@ export type ToderoPlanTask = {
   title: string;
   feature: string;
   output: string;
+  /**
+   * Optional. The task (or tasks, comma separated) that must finish first,
+   * named by title or by plan id. Empty means "no stated order": the task
+   * then waits only for the task before it inside its own feature, so the
+   * first task of every feature can start at the same time.
+   */
+  after: string;
 };
 
 export type ToderoPlan = {
@@ -45,9 +52,10 @@ tasks:
   - title: An imperative task title
     feature: The feature name it belongs to
     output: What you will hand in for it (a document, a list, a draft, a decision)
+    after: The title of the task that has to finish first (leave this line out when nothing has to come first)
 \`\`\`
 
-Three to seven features. Four to twelve tasks, each naming one of the features. Put any words for the person before the block, not inside it.`;
+Three to seven features. Four to twelve tasks, each naming one of the features. Use \`after\` only when a task truly cannot start until another one is handed in — tasks without it run side by side with the other features. Put any words for the person before the block, not inside it.`;
 
 type Section = "none" | "features" | "tasks";
 
@@ -56,6 +64,18 @@ const KEY_LINE_RE = /^\s*(?:[-*]\s+)?([A-Za-z][A-Za-z _-]*?)\s*:\s*(.*)$/;
 
 function normalizeKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+/** The keys a model reaches for when it means "this one comes first". */
+function isAfterKey(key: string): boolean {
+  return (
+    key === "after" ||
+    key === "after_task" ||
+    key === "depends_on" ||
+    key === "dependson" ||
+    key === "blocked_by" ||
+    key === "requires"
+  );
 }
 
 function unquote(value: string): string {
@@ -102,7 +122,7 @@ function parsePlanInner(inner: string): ToderoPlan | null {
     state.task = null;
   };
   const startTask = () => {
-    state.task = { id: `t${tasks.length + 1}`, title: "", feature: "", output: "" };
+    state.task = { id: `t${tasks.length + 1}`, title: "", feature: "", output: "", after: "" };
     tasks.push(state.task);
     state.feature = null;
   };
@@ -151,6 +171,7 @@ function parsePlanInner(inner: string): ToderoPlan | null {
         if (key === "title" || key === "task" || key === "name") task.title = value;
         else if (key === "feature") task.feature = value;
         else if (key === "output" || key === "deliverable" || key === "result") task.output = value;
+        else if (isAfterKey(key)) task.after = value;
         lastKey = key;
         continue;
       }
@@ -177,6 +198,7 @@ function parsePlanInner(inner: string): ToderoPlan | null {
     else if (state.task && lastKey) {
       if (lastKey === "title" || lastKey === "task" || lastKey === "name") state.task.title += ` ${continuation}`;
       else if (lastKey === "feature") state.task.feature += ` ${continuation}`;
+      else if (isAfterKey(lastKey)) state.task.after += ` ${continuation}`;
       else state.task.output += ` ${continuation}`;
     } else if (state.feature && lastKey) {
       if (lastKey === "name" || lastKey === "feature" || lastKey === "title") state.feature.name += ` ${continuation}`;
@@ -194,7 +216,13 @@ function parsePlanInner(inner: string): ToderoPlan | null {
     .slice(0, TODERO_PLAN_MAX_FEATURES)
     .map((feature, index) => ({ ...feature, id: `f${index + 1}` }));
   const cleanTasks = tasks
-    .map((task) => ({ ...task, title: unquote(task.title), feature: unquote(task.feature), output: unquote(task.output) }))
+    .map((task) => ({
+      ...task,
+      title: unquote(task.title),
+      feature: unquote(task.feature),
+      output: unquote(task.output),
+      after: unquote(task.after ?? ""),
+    }))
     .filter((task) => task.title)
     .slice(0, TODERO_PLAN_MAX_TASKS)
     .map((task, index) => ({ ...task, id: `t${index + 1}` }));
@@ -230,6 +258,7 @@ export function formatToderoPlanBlock(plan: ToderoPlan): string {
     lines.push(`  - title: ${task.title}`);
     if (task.feature) lines.push(`    feature: ${task.feature}`);
     if (task.output) lines.push(`    output: ${task.output}`);
+    if (task.after) lines.push(`    after: ${task.after}`);
   }
   lines.push("```");
   return lines.join("\n");
@@ -251,4 +280,98 @@ export function buildToderoPlanTaskDescription(plan: ToderoPlan, task: ToderoPla
     "Do this task now, in this reply: write out the output described above in full, as the deliverable itself, not a description of it. Nobody is waiting to give you more information; everything you need is above. Only if something essential is missing, ask one question. End with `STATUS: done` when the output is complete, or `STATUS: waiting` right after that one question.",
   );
   return parts.join("\n");
+}
+
+/** One task with the tasks it has to wait for, named by plan id. */
+export type ToderoPlanTaskDependency = {
+  task: ToderoPlanTask;
+  blockedByTaskIds: string[];
+};
+
+function featureKey(task: ToderoPlanTask): string {
+  return task.feature.trim().toLowerCase();
+}
+
+/** `after: Draft the copy, t2` -> ["Draft the copy", "t2"]. */
+function splitAfterReferences(after: string): string[] {
+  return after
+    .split(/[,;]|\band then\b/i)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function resolveAfterReference(
+  reference: string,
+  byId: Map<string, ToderoPlanTask>,
+  byTitle: Map<string, ToderoPlanTask>,
+): ToderoPlanTask | null {
+  const cleaned = unquote(reference).trim();
+  if (!cleaned) return null;
+  const byIdMatch = byId.get(cleaned.toLowerCase());
+  if (byIdMatch) return byIdMatch;
+  const key = cleaned.toLowerCase().replace(/[.!?]+$/, "");
+  return byTitle.get(key) ?? null;
+}
+
+/**
+ * Works out what each task waits for, so tasks with nothing to wait for can
+ * start at the same time.
+ *
+ * Two rules, in this order:
+ *
+ * 1. A task with `after` waits for the tasks it names, by title or by plan id.
+ *    Names that are not in the kept list are ignored.
+ * 2. A task with no usable `after` waits only for the task before it inside
+ *    its own feature. The first task of every feature therefore starts
+ *    straight away, and separate features run side by side.
+ *
+ * The result is ordered so every task comes after the tasks it waits for. If
+ * the plan states an impossible order (A after B, B after A), the wait that
+ * closes the circle is dropped rather than the whole plan rejected.
+ */
+export function resolveToderoPlanTaskDependencies(tasks: ToderoPlanTask[]): ToderoPlanTaskDependency[] {
+  const byId = new Map<string, ToderoPlanTask>();
+  const byTitle = new Map<string, ToderoPlanTask>();
+  for (const task of tasks) {
+    byId.set(task.id.toLowerCase(), task);
+    const title = task.title.trim().toLowerCase().replace(/[.!?]+$/, "");
+    if (title && !byTitle.has(title)) byTitle.set(title, task);
+  }
+
+  const previousInFeature = new Map<string, string>();
+  const wanted = new Map<string, string[]>();
+  for (const task of tasks) {
+    const key = featureKey(task);
+    const stated = splitAfterReferences(task.after ?? "")
+      .map((reference) => resolveAfterReference(reference, byId, byTitle))
+      .filter((match): match is ToderoPlanTask => match !== null && match.id !== task.id)
+      .map((match) => match.id);
+    const deduped = [...new Set(stated)];
+    if (deduped.length > 0) {
+      wanted.set(task.id, deduped);
+    } else {
+      const previous = previousInFeature.get(key);
+      wanted.set(task.id, previous ? [previous] : []);
+    }
+    previousInFeature.set(key, task.id);
+  }
+
+  // Order the tasks so a blocker always lands before what it blocks. Ties keep
+  // plan order, so the person sees the list they approved.
+  const placed = new Set<string>();
+  const ordered: ToderoPlanTaskDependency[] = [];
+  const remaining = [...tasks];
+  while (remaining.length > 0) {
+    const readyIndex = remaining.findIndex((task) =>
+      (wanted.get(task.id) ?? []).every((id) => placed.has(id)),
+    );
+    // Nothing is ready: the plan named a circle. Free the first task left by
+    // dropping the waits it cannot satisfy, and carry on.
+    const index = readyIndex === -1 ? 0 : readyIndex;
+    const task = remaining.splice(index, 1)[0]!;
+    const blockedByTaskIds = (wanted.get(task.id) ?? []).filter((id) => placed.has(id));
+    ordered.push({ task, blockedByTaskIds });
+    placed.add(task.id);
+  }
+  return ordered;
 }

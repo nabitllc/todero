@@ -308,9 +308,15 @@ describe("proposed plan card and tasks", () => {
       { id: "f2", name: "Pick a dinner", why: "The product", doneWhen: "one dinner can be picked" },
     ],
     tasks: [
-      { id: "t1", title: "Write the sign-up spec", feature: "Sign up", output: "A spec" },
-      { id: "t2", title: "List ten restaurants", feature: "Pick a dinner", output: "A table" },
-      { id: "t3", title: "Draft the matching rules", feature: "Pick a dinner", output: "A document" },
+      { id: "t1", title: "Write the sign-up spec", feature: "Sign up", output: "A spec", after: "" },
+      { id: "t2", title: "List ten restaurants", feature: "Pick a dinner", output: "A table", after: "" },
+      {
+        id: "t3",
+        title: "Draft the matching rules",
+        feature: "Pick a dinner",
+        output: "A document",
+        after: "List ten restaurants",
+      },
     ],
   };
 

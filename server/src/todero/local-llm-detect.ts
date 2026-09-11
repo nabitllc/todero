@@ -5,6 +5,8 @@
  * vendor, or start a server. A miss means nothing is up — the operator starts
  * Ollama / LM Studio / an OpenAI-compatible server themselves.
  */
+import { detectLocalLlmParallelism } from "./local-llm-parallelism.js";
+
 export type LocalLlmRuntimeKind = "ollama" | "lmstudio" | "openai_compat";
 
 export type LocalLlmModel = {
@@ -19,6 +21,8 @@ export type LocalLlmRuntime = {
   baseUrl: string;
   reachable: boolean;
   models: LocalLlmModel[];
+  /** How many models this runtime can serve at the same time. At least 1. */
+  parallelism: number;
 };
 
 export type LocalLlmDetectResult = {
@@ -82,6 +86,7 @@ function parseOpenAiModels(body: unknown): LocalLlmModel[] {
 async function probeOne(
   candidate: ProbeCandidate,
   fetcher: typeof fetch,
+  env: NodeJS.ProcessEnv,
 ): Promise<LocalLlmRuntime | null> {
   const baseUrl = `http://${LOOPBACK_HOST}:${candidate.port}`;
   const url = `${baseUrl}${candidate.path}`;
@@ -102,6 +107,12 @@ async function probeOne(
     }
     const models =
       candidate.kind === "ollama" ? parseOllamaModels(body) : parseOpenAiModels(body);
+    const parallelism = await detectLocalLlmParallelism({
+      kind: candidate.kind,
+      baseUrl,
+      fetcher,
+      env,
+    });
     return {
       id: candidate.id,
       kind: candidate.kind,
@@ -109,6 +120,7 @@ async function probeOne(
       baseUrl,
       reachable: true,
       models,
+      parallelism,
     };
   } catch {
     return null;
@@ -119,8 +131,10 @@ async function probeOne(
 
 export async function detectLocalLlms(
   fetcher: typeof fetch = fetch,
+  options?: { env?: NodeJS.ProcessEnv },
 ): Promise<LocalLlmDetectResult> {
-  const probed = await Promise.all(CANDIDATES.map((candidate) => probeOne(candidate, fetcher)));
+  const env = options?.env ?? process.env;
+  const probed = await Promise.all(CANDIDATES.map((candidate) => probeOne(candidate, fetcher, env)));
   const runtimes = probed.filter((row): row is LocalLlmRuntime => row !== null);
   return { runtimes };
 }

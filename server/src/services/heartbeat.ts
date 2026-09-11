@@ -7,6 +7,10 @@ import { and, asc, desc, eq, getTableColumns, gt, gte, inArray, isNull, lt, lte,
 import type { Db } from "@todero/db";
 import { applyVaultReadEnv } from "../todero/vault-settings.js";
 import {
+  TIMER_ACTIONABLE_ISSUE_STATUSES,
+  selectActionableTimerWork,
+} from "../todero/timer-work-selection.js";
+import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   CONNECTION_INTENT_AGENT_GUIDANCE,
   CONNECTION_RUNTIME_TOOL_NAMES,
@@ -474,7 +478,7 @@ const EXECUTION_PATH_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_r
 const CANCELLABLE_HEARTBEAT_RUN_STATUSES = ["queued", "running", "scheduled_retry"] as const;
 const HEARTBEAT_RUN_TERMINAL_STATUSES = ["succeeded", "interrupted", "failed", "cancelled", "timed_out"] as const;
 const UNSUCCESSFUL_HEARTBEAT_RUN_TERMINAL_STATUSES = ["failed", "cancelled", "timed_out"] as const;
-const TIMER_ACTIONABLE_ISSUE_STATUSES = ["todo", "in_progress"] as const;
+const TIMER_ACTIONABLE_CANDIDATE_LIMIT = 50;
 export {
   ACTIVE_RUN_OUTPUT_CONTINUE_REARM_MS,
   ACTIVE_RUN_OUTPUT_CRITICAL_THRESHOLD_MS,
@@ -12751,8 +12755,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
   }
 
   async function hasActionableTimerWork(agent: typeof agents.$inferSelect) {
-    const row = await db
-      .select({ id: issues.id })
+    const candidateRows = await db
+      .select({ id: issues.id, status: issues.status })
       .from(issues)
       .where(
         and(
@@ -12763,9 +12767,38 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           inArray(issues.status, [...TIMER_ACTIONABLE_ISSUE_STATUSES]),
         ),
       )
-      .limit(1)
-      .then((rows) => rows[0] ?? null);
-    return Boolean(row);
+      .limit(TIMER_ACTIONABLE_CANDIDATE_LIMIT);
+    if (candidateRows.length === 0) return false;
+
+    // A To do task that still waits on another open task is not work the agent
+    // can start; waking for it burns a run and posts nothing.
+    const candidateIds = candidateRows.map((row) => row.id);
+    const blockerRows = await db
+      .select({ dependentId: issueRelations.relatedIssueId, blockerStatus: issues.status })
+      .from(issueRelations)
+      .innerJoin(issues, eq(issueRelations.issueId, issues.id))
+      .where(
+        and(
+          eq(issueRelations.companyId, agent.companyId),
+          eq(issueRelations.type, "blocks"),
+          inArray(issueRelations.relatedIssueId, candidateIds),
+        ),
+      );
+    const unresolvedByIssueId = new Map<string, number>();
+    for (const row of blockerRows) {
+      if (row.blockerStatus === "done") continue;
+      unresolvedByIssueId.set(row.dependentId, (unresolvedByIssueId.get(row.dependentId) ?? 0) + 1);
+    }
+
+    return (
+      selectActionableTimerWork(
+        candidateRows.map((row) => ({
+          id: row.id,
+          status: row.status,
+          unresolvedBlockerCount: unresolvedByIssueId.get(row.id) ?? 0,
+        })),
+      ) !== null
+    );
   }
 
   async function markTimerHeartbeatChecked(agentId: string, source: WakeupOptions["source"]) {

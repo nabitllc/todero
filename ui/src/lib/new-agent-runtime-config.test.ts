@@ -1,7 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS } from "@todero/shared";
-import { buildNewAgentRuntimeConfig } from "./new-agent-runtime-config";
+import {
+  buildNewAgentRuntimeConfig,
+  CONVERSATIONAL_HEARTBEAT_INTERVAL_SEC,
+} from "./new-agent-runtime-config";
 
 describe("buildNewAgentRuntimeConfig", () => {
   it("defaults new agents to no timer heartbeat", () => {
@@ -53,9 +56,36 @@ describe("buildNewAgentRuntimeConfig", () => {
     expect(config.heartbeat).toMatchObject({ enabled: true, intervalSec: 600 });
   });
 
-  it("runs a conversational local model one thread at a time", () => {
+  it("keeps a conversational local model checking for work every two minutes", () => {
     const config = buildNewAgentRuntimeConfig({ conversational: true });
-    expect(config.heartbeat).toMatchObject({ maxConcurrentRuns: 1, wakeOnDemand: true, enabled: false });
+    expect(config.heartbeat).toMatchObject({
+      enabled: true,
+      intervalSec: CONVERSATIONAL_HEARTBEAT_INTERVAL_SEC,
+      skipTimerWhenNoActionableWork: true,
+      wakeOnDemand: true,
+      maxConcurrentRuns: 1,
+    });
+  });
+
+  it("takes as many threads at once as the machine can serve models", () => {
+    expect(buildNewAgentRuntimeConfig({ conversational: true, parallelism: 3 }).heartbeat).toMatchObject({
+      maxConcurrentRuns: 3,
+    });
+  });
+
+  it("falls back to one thread when nothing reported what the machine can serve", () => {
+    for (const parallelism of [null, undefined, 0, -2, Number.NaN]) {
+      expect(buildNewAgentRuntimeConfig({ conversational: true, parallelism }).heartbeat).toMatchObject({
+        maxConcurrentRuns: 1,
+      });
+    }
+  });
+
+  it("leaves a tool-using agent's settings alone", () => {
+    expect(buildNewAgentRuntimeConfig({ parallelism: 4 }).heartbeat).toMatchObject({
+      enabled: false,
+      maxConcurrentRuns: AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+    });
   });
 
   it("omits modelProfiles when no cheap model is configured", () => {
