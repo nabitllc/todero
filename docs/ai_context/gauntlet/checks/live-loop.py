@@ -148,7 +148,9 @@ def main() -> int:
         expect(status == 201, f"plan approved ({status})")
         children = [i for i in issues_of(C) if i.get("parentId") == root["id"]]
         expect(4 <= len(children) <= 12, f"children created ({len(children)})")
-        expect(all(c["status"] == "todo" for c in children), "children start in To do")
+        # The first child starts the moment it is unblocked, so "To do or already
+        # started" is the shape; Backlog would mean the chain never wakes it.
+        expect(all(c["status"] in ("todo", "in_progress") for c in children), f"children start in To do ({[c['status'] for c in children]})")
         reviewer = next((a["id"] for a in (call("GET", f"/companies/{C}/agents")[1] or []) if a.get("role") == "reviewer"), None)
         expect(reviewer is not None, "a reviewer was hired on approval")
 
