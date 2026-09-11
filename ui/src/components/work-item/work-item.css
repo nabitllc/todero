@@ -706,3 +706,34 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.work-item-plan-goal-label {
+  font-family: var(--wi-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wi-muted);
+  margin-right: var(--wi-space-8);
+}
+
+.work-item-task-status-queued {
+  color: var(--wi-muted);
+  border-style: dashed;
+}
+
+.work-item-sendback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-8);
+}
+
+.work-item-sendback-input {
+  min-height: 72px;
+}
+
+.work-item-working {
+  font-family: var(--wi-sans);
+  font-size: 12px;
+  color: var(--wi-muted);
+  margin: 0 0 var(--wi-space-12);
+}

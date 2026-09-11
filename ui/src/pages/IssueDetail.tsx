@@ -1397,8 +1397,8 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           plan={proposedPlan}
           planApprovable={
             Boolean(proposedPlan) &&
+            viewProps.planPending === true &&
             childIssues.length === 0 &&
-            issue.status === "blocked" &&
             !approveProposedPlan.isPending
           }
           tasks={childIssues.map((child) => ({
@@ -1406,9 +1406,16 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
             identifier: child.identifier ?? child.id,
             title: child.title,
             status: displayStatus(child),
+            queued: (child.blockedBy ?? []).length > 0,
             href: createIssueDetailPath(child.identifier ?? child.id),
           }))}
+          agentWorking={liveIssueIds.has(issue.id)}
           onPlanApprove={(keep) => approveProposedPlan.mutate(keep)}
+          onAccept={() => onUpdate({ status: "done" })}
+          onSendBack={(note) => {
+            onUpdate({ status: "todo" });
+            void onAdd(note);
+          }}
         />
       </div>
     );

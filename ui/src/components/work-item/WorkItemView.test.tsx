@@ -367,3 +367,72 @@ describe("proposed plan card and tasks", () => {
     expect(rows[2]!.querySelector("a")?.getAttribute("href")).toBe("/ZZW/issues/ZZW-4");
   });
 });
+
+describe("handed-in output, queued tasks, and blocker counts", () => {
+  it("shows Accept and Send back when the agent handed in its output", async () => {
+    const onAccept = vi.fn();
+    const onSendBack = vi.fn();
+    await render(fixture({ status: "blocked", blockedBy: { kind: "waiting-on-you" }, reviewPending: true, onAccept, onSendBack }));
+    const card = container.querySelector('[data-testid="work-item-review-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain("Handed in");
+
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-accept"]') as HTMLButtonElement).click();
+    });
+    expect(onAccept).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-sendback"]') as HTMLButtonElement).click();
+    });
+    const note = container.querySelector('[data-testid="work-item-sendback-note"]') as HTMLTextAreaElement;
+    expect(note).not.toBeNull();
+    const confirm = container.querySelector('[data-testid="work-item-sendback-confirm"]') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(note, "Shorter, please.");
+      note.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-sendback-confirm"]') as HTMLButtonElement).click();
+    });
+    expect(onSendBack).toHaveBeenCalledWith("Shorter, please.");
+  });
+
+  it("labels queued tasks Queued and counts blockers on the chip", async () => {
+    await render(
+      fixture({
+        status: "blocked",
+        blockedBy: { kind: "item", id: "x", identifier: "ZZW-2" },
+        blockerCount: 3,
+        tasks: [
+          { id: "a", identifier: "ZZW-2", title: "First", status: "todo", queued: false, href: "/ZZW/issues/ZZW-2" },
+          { id: "b", identifier: "ZZW-3", title: "Second", status: "todo", queued: true, href: "/ZZW/issues/ZZW-3" },
+          { id: "c", identifier: "ZZW-4", title: "Third", status: "done", queued: true, href: "/ZZW/issues/ZZW-4" },
+        ],
+      }),
+    );
+    const rows = [...container.querySelectorAll('[data-testid="work-item-task-row"]')];
+    expect(rows[0]!.textContent).toContain("To do");
+    expect(rows[1]!.textContent).toContain("Queued");
+    expect(rows[2]!.textContent).toContain("Done");
+    expect(visibleText()).toContain("Blocked · 3 tasks");
+  });
+
+  it("labels the goal and prefills the composer when asking for changes", async () => {
+    const plan = { goal: "Seat neighbors.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "" }] };
+    await render(fixture({ plan, planApprovable: true }));
+    expect(container.querySelector(".work-item-plan-goal")!.textContent).toContain("Goal");
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-plan-changes"]') as HTMLButtonElement).click();
+    });
+    const composer = container.querySelector('[data-testid="work-item-composer-input"]') as HTMLTextAreaElement;
+    expect(composer.value).toBe("Please change the plan: ");
+  });
+
+  it("says the agent is writing while a run is live", async () => {
+    await render(fixture({ agentWorking: true, assigneeLabel: "Nova" }));
+    expect(container.querySelector('[data-testid="work-item-working"]')!.textContent).toContain("Nova is writing a reply");
+  });
+});

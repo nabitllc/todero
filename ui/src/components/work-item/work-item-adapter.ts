@@ -184,6 +184,9 @@ export function toWorkItemViewProps(args: {
     title: issue.title,
     body,
     bodyEditable: !firstTask,
+    reviewPending: parsed.reviewPending,
+    planPending: parsed.planPending,
+    blockerCount: (issue.blockedBy ?? []).length,
     sections: firstTask ? [] : parsed.sections,
     checklist: parsed.checklist,
     trail,
@@ -228,6 +231,8 @@ export function descriptionWithType(
   return serializeWorkItemDescription({
     type,
     waitingOnYou,
+    reviewPending: parsed.reviewPending,
+    planPending: parsed.planPending,
     body: parsed.body,
     sections: parsed.sections,
     checklist: parsed.checklist,
@@ -252,6 +257,8 @@ export function applyBodyToDescription(
   return serializeWorkItemDescription({
     type,
     waitingOnYou,
+    reviewPending: parsed.reviewPending,
+    planPending: parsed.planPending,
     body,
     sections: parsed.sections,
     checklist: parsed.checklist,

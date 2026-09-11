@@ -198,3 +198,84 @@ first time a local model finishes a project by itself.
   (already in `conversation-thread.ts`); tasks get their own thread, so the first task's
   history never bleeds into work tasks.
 - Dependency chains of 12 tasks are fine; the existing dependency wake is idempotent.
+
+## Part 2 (added 2026-09-10 evening, after Michael's review of waves A and B)
+
+Waves A, B and C shipped as PRs #79, #80 and the wave C PR. What follows is the next
+set, in the order they pay off. Michael's direction: one-human or zero-human operation,
+Todero deciding when an extra agent is needed, and agents kept busy while unblocked work
+exists. "Bolts" in his vocabulary are AWS AI-DLC bolts: hours-long cycles from intent to
+ship with human gates after plan validation and after evaluation.
+
+### Wave D: goals and a real hierarchy
+
+- **Goals in the Work menu.** The page exists behind `enableGoalsSidebarLink`; make it a
+  default entry and list every goal with status and the tasks under it.
+- **Plan features become goals.** On approve, each plan feature is saved as a goal under the
+  company goal (level `feature`), with its `done when` as the goal's description. Child tasks
+  link to their feature goal. Every task prompt then carries mission → feature → task.
+- **Types.** Today: `Feature`, `Story`, `Task`, `Bug`, chosen by depth (top level Task, one
+  level down Story, two down Task). Recommended: the conversation task is the **Project brief**,
+  each feature is a **Feature** (a goal plus a parent task), each plan task a **Task** under
+  its feature, and **Bug** stays for send-backs that turn into fixes. Depth no longer decides
+  the type; the plan does.
+- **Feature done.** A feature closes when its tasks are accepted and its `done when` is
+  confirmed by the judge (wave E). The project closes when every feature closes.
+
+### Wave E: the judge, so the person is not the only gate
+
+- **A judge run before Accept reaches the person.** When a task hands in, a second run (same
+  model, judge prompt: the feature's `done when`, the task's output line, the deliverable)
+  answers `VERDICT: pass` or `VERDICT: fail` with one paragraph. Pass: the task goes to the
+  person's Inbox as today, or, in zero-human mode, is accepted automatically. Fail: the task
+  is sent back with the judge's paragraph as the note, up to two rounds, then the person.
+- **Judge as an agent, not a hidden call.** It is hired by Todero when the first plan is
+  approved, named after the lead ("Nova's reviewer"), listed on the Agents page, and its runs
+  and cost show like any other agent's. Todero decides it is needed the moment there is a
+  plan to verify; that is the first instance of "Todero knows when a new agent is needed".
+- **Zero-human switch per organization.** Off: person accepts. On: judge accepts, person
+  only sees send-backs that failed twice and the wrap-up.
+
+### Wave F: parallel work and staying busy
+
+- **More than one task at a time.** The plan block gains an optional `after:` per task; tasks
+  with no `after` and no shared feature run in parallel. `maxConcurrentRuns` for a local
+  agent becomes the number of models the machine can serve (Ollama reports it), default 1.
+- **Keep working while unblocked work exists.** A short timer heartbeat (every 2 minutes)
+  that picks any To do task without blockers. Skips when nothing is actionable, so the GPU
+  stays quiet.
+- **Todero decides on a second worker.** When more than N tasks are ready and the machine has
+  headroom, Todero hires a second worker agent from the same model and splits the queue by
+  feature. Same mechanism as the judge: a rule, an agent record, visible on the Agents page.
+
+### Wave G: projects and bolts
+
+- **Onboarding project completion.** The Onboarding project closes when the conversation
+  task closes with its wrap-up. Its wrap-up proposes the next project in one line.
+- **When a new project is needed.** A new project is created when the person approves a plan
+  whose goal is not covered by an open project's goal, or when the wrap-up's "next" line is
+  accepted. Todero asks in the Inbox: "Start a project for this?" with one button.
+- **Bolts.** A bolt is one approved plan run to its wrap-up: intent (the conversation), plan
+  validation gate (Approve), construction (the tasks), evaluation gate (judge, then person),
+  ship (wrap-up). The `Bolt` slot on the task shows bolt number, started, elapsed, gates
+  passed. A project is a sequence of bolts; the Timeline shows them.
+
+### Wave H: teaching Todero to fan out
+
+- **Model routing by task kind.** A small table: planning and judging on the strongest local
+  model present; drafting and formatting on the fastest; the wizard's pick is the default for
+  both. Users with cloud keys get the same table with their models. Every run records which
+  model and why.
+- **Orchestration rules as data.** The "when to add an agent" rules from waves E and F live
+  in one file Todero reads, so any deployment can tune them: judge after first plan, second
+  worker above N ready tasks and available headroom, never more agents than models served.
+
+### Order and size
+
+| Wave | Contents | Size |
+| --- | --- | --- |
+| D | Goals menu, features as goals, types by plan, feature done | 2 days |
+| E | Judge agent, verdicts, zero-human switch | 2–3 days |
+| F | Parallel tasks, busy timer, second worker rule | 2 days |
+| G | Project close/open, bolts on the task and Timeline | 2 days |
+| H | Model routing table, orchestration rules as data | 1–2 days |

@@ -121,9 +121,15 @@ import {
   isConversationalHttpAgent,
   loadConversationIdentity,
   loadConversationThread,
-  planConversationDisposition,
   readConversationDisposition,
 } from "../todero/conversation-thread.js";
+import {
+  allPlanChildrenClosed,
+  buildPlanSummaryTurnInstruction,
+  CONVERSATION_OUTPUT_DOCUMENT_KEY,
+  loadPlanChildren,
+  planConversationOutcome,
+} from "../todero/conversation-outcome.js";
 import { documentService } from "./documents.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -14821,9 +14827,23 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         agent,
         issueId: issueRef.id,
       });
+      // Woken because its last blocker closed and every child task is done:
+      // this turn is the wrap-up, not another round of questions.
+      delete context.toderoTurnInstruction;
+      const conversationWakeReason = readNonEmptyString(context.wakeReason);
+      if (
+        conversationWakeReason === ISSUE_BLOCKERS_RESOLVED_WAKE_REASON ||
+        conversationWakeReason === "issue_children_completed"
+      ) {
+        const planChildren = await loadPlanChildren(db, { companyId: agent.companyId, issueId: issueRef.id });
+        if (allPlanChildrenClosed(planChildren)) {
+          context.toderoTurnInstruction = buildPlanSummaryTurnInstruction(planChildren);
+        }
+      }
     } else {
       delete context.toderoThread;
       delete context.toderoIdentity;
+      delete context.toderoTurnInstruction;
     }
     if (issueRef) {
       context.toderoIssue = {
@@ -17150,10 +17170,36 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         if (issueId && outcome === "succeeded" && conversationDisposition) {
           try {
             const currentIssue = await issuesSvc.getById(issueId);
+            const conversationRunWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
             const plan = currentIssue
-              ? planConversationDisposition({ issue: currentIssue, disposition: conversationDisposition })
+              ? planConversationOutcome({
+                  issue: currentIssue,
+                  disposition: conversationDisposition,
+                  proposedPlan: Boolean(conversationPlanBlock),
+                  closeAllowed:
+                    conversationRunWakeReason === ISSUE_BLOCKERS_RESOLVED_WAKE_REASON ||
+                    conversationRunWakeReason === "issue_children_completed",
+                })
               : null;
             if (plan) {
+              // A child task's deliverable is kept as its Output document so
+              // it can be opened, not only read back in the thread.
+              if (plan.outcome === "review") {
+                const output = readNonEmptyString(parseObject(persistedResultJson).summary);
+                if (output) {
+                  await documentService(db).upsertIssueDocument({
+                    issueId,
+                    key: CONVERSATION_OUTPUT_DOCUMENT_KEY,
+                    title: "Output",
+                    format: "markdown",
+                    body: output,
+                    changeSummary: "Handed in by the agent.",
+                    createdByAgentId: agent.id,
+                    createdByRunId: livenessRun.id,
+                    lockedDocumentStrategy: "conflict",
+                  });
+                }
+              }
               await issuesSvc.update(issueId, {
                 status: plan.status,
                 description: plan.description,
@@ -17161,9 +17207,11 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               });
               await onLog(
                 "stdout",
-                plan.status === "done"
+                plan.outcome === "done"
                   ? "[todero] Marked the task done.\n"
-                  : "[todero] Handed the turn back to the user.\n",
+                  : plan.outcome === "review"
+                    ? "[todero] Handed in the output for the user to accept.\n"
+                    : "[todero] Handed the turn back to the user.\n",
               );
             }
           } catch (err) {

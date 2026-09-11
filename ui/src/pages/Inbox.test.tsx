@@ -606,16 +606,20 @@ describe("Inbox toolbar", () => {
       );
     });
 
+    // The Your-turn panel makes its own blocked-tasks request; only the three
+    // row queries carry the live descendant summary flag.
+    const rowCalls = () =>
+      apiMocks.issuesList.mock.calls.filter((call) => call[1]?.includeLiveDescendantSummary === true);
     await vi.waitFor(() => {
-      expect(apiMocks.issuesList).toHaveBeenCalledTimes(3);
+      expect(rowCalls()).toHaveLength(3);
     });
 
-    expect(apiMocks.issuesList.mock.calls.map((call) => call[1]?.includeLiveDescendantSummary)).toEqual([
+    expect(rowCalls().map((call) => call[1]?.includeLiveDescendantSummary)).toEqual([
       true,
       true,
       true,
     ]);
-    expect(apiMocks.issuesList.mock.calls.map((call) => call[1]?.limit)).toEqual([
+    expect(rowCalls().map((call) => call[1]?.limit)).toEqual([
       500,
       500,
       500,

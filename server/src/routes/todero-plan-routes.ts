@@ -16,6 +16,7 @@ import {
   CONVERSATION_PLAN_DOCUMENT_KEY,
   descriptionWithWaitingMarker,
 } from "../todero/conversation-thread.js";
+import { descriptionWithPlanMarker } from "../todero/conversation-outcome.js";
 
 /**
  * The tasks the person kept, in plan order. An empty or missing `keep` means
@@ -75,15 +76,28 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
       return;
     }
 
+    // The person's answers from the planning conversation ride along on every
+    // child, so the agent does not ask for them a second time on each task.
+    const personSaid = await issuesSvc
+      .listComments(issue.id, { order: "asc", limit: 50 })
+      .then((rows) =>
+        rows
+          .filter((row) => !row.authorAgentId && !row.derivedAuthorAgentId && row.authorType !== "agent" && !row.presentation)
+          .map((row) => row.body ?? "")
+          .filter((body) => body.trim()),
+      )
+      .catch(() => [] as string[]);
+
     const children: Array<{ id: string; identifier: string | null; title: string; status: string }> = [];
     let previousId: string | null = null;
     for (const [index, task] of kept.entries()) {
       const child = await issuesSvc.create(issue.companyId, {
         title: task.title,
-        description: buildToderoPlanTaskDescription(parsed.plan, task),
-        // The first task starts now; the rest wait in backlog behind the one
-        // before them and are promoted by the dependency wake when it closes.
-        status: index === 0 ? "todo" : "backlog",
+        description: buildToderoPlanTaskDescription(parsed.plan, task, { personSaid }),
+        // Every child is To do from the start: the blocker chain keeps the
+        // later ones queued, and closing a task through the API only wakes
+        // dependents that are not in backlog.
+        status: "todo",
         parentId: issue.id,
         assigneeAgentId: issue.assigneeAgentId,
         projectId: issue.projectId ?? null,
@@ -98,10 +112,12 @@ export function toderoPlanRoutes(db: Db, deps: { heartbeat: IssueAssignmentWakeu
     const parent = await issuesSvc.update(issue.id, {
       status: "blocked",
       blockedByIssueIds: children.map((child) => child.id),
-      description: descriptionWithWaitingMarker(issue.description, false),
+      description: descriptionWithPlanMarker(descriptionWithWaitingMarker(issue.description, false), false),
       actorUserId: req.actor.userId ?? null,
     });
 
+    // Only the first child is woken here; the ones behind it wait on their
+    // blocker and get their own wake when it closes.
     const first = children[0]!;
     await queueIssueAssignmentWakeup({
       heartbeat: deps.heartbeat,
