@@ -184,14 +184,22 @@ export function buildJudgeReviewPrompt(input: {
 }
 
 /** The reviewer's standing brief, in place of the worker's identity prompt. */
-export function buildJudgeSystemPrompt(input: { judgeName: string; companyName?: string | null }): string {
+export function buildJudgeSystemPrompt(input: {
+  judgeName: string;
+  companyName?: string | null;
+  skillText?: string | null;
+}): string {
   const name = input.judgeName.trim() || "the reviewer";
   const company = input.companyName?.trim();
-  return [
+  const parts = [
     `You are ${name}${company ? ` at ${company}` : ""}, the reviewer on this team. You read finished work and say whether it is ready for the person who asked for it.`,
     "You have no tools. You never rewrite the work yourself and you never ask questions.",
     `Reply with one line \`VERDICT: pass\` or \`VERDICT: fail\`, then one short paragraph. Nothing else.`,
-  ].join("\n\n");
+  ];
+  if (input.skillText?.trim()) {
+    parts.push(input.skillText.trim());
+  }
+  return parts.join("\n\n");
 }
 
 /**

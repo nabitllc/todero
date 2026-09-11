@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Db } from "@todero/db";
-import { detectAvailableModelIds, storeAvailableModelIds } from "../todero/available-models.js";
+import { detectAvailableModelIds, storeAvailableModelIds, detectContextLength, storeContextLength } from "../todero/available-models.js";
 import { detectLocalLlms } from "../todero/local-llm-detect.js";
 import { testLocalLlmConnection } from "../todero/local-llm-test.js";
 import { logger } from "../middleware/logger.js";
@@ -40,6 +40,7 @@ export function toderoLocalLlmRoutes(db?: Db) {
     try {
       const testResult = await testLocalLlmConnection({ baseUrl, modelId });
       const availableModels = testResult.ok ? await detectAvailableModelIds(baseUrl) : [];
+      const contextLength = testResult.ok ? await detectContextLength(baseUrl, modelId) : null;
       if (db && companyId && availableModels.length > 0) {
         try {
           await storeAvailableModelIds(db, companyId, availableModels);
@@ -47,7 +48,14 @@ export function toderoLocalLlmRoutes(db?: Db) {
           logger.warn({ err, companyId }, "failed to remember the available local models for the company");
         }
       }
-      res.json({ ...testResult, availableModels });
+      if (db && companyId && contextLength) {
+        try {
+          await storeContextLength(db, companyId, contextLength);
+        } catch (err) {
+          logger.warn({ err, companyId }, "failed to remember the local model's context window for the company");
+        }
+      }
+      res.json({ ...testResult, availableModels, contextLength });
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : "Failed to test the local LLM connection",

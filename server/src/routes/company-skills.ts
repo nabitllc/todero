@@ -780,6 +780,29 @@ export function companySkillRoutes(db: Db) {
     },
   );
 
+  // Put a skill Todero shipped back to the text it shipped with. The reason is
+  // recorded on the skill and in its history, so the change is never silent.
+  router.post("/companies/:companyId/skills/:skillId/reset-to-original", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const skillId = req.params.skillId as string;
+    await assertCanMutateCompanySkills(req, companyId, "skills.update", () => skillPolicyResource({ companyId, skillId }));
+    const result = await svc.resetSkillToOriginal(companyId, skillId, skillActor(req));
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "company.skill_reset_to_original",
+      entityType: "company_skill",
+      entityId: skillId,
+      details: { slug: result.slug },
+    });
+    res.json(result);
+  });
+
   router.post("/companies/:companyId/skills/:skillId/star", async (req, res) => {
     const companyId = req.params.companyId as string;
     const skillId = req.params.skillId as string;

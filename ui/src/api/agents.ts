@@ -316,9 +316,19 @@ export const agentsApi = {
       `/companies/${encodeURIComponent(companyId)}/setup-token-login-sessions/${encodeURIComponent(sessionId)}/cancel`,
       {},
     ),
+  folder: (companyId: string, agentId: string) =>
+    api.get<AgentFolderContents>(
+      `/companies/${encodeURIComponent(companyId)}/agents/${encodeURIComponent(agentId)}/folder`,
+    ),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 };
+
+export interface AgentFolderContents {
+  brief: string | null;
+  skills: string[];
+  documents: string[];
+}
 
 export interface AvailableSkill {
   name: string;

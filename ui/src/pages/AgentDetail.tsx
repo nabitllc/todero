@@ -27,6 +27,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
+import { AgentFilesTab } from "./agent-details/AgentFilesTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
@@ -275,12 +276,13 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "secrets" | "skills" | "tools" | "runs" | "audit" | "budget";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "secrets" | "skills" | "tools" | "runs" | "audit" | "budget" | "files";
 
 export const AGENT_DETAIL_TABS: ReadonlyArray<{ value: AgentDetailView; label: string }> = [
   { value: "dashboard", label: "Dashboard" },
   { value: "instructions", label: "Instructions" },
   { value: "skills", label: "Skills" },
+  { value: "files", label: "Files" },
   { value: "configuration", label: "Configuration" },
   { value: "secrets", label: "Secrets" },
   { value: "tools", label: "Tools" },
@@ -1527,6 +1529,13 @@ export function AgentDetail() {
 
       {activeView === "skills" && (
         <AgentSkillsTab
+          agent={agent}
+          companyId={resolvedCompanyId ?? undefined}
+        />
+      )}
+
+      {activeView === "files" && (
+        <AgentFilesTab
           agent={agent}
           companyId={resolvedCompanyId ?? undefined}
         />

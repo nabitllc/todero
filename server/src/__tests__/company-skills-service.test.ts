@@ -20,8 +20,9 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { companySkillService } from "../services/company-skills.ts";
+import { companySkillService } from "../services/company-skills.js";
 import { folderService } from "../services/folders.js";
+import { readShippedPackSkills } from "../todero/skill-pack-source.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -332,6 +333,95 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     const refreshedSkill = refreshedList.find((skill) => skill.id === bundledSkill.id);
 
     expect(refreshedSkill?.updatedAt.toISOString()).toBe(preservedUpdatedAt.toISOString());
+  });
+
+  it("gives the organization its own copy of every skill Todero ships, in its own group", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Todero",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    const shipped = await readShippedPackSkills();
+    expect(shipped.length).toBeGreaterThanOrEqual(10);
+
+    const list = await svc.list(companyId, { sort: "recent" });
+    const copies = list.filter((skill) => skill.key.startsWith(`company/${companyId}/`));
+    expect(copies.map((skill) => skill.slug).sort()).toEqual(shipped.map((skill) => skill.slug).sort());
+
+    // Each copy is editable and carries a version history from the start.
+    for (const copy of copies) {
+      expect(copy.editable).toBe(true);
+      expect(copy.currentVersionId).not.toBeNull();
+    }
+
+    // The group a person reads, above the command-line skills.
+    const folderIds = new Set(copies.map((skill) => skill.folderId).filter(Boolean) as string[]);
+    expect(folderIds.size).toBe(1);
+    const packFolder = await db
+      .select()
+      .from(folders)
+      .where(eq(folders.id, Array.from(folderIds)[0]!))
+      .then((rows) => rows[0]);
+    expect(packFolder).toMatchObject({
+      name: "What your agent knows",
+      systemKey: "bundled:what-your-agent-knows",
+    });
+
+    // The pack is not also mounted read-only from the checkout.
+    const bundledPackKeys = list.filter((skill) =>
+      shipped.some((entry) => skill.key === `nabitllc/todero/${entry.slug}`),
+    );
+    expect(bundledPackKeys).toEqual([]);
+  });
+
+  it("leaves an edited copy alone on a later run, and puts it back on a reset", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Todero",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    const firstRun = await svc.list(companyId, { sort: "recent" });
+    const copy = firstRun.find((skill) => skill.key === `company/${companyId}/todero-plan-a-project`);
+    expect(copy).toBeDefined();
+    if (!copy) throw new Error("Expected the organization's copy of todero-plan-a-project");
+
+    const shipped = (await readShippedPackSkills()).find((entry) => entry.slug === "todero-plan-a-project")!;
+    const edited = `${shipped.markdown}\n\nOur own rule: always name the owner.\n`;
+    await svc.updateFile(companyId, copy.id, "SKILL.md", edited);
+
+    // A second pass leaves the person's words exactly where they put them.
+    await svc.list(companyId, { sort: "recent" });
+    expect((await svc.getById(companyId, copy.id))?.markdown).toBe(edited);
+
+    const reset = await svc.resetSkillToOriginal(companyId, copy.id);
+    expect(reset.markdown).not.toContain("Our own rule");
+    expect(reset.markdown).toContain("last_changed_because: Reset to the original");
+
+    const versions = await svc.listVersions(companyId, copy.id);
+    expect(versions[0]?.label).toBe("Reset to the original");
+    expect(versions.length).toBeGreaterThan(1);
+  });
+
+  it("refuses to reset a skill that did not come with Todero", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Todero",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    const ours = await svc.createLocalSkill(companyId, {
+      name: "our-own-skill",
+      description: "Something we wrote ourselves.",
+    });
+    await expect(svc.resetSkillToOriginal(companyId, ours.id)).rejects.toThrow(/did not come with Todero/);
   });
 
   it("seeds bundled skill releases idempotently and materializes the frozen champion snapshot", async () => {

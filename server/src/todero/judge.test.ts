@@ -3,6 +3,7 @@ import type { ToderoPlan } from "@todero/shared";
 import {
   buildJudgeComment,
   buildJudgeReviewPrompt,
+  buildJudgeSystemPrompt,
   descriptionWithJudgeFailRounds,
   findPlanFeatureForTask,
   findPlanTaskByTitle,
@@ -179,5 +180,41 @@ describe("buildJudgeComment", () => {
     expect(
       buildJudgeComment({ verdict: "fail", note: "", outcome: { kind: "handoff", because: "rounds_exhausted" } }),
     ).toContain("Over to you");
+  });
+});
+
+describe("buildJudgeSystemPrompt", () => {
+  it("builds the reviewer identity prompt", () => {
+    const prompt = buildJudgeSystemPrompt({ judgeName: "Alex", companyName: "Acme" });
+    expect(prompt).toContain("You are Alex at Acme, the reviewer");
+    expect(prompt).toContain("VERDICT: pass");
+    expect(prompt).toContain("VERDICT: fail");
+  });
+
+  it("appends skill text when provided", () => {
+    const skillText = "## Review Against Done When\n\nCheck that the work meets the done-when line.";
+    const prompt = buildJudgeSystemPrompt({
+      judgeName: "Alex",
+      companyName: "Acme",
+      skillText,
+    });
+    expect(prompt).toContain("You are Alex at Acme, the reviewer");
+    expect(prompt).toContain(skillText);
+  });
+
+  it("ignores empty or whitespace-only skill text", () => {
+    const prompt1 = buildJudgeSystemPrompt({
+      judgeName: "Alex",
+      companyName: "Acme",
+      skillText: "",
+    });
+    expect(prompt1).not.toContain("\n\n\n");
+
+    const prompt2 = buildJudgeSystemPrompt({
+      judgeName: "Alex",
+      companyName: "Acme",
+      skillText: "   ",
+    });
+    expect(prompt2).not.toContain("   ");
   });
 });

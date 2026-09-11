@@ -97,11 +97,14 @@ import {
   isUuidLike,
   joinFrontmatterBlock,
   normalizeAgentUrlKey,
+  parseFrontmatterFields,
   parseFrontmatterMarkdown,
   splitFrontmatterBlock,
   stringifyFrontmatter,
 } from "@todero/shared";
 import { resolveToderoInstanceRoot } from "../home-paths.js";
+import { isSkillPackSkill } from "../todero/skill-pack.js";
+import { readShippedPackSkills, type ShippedPackSkill } from "../todero/skill-pack-source.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
 import { agentService } from "./agents.js";
@@ -404,6 +407,11 @@ type RuntimeSkillSourceResolution =
   | { status: "missing"; source: string; detail: string };
 
 const skillInventoryRefreshPromises = new Map<string, Promise<void>>();
+/**
+ * Organizations already holding a copy of every skill Todero ships. Cleared by
+ * a restart, which costs one extra check per organization and nothing after.
+ */
+const companiesWithSkillPackCopies = new Set<string>();
 
 function selectCompanySkillColumns() {
   return {
@@ -1288,7 +1296,18 @@ function isToderoBundledSkillKey(key: string) {
   return key.startsWith("nabitllc/todero/");
 }
 
+/**
+ * The pack sits in its own group, above the command-line skills. The signal is
+ * the skill's own frontmatter rather than its key, so an organization's
+ * editable copy lands in the same group as the file it came from.
+ */
+export const TODERO_SKILL_PACK_CATEGORY = "todero-pack";
+
+/** What a reset writes as the skill's because-line and as its version label. */
+export const SKILL_RESET_REASON = "Reset to the original";
+
 function toderoBundledFolderCategory(key: string, metadata?: unknown) {
+  if (isSkillPackSkill(metadata)) return TODERO_SKILL_PACK_CATEGORY;
   const keyParts = key.split("/");
   if (keyParts[0] === "todero" && keyParts[1] === "bundled" && keyParts[2]) {
     return keyParts[2];
@@ -1301,6 +1320,8 @@ function toderoBundledFolderCategory(key: string, metadata?: unknown) {
 }
 
 function bundledFolderLabel(category: string) {
+  // The group a person reads on the Skills page, in their words.
+  if (category === TODERO_SKILL_PACK_CATEGORY) return "What your agent knows";
   return category
     .split(/[-_\s]+/)
     .filter(Boolean)
@@ -2932,6 +2953,11 @@ export function companySkillService(db: Db) {
       const stats = await fs.stat(skillsRoot).catch(() => null);
       if (!stats?.isDirectory()) continue;
       const bundledSkills = await readLocalSkillImports(companyId, skillsRoot)
+        // The pack is deliberately not mounted read-only from the checkout:
+        // ensureSkillPackCopies gives each organization its own editable copy
+        // instead, so a person's edit survives the next pull. Everything else
+        // under skills/ still mounts the way it always has.
+        .then((skills) => skills.filter((skill) => !isSkillPackSkill(skill.metadata)))
         .then((skills) => skills.map((skill) => ({
           ...skill,
           key: deriveCanonicalSkillKey(companyId, {
@@ -2951,6 +2977,151 @@ export function companySkillService(db: Db) {
       return upsertImportedSkills(companyId, bundledSkills);
     }
     return [];
+  }
+
+  /** The key an organization's own copy of a shipped pack skill is filed under. */
+  function skillPackCopyKey(companyId: string, slug: string) {
+    return `company/${companyId}/${slug}`;
+  }
+
+  function skillPackCopyValues(companyId: string, shipped: ShippedPackSkill, markdown: string): ImportedSkill {
+    const parsed = parseFrontmatterMarkdown(markdown);
+    const frontmatterMetadata = isPlainRecord(parsed.frontmatter.metadata) ? parsed.frontmatter.metadata : {};
+    return {
+      key: skillPackCopyKey(companyId, shipped.slug),
+      slug: shipped.slug,
+      name: asString(parsed.frontmatter.name) ?? shipped.name,
+      description: asString(parsed.frontmatter.description) ?? shipped.description,
+      markdown,
+      sourceType: "local_path",
+      sourceLocator: path.resolve(resolveManagedSkillsRoot(companyId), shipped.slug),
+      sourceRef: null,
+      trustLevel: "markdown_only",
+      compatibility: "compatible",
+      fileInventory: [{ path: "SKILL.md", kind: "skill" }],
+      // The pack facts ride along in the stored metadata, which is where the
+      // loader reads them from. No new column, no new table.
+      metadata: { ...frontmatterMetadata, sourceKind: "managed_local" },
+    };
+  }
+
+  /**
+   * Give this organization its own copy of every shipped pack skill.
+   *
+   * Runs on the same pass that mounts the bundled skills, so the first hire
+   * finds them already there. Idempotent by construction: a copy that already
+   * has a row and a file on disk is left exactly as the person left it, edits
+   * included, and a second call writes nothing.
+   */
+  async function ensureSkillPackCopies(companyId: string): Promise<CompanySkill[]> {
+    // This runs on every inventory refresh, which is a hot path. Once an
+    // organization has the whole pack there is nothing left to do, so the
+    // reads are skipped entirely from then on.
+    if (companiesWithSkillPackCopies.has(companyId)) return [];
+
+    const shipped = await readShippedPackSkills().catch(() => [] as ShippedPackSkill[]);
+    if (shipped.length === 0) return [];
+
+    const existingByKey = new Map(
+      (await db
+        .select(selectCompanySkillColumns())
+        .from(companySkills)
+        .where(eq(companySkills.companyId, companyId))
+        .then((rows) => rows.map((row) => toCompanySkill(row))))
+        .map((skill) => [skill.key, skill] as const),
+    );
+
+    const managedRoot = resolveManagedSkillsRoot(companyId);
+    const created: CompanySkill[] = [];
+    for (const skill of shipped) {
+      const key = skillPackCopyKey(companyId, skill.slug);
+      const skillDir = path.resolve(managedRoot, skill.slug);
+      const skillFilePath = path.resolve(skillDir, "SKILL.md");
+      const onDisk = await fs.readFile(skillFilePath, "utf8").catch(() => null);
+      if (existingByKey.has(key) && onDisk !== null) continue;
+
+      // Either the row or the file is missing. Writing the shipped text is
+      // safe in both cases: a row with no file has nothing to lose, and a file
+      // with no row was never reachable from the Skills page.
+      const markdown = onDisk ?? skill.markdown;
+      await fs.mkdir(skillDir, { recursive: true });
+      await fs.writeFile(skillFilePath, markdown, "utf8");
+
+      const [imported] = await upsertImportedSkills(companyId, [skillPackCopyValues(companyId, skill, markdown)]);
+      if (!imported) continue;
+      if (!existingByKey.has(key)) {
+        // The inventory is handed over rather than collected: this runs inside
+        // the inventory refresh, and collecting it would wait on the refresh
+        // that is calling it. The copy is one file and we are holding it.
+        await createVersion(
+          companyId,
+          imported.id,
+          { label: "Shipped with Todero" },
+          null,
+          {
+            skipInventoryRefresh: true,
+            skill: imported,
+            fileInventory: [{ path: "SKILL.md", kind: "skill", content: markdown }],
+          },
+        );
+      }
+      created.push(imported);
+    }
+    companiesWithSkillPackCopies.add(companyId);
+    return created;
+  }
+
+  /**
+   * Put a pack skill back to the text Todero shipped, and record why.
+   *
+   * The because-line lives in the skill's own frontmatter, so it travels with
+   * the file; the version history gets a row labelled the same way.
+   */
+  async function resetSkillToOriginal(
+    companyId: string,
+    skillId: string,
+    actor: SkillActor | null = null,
+  ): Promise<CompanySkill> {
+    const skill = await getById(companyId, skillId);
+    if (!skill) throw notFound("Skill not found");
+    if (!isSkillPackSkill(skill.metadata)) {
+      throw unprocessable("This skill did not come with Todero, so there is no original to go back to.", {
+        code: "skill_has_no_original",
+      });
+    }
+
+    const shipped = (await readShippedPackSkills()).find((entry) => entry.slug === skill.slug);
+    if (!shipped) {
+      throw notFound("The version Todero shipped is not in this installation.");
+    }
+
+    const block = splitFrontmatterBlock(shipped.markdown);
+    const fields = parseFrontmatterFields(block.frontmatterText);
+    const metadata = isPlainRecord(fields.metadata) ? { ...fields.metadata } : {};
+    metadata.last_changed_because = SKILL_RESET_REASON;
+    const markdown = joinFrontmatterBlock({
+      ...block,
+      frontmatterText: stringifyFrontmatter({ ...fields, metadata }),
+    });
+
+    const skillDir = path.resolve(resolveManagedSkillsRoot(companyId), skill.slug);
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.writeFile(path.resolve(skillDir, "SKILL.md"), markdown, "utf8");
+
+    const [updated] = await upsertImportedSkills(companyId, [skillPackCopyValues(companyId, shipped, markdown)]);
+    const target = updated ?? skill;
+    await createVersion(
+      companyId,
+      target.id,
+      { label: SKILL_RESET_REASON },
+      actor,
+      {
+        skipInventoryRefresh: true,
+        skill: target,
+        fileInventory: [{ path: "SKILL.md", kind: "skill", content: markdown }],
+      },
+    );
+    return (await getById(companyId, target.id)) ?? target;
   }
 
   async function readBundledSkillReleaseRegistry() {
@@ -3172,6 +3343,7 @@ export function companySkillService(db: Db) {
       }
       const bundledSkills = await ensureBundledSkills(companyId);
       await ensureBundledSkillReleases(companyId, bundledSkills);
+      await ensureSkillPackCopies(companyId);
       await reconcileToderoSkillFolders(companyId);
       await reconcileLocalPathSkillSources(companyId);
     })();
@@ -6949,6 +7121,21 @@ export function companySkillService(db: Db) {
   return {
     list,
     listFull,
+    ensureSkillPackCopies,
+    resetSkillToOriginal,
+    /**
+     * The pack skills this organization has, as skill-sync entries. Hiring
+     * turns all of them on so a new agent starts knowing what Todero ships.
+     */
+    async listSkillPackSelections(companyId: string) {
+      const skills = await listFull(companyId).catch(() => [] as CompanySkill[]);
+      // Unpinned on purpose: a pinned version is a beta-only feature and would
+      // refuse the hire on an ordinary installation. The agent follows the
+      // organization's current copy, which is what a person edits.
+      return skills
+        .filter((skill) => isSkillPackSkill(skill.metadata))
+        .map((skill) => ({ key: skill.key, versionId: null as string | null }));
+    },
     getById,
     getByKey,
     getByRouteRef,
