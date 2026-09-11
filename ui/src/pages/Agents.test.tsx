@@ -1020,4 +1020,115 @@ describe("Agents", () => {
     expect(container.textContent).toContain("Alpha");
     expect(container.querySelector('[aria-label="Invalid reporting chain"]')).not.toBeNull();
   });
+
+  describe("role grouping in list view", () => {
+    it("groups agents by role in list view", async () => {
+      const manager = makeAgent({ id: "mgr-1", name: "Manager", role: "ceo" });
+      const worker1 = makeAgent({ id: "wkr-1", name: "Worker One", role: "worker" });
+      const worker2 = makeAgent({ id: "wkr-2", name: "Worker Two", role: "worker" });
+      const reviewer = makeAgent({ id: "rev-1", name: "Reviewer", role: "reviewer" });
+
+      mockAgentsApi.list.mockResolvedValue([manager, worker1, worker2, reviewer]);
+      mockAgentsApi.org.mockResolvedValue([]);
+
+      mockRouterState.pathname = "/agents/all";
+      root = createRoot(container);
+      await act(async () => {
+        root!.render(
+          <QueryClientProvider client={queryClient}>
+            <ToastProvider>
+              <Agents />
+            </ToastProvider>
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+
+      // Switch to list view
+      const listViewButton = container.querySelector('[aria-label="List view"]') as HTMLButtonElement;
+      await act(async () => {
+        listViewButton?.click();
+      });
+      await flushReact();
+
+      // Check for grouped sections
+      expect(container.textContent).toContain("Manager");
+      expect(container.textContent).toContain("Workers");
+      expect(container.textContent).toContain("Reviewer");
+
+      // Check for counts
+      expect(container.textContent).toContain("(1)"); // Manager count
+      expect(container.textContent).toContain("(2)"); // Workers count
+    });
+
+    it("shows correct agent names under each role group", async () => {
+      const manager = makeAgent({ id: "mgr-1", name: "Nova", role: "ceo" });
+      const worker1 = makeAgent({ id: "wkr-1", name: "Worker One", role: "worker" });
+      const worker2 = makeAgent({ id: "wkr-2", name: "Worker Two", role: "worker" });
+
+      mockAgentsApi.list.mockResolvedValue([manager, worker1, worker2]);
+      mockAgentsApi.org.mockResolvedValue([]);
+
+      mockRouterState.pathname = "/agents/all";
+      root = createRoot(container);
+      await act(async () => {
+        root!.render(
+          <QueryClientProvider client={queryClient}>
+            <ToastProvider>
+              <Agents />
+            </ToastProvider>
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+
+      // Switch to list view
+      const listViewButton = container.querySelector('[aria-label="List view"]') as HTMLButtonElement;
+      await act(async () => {
+        listViewButton?.click();
+      });
+      await flushReact();
+
+      // Verify all agents are shown with their names
+      expect(container.textContent).toContain("Nova");
+      expect(container.textContent).toContain("Worker One");
+      expect(container.textContent).toContain("Worker Two");
+    });
+
+    it("hides role groups when no agents match the filter", async () => {
+      const worker = makeAgent({ id: "wkr-1", name: "Worker", role: "worker", status: "paused" });
+      const manager = makeAgent({ id: "mgr-1", name: "Manager", role: "ceo" });
+
+      mockAgentsApi.list.mockResolvedValue([worker, manager]);
+      mockAgentsApi.org.mockResolvedValue([]);
+
+      mockRouterState.pathname = "/agents/active";
+      root = createRoot(container);
+      await act(async () => {
+        root!.render(
+          <QueryClientProvider client={queryClient}>
+            <ToastProvider>
+              <Agents />
+            </ToastProvider>
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+
+      // Switch to list view
+      const listViewButton = container.querySelector('[aria-label="List view"]') as HTMLButtonElement;
+      await act(async () => {
+        listViewButton?.click();
+      });
+      await flushReact();
+
+      // Workers group should not appear (paused worker filtered out)
+      // Manager should still appear
+      expect(container.textContent).toContain("Manager");
+      expect(container.textContent).not.toContain("Workers");
+    });
+  });
 });

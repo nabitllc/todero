@@ -58,6 +58,12 @@ const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
 const REVIEW_COMMENT_RE = /<!--\s*todero-review:\s*pending\s*-->/i;
 const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;
 const JUDGE_ROUNDS_COMMENT_RE = /<!--\s*todero-judge-rounds:\s*\d+\s*-->\s*\n?/gi;
+// Manager mode keeps three more notes to itself in the description: who handed
+// the task out, that it is parked on the manager, and that a rewritten brief is
+// filed against it. None of them is anybody's reading.
+const MANAGER_ASSIGNED_COMMENT_RE = /<!--\s*todero-assigned-by:\s*[^>]*?-->\s*\n?/gi;
+const MANAGER_WAITING_COMMENT_RE = /<!--\s*todero-waiting-for-manager-sendback(?::[^>]*?)?-->\s*\n?/gi;
+const MANAGER_GUIDANCE_COMMENT_RE = /<!--\s*todero-has-guidance\s*-->\s*\n?/gi;
 const SECTION_HEADING_RE = /^(#{1,6}\s+|\*\*)(Acceptance Criteria|In Scope|Out of Scope|Testing Strategies)(\*\*)?\s*$/i;
 const CHECK_ITEM_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/;
 
@@ -104,6 +110,9 @@ export function stripWorkItemMeta(description: string | null | undefined): strin
     // The reviewer counts its rounds in the description; the person never
     // needs to see the tally.
     .replace(JUDGE_ROUNDS_COMMENT_RE, "")
+    .replace(MANAGER_ASSIGNED_COMMENT_RE, "")
+    .replace(MANAGER_WAITING_COMMENT_RE, "")
+    .replace(MANAGER_GUIDANCE_COMMENT_RE, "")
     .replace(/^\s+/, "");
 }
 

@@ -14,6 +14,7 @@ import {
 } from "@todero/db";
 import { normalizeRuntimeConfigForNewAgent } from "../services/agents.js";
 import { issueService } from "../services/issues.js";
+import { buildJudgeAgentMetadata } from "./judge-agent.js";
 import { runStartupBackfills } from "./startup-backfills.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -963,6 +964,125 @@ describeEmbeddedPostgres("startup backfills", () => {
         .then((rows) => rows[0]!);
 
       expect(updated.status).toBe("backlog");
+    });
+  });
+
+  describe("role backfill", () => {
+    async function createOrg(status?: string) {
+      return db
+        .insert(companies)
+        .values({
+          name: `Role Test ${randomUUID()}`,
+          issuePrefix: `RT${randomUUID().slice(0, 6).toUpperCase()}`,
+          ...(status ? { status } : {}),
+        })
+        .returning()
+        .then((rows) => rows[0]!);
+    }
+
+    async function createAgent(
+      companyId: string,
+      values: {
+        name: string;
+        role: string;
+        reportsTo?: string | null;
+        adapterType?: string;
+        metadata?: Record<string, unknown>;
+      },
+    ) {
+      return db
+        .insert(agents)
+        .values({
+          companyId,
+          name: values.name,
+          role: values.role,
+          adapterType: values.adapterType ?? "http",
+          adapterConfig: {},
+          reportsTo: values.reportsTo ?? null,
+          ...(values.metadata ? { metadata: values.metadata } : {}),
+        })
+        .returning()
+        .then((rows) => rows[0]!);
+    }
+
+    const roleOf = async (id: string) =>
+      db
+        .select({ role: agents.role, reportsTo: agents.reportsTo })
+        .from(agents)
+        .where(eq(agents.id, id))
+        .then((rows) => rows[0]!);
+
+    it("gives the second agent hired for the same work the worker role", async () => {
+      const company = await createOrg();
+      const manager = await createAgent(company.id, { name: "Ash", role: "ceo" });
+      // What the old hire looked like: the first agent's own role, copied.
+      const second = await createAgent(company.id, {
+        name: "Ash 2",
+        role: "ceo",
+        reportsTo: manager.id,
+      });
+
+      const result = await runStartupBackfills(db);
+
+      expect(result.roleBackfill.agentsRetagged).toBe(1);
+      expect(await roleOf(second.id)).toEqual({ role: "worker", reportsTo: manager.id });
+      expect(await roleOf(manager.id)).toEqual({ role: "ceo", reportsTo: null });
+    });
+
+    it("gives a reviewer hired before the wave the reviewer role and a reporting line", async () => {
+      const company = await createOrg();
+      const manager = await createAgent(company.id, { name: "Ash", role: "ceo" });
+      const reviewer = await createAgent(company.id, {
+        name: "Ash's reviewer",
+        role: "general",
+        metadata: buildJudgeAgentMetadata(manager.id),
+      });
+
+      const result = await runStartupBackfills(db);
+
+      expect(result.roleBackfill.agentsRetagged).toBe(1);
+      expect(await roleOf(reviewer.id)).toEqual({ role: "reviewer", reportsTo: manager.id });
+    });
+
+    it("leaves an agent a person set up themselves alone", async () => {
+      const company = await createOrg();
+      await createAgent(company.id, { name: "Ash", role: "ceo" });
+      // Reports to nobody, so it is not the copied second hire.
+      const other = await createAgent(company.id, { name: "Pat", role: "ceo" });
+      const designer = await createAgent(company.id, { name: "Sam", role: "designer" });
+
+      const result = await runStartupBackfills(db);
+
+      expect(result.roleBackfill.agentsRetagged).toBe(0);
+      expect((await roleOf(other.id)).role).toBe("ceo");
+      expect((await roleOf(designer.id)).role).toBe("designer");
+    });
+
+    it("changes nothing on a second start", async () => {
+      const company = await createOrg();
+      const manager = await createAgent(company.id, { name: "Ash", role: "ceo" });
+      await createAgent(company.id, { name: "Ash 2", role: "ceo", reportsTo: manager.id });
+
+      await runStartupBackfills(db);
+      const second = await runStartupBackfills(db);
+
+      expect(second.roleBackfill.agentsRetagged).toBe(0);
+      expect(second.roleBackfill.perCompany).toEqual([]);
+    });
+
+    it("leaves a paused organization exactly as it was", async () => {
+      const company = await createOrg("paused");
+      const manager = await createAgent(company.id, { name: "Ash", role: "ceo" });
+      const second = await createAgent(company.id, {
+        name: "Ash 2",
+        role: "ceo",
+        reportsTo: manager.id,
+      });
+
+      const result = await runStartupBackfills(db);
+
+      expect(result.roleBackfill.agentsRetagged).toBe(0);
+      expect((await roleOf(second.id)).role).toBe("ceo");
     });
   });
 });

@@ -2,7 +2,9 @@ import { and, eq, notInArray } from "drizzle-orm";
 import type { Db } from "@todero/db";
 import { agents, companies, issues, issueDocuments } from "@todero/db";
 import { isConversationalHttpAgent } from "./conversation-thread.js";
+import { isJudgeAgentMetadataFor } from "./judge-agent.js";
 import { TIMER_CONFIGURED_STAMP_KEY } from "./timer-backfill-stamp.js";
+import { pickManagerFromRoster } from "./manager-mode.js";
 
 /**
  * Organizations a startup backfill never writes to. Archived ones are gone,
@@ -34,6 +36,11 @@ export type StartupBackfillsResult = {
     companiesProcessed: number;
     issuesConverted: number;
     perCompany: Array<{ companyId: string; issuesConverted: number }>;
+  };
+  roleBackfill: {
+    companiesProcessed: number;
+    agentsRetagged: number;
+    perCompany: Array<{ companyId: string; agentsRetagged: number }>;
   };
 };
 
@@ -236,15 +243,95 @@ async function runBacklogBackfill(db: Db): Promise<StartupBackfillsResult["backl
 }
 
 /**
+ * Item C: role backfill.
+ *
+ * The manager wave reads an agent's role: the first agent manages, agents with
+ * role "worker" do the tasks, and the reviewer is the one with role
+ * "reviewer". Teams put together before the wave do not say that. A second
+ * agent hired for the same work copied the first agent's own role, so it reads
+ * as another "ceo"; the reviewer was hired as "general". Left alone, such an
+ * organization would never see its own team — the manager would keep doing the
+ * tasks, and the reviewer would sit in the catch-all group on the Agents page.
+ *
+ * This gives those two the role they have had in practice all along. It is a
+ * data fix, not a schema one: only the `role` (and a missing reporting line)
+ * changes.
+ *
+ * The manager is the oldest agent with role "ceo" — a copied second agent is
+ * always younger. Only an agent that reports to it, carries the manager's own
+ * role and talks to a model over HTTP is retagged, which is exactly what the
+ * old second hire looked like; anybody a person made themselves is left alone.
+ * Skips archived and paused organizations. Idempotent.
+ */
+async function runRoleBackfill(db: Db): Promise<StartupBackfillsResult["roleBackfill"]> {
+  const activeOrgs = await selectBackfillableCompanies(db);
+
+  let totalRetagged = 0;
+  const perCompany: Array<{ companyId: string; agentsRetagged: number }> = [];
+
+  for (const org of activeOrgs) {
+    const roster = await db
+      .select({
+        id: agents.id,
+        role: agents.role,
+        reportsTo: agents.reportsTo,
+        status: agents.status,
+        adapterType: agents.adapterType,
+        metadata: agents.metadata,
+      })
+      .from(agents)
+      .where(eq(agents.companyId, org.id))
+      .orderBy(agents.createdAt, agents.id);
+
+    // Same rule as getManager: a "ceo" wins, else the oldest agent that reports
+    // to nobody and is not a worker or a reviewer (the wizard files the first
+    // agent as "general").
+    const manager = pickManagerFromRoster(roster.map((row) => ({ ...row, name: "" })));
+    if (!manager) continue;
+
+    let retaggedHere = 0;
+    for (const agent of roster) {
+      if (agent.id === manager.id || agent.status === "terminated") continue;
+
+      const isReviewer = isJudgeAgentMetadataFor(agent.metadata, manager.id);
+      const isCopiedSecondHire =
+        !isReviewer &&
+        agent.role === manager.role &&
+        agent.reportsTo === manager.id &&
+        agent.adapterType === "http";
+
+      if (!isReviewer && !isCopiedSecondHire) continue;
+
+      const role = isReviewer ? "reviewer" : "worker";
+      const reportsTo = agent.reportsTo ?? manager.id;
+      if (agent.role === role && agent.reportsTo === reportsTo) continue;
+
+      await db.update(agents).set({ role, reportsTo }).where(eq(agents.id, agent.id));
+      totalRetagged++;
+      retaggedHere++;
+    }
+    if (retaggedHere > 0) perCompany.push({ companyId: org.id, agentsRetagged: retaggedHere });
+  }
+
+  return {
+    companiesProcessed: activeOrgs.length,
+    agentsRetagged: totalRetagged,
+    perCompany,
+  };
+}
+
+/**
  * Run all startup backfills.
  * Failure logs but does not block startup.
  */
 export async function runStartupBackfills(db: Db): Promise<StartupBackfillsResult> {
   const timerBackfill = await runTimerBackfill(db);
   const backlogBackfill = await runBacklogBackfill(db);
+  const roleBackfill = await runRoleBackfill(db);
 
   return {
     timerBackfill,
     backlogBackfill,
+    roleBackfill,
   };
 }

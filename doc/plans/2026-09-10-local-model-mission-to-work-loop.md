@@ -696,3 +696,250 @@ on a task have names.
   UI matcher. Worth a regression test before merge.
 - Not run on this machine: e2e, storybook visual, and the full server suite (`session_gates.md`
   documents why). The required and touched suites were run.
+
+### Wave: the first agent becomes the manager
+
+**Today.** The first agent plans and does every task. Waves D-F add a reviewer and, when many tasks
+are ready, a second worker, both hired by Todero's rules. Assignment is by rule too. There is no
+agent that manages.
+
+**Goal.** Once an organization has more than one worker, the first agent stops doing tasks and
+manages: plans, assigns, reads verdicts, handles send-backs, writes the wrap-up, proposes what is
+next. Workers do tasks. The reviewer judges. Todero's rules still decide *when* to hire; the manager
+decides *who does what*.
+
+**Roles, using what exists.** Agents already carry `role` (the first is `ceo`) and a reporting line.
+Workers are hired with role `worker` reporting to the manager; the reviewer with role `reviewer`
+reporting to the manager. The Org page shows the tree with no changes.
+
+**What changes when the manager mode switches on.** The switch is automatic: the moment the
+organization has two or more workers (or one worker plus the manager, when wave F hires the second
+agent). Before that, the lead is a do-all as today.
+
+1. **Assignment.** On plan approval the manager assigns each feature's tasks to a worker. Rule of
+   thumb it is told: keep one feature with one worker; balance by count; if only one worker exists,
+   that worker takes all. Implemented as the manager's own reply in a fixed shape (`assignments:`
+   lines) parsed like the plan block, falling back to Todero's rule when the shape is missing. No
+   tools needed.
+2. **Send-backs.** A task the reviewer failed twice, or the person sent back, goes to the manager
+   first: it rewrites the brief in one paragraph ("What to change") and re-assigns. Implemented as a
+   turn of the manager on that task with a turn instruction; its reply's paragraph is stored as the
+   task's `guidance` document and the worker is brought back.
+3. **Verdict reading.** After every reviewer pass, the manager gets a one-line summary appended to
+   the conversation task, no turn. After every reviewer fail, the send-back flow above.
+4. **Wrap-up and next.** Unchanged from wave C and G: the manager writes them; workers never do.
+5. **Person's questions.** Anything the person types on the conversation task goes to the manager;
+   anything typed on a worker's task goes to that worker; the manager is copied with a one-line note.
+
+**What the manager never does in this wave.** Hire (Todero's rules do), change budgets, or edit the
+plan without the person approving the new block.
+
+**UI.** The Agents page groups by role: Manager, Workers, Reviewer. Each task shows "Assigned by
+Nova" under the assignee when the manager assigned it. The conversation task's sidebar lists the
+team with a count of open tasks per worker.
+
+**Tests.** The assignments-shape parser; the fallback to the rule; the send-back path stores guidance
+and wakes the right worker; the manager never receives a plan child task while workers exist.
+
+**Size.** Two days. Depends on waves E and F being merged (they are).
+
+**Out of scope.** Multiple managers; a manager that hires; performance reviews of workers (a later
+"team health" wave could use the reviewer's pass/fail history).
+
+#### What shipped
+
+Merged from three branches (`manager-core` at `adb8c26a`, `manager-sendbacks`, `manager-roles-ui`)
+onto one, then finished where the branches stopped short.
+
+**Roles.** `worker` and `reviewer` joined `AGENT_ROLES` with labels. The reviewer is hired with role
+`reviewer` reporting to the manager (`judge-agent.ts`); the second agent wave F adds is hired with
+role `worker` reporting to the manager (`plan-approval.ts`). No schema change: `role` and
+`reports_to` already existed. `listWorkers` leaves out a teammate still waiting for a person's yes,
+so the manager never hands work to an agent that cannot do it.
+
+**The fixed shapes.** `packages/shared/src/todero-assignments.ts` parses an `assignments:` block the
+way the plan block is parsed - fenced or bare, task short-name or title, any capitals, unknown lines
+ignored. `server/src/todero/manager-wave.ts` holds the rest of the pure half: the rule Todero falls
+back to (`assignTasksByRule` - one feature with one worker, next feature to the lighter one, one
+worker takes all), the per-task resolution of the manager's reply (`resolveManagerAssignments`), and
+every line the wave writes.
+
+**Assignment, end to end.** On plan approval the route reads the team, and `createPlanChildren`
+shares the plan out across workers by the rule - the manager is never given a task of its own. The
+tasks are *not* started yet; instead the manager gets one turn on the conversation task listing the
+tasks (with their feature) and the team (with how much each is carrying), and asking for the
+`assignments:` shape. Its reply is applied in `applyManagerAssignmentReply`: anything it named moves
+and is stamped `<!-- todero-assigned-by: ... -->`, anything it forgot or mis-named keeps the rule's
+worker, one comment on the conversation task says who has what, and only then are the tasks nothing
+is holding up started, on their final worker. If the manager's turn cannot even be queued, the tasks
+start on the rule's sharing-out instead of sitting still.
+
+**Send-backs, end to end.** The reviewer's second fail routes to the manager (`judge-apply.ts`), and
+a person's send-back does too (`manager-person-comment.ts`, from the comments route). In both cases
+the task is handed to the manager and marked
+`<!-- todero-waiting-for-manager-sendback: WORKER-ID -->` - the marker remembers whose task it was.
+The manager's reply is consumed by `applyManagerGuidanceReply`: the paragraph becomes the task's
+`guidance` document *and* is said on the task (the worker is chat-only, so the thread is its only
+memory), the task goes back to To do with the remembered worker - or to whoever the manager named in
+an `assignments:` block - and that worker is brought back. A reply with no usable paragraph still
+hands the task back; the wave never leaves a task parked on the manager.
+
+**Verdict reading.** After every reviewer verdict on a plan task, one line is posted on the
+conversation task by the reviewer: "ZZW-1 - Draft the guide: the reviewer passed it." or "... sent it
+back." A second send-back says "... sent it back again; Nova is rewriting the brief." Nobody is
+brought back for it.
+
+**Person's questions.** A person writing on a worker's task leaves that task with the worker and
+copies the conversation task with "The person wrote on ZZW-2 - List the prices." A person writing on
+a task that was waiting for them to accept is a send-back and goes to the manager first. Writing on
+the conversation task is unchanged - the manager already owns it.
+
+**UI.** The Agents page list groups by Manager / Workers / Reviewer / Team with per-group counts. A
+task shows "Assigned by Nova" under the assignee when the marker is there. The conversation task's
+sidebar grows a Team section - manager, each worker with its open count, reviewer - and it appears
+only once the organization actually has a worker. The three new description markers are stripped
+from the task body, so none of them is ever read by a person.
+
+#### Fixed during integration
+
+- **The send-back turn would have been cancelled before it ran.** The branch brought the manager back
+  on a task still assigned to the worker, and Todero cancels a queued turn whose agent does not own
+  the task (`issue_assignee_changed`). The manager now holds the task while it rewrites the brief,
+  and the marker carries the worker's id so the task goes straight back.
+- **The server did not typecheck** on `manager-sendbacks` (five errors across `judge-apply.ts`,
+  `heartbeat.ts` and `judge-apply.test.ts`).
+- **Nothing consumed the manager's replies.** Both the assignment turn and the guidance turn would
+  have fallen through to the ordinary reply handling and put the conversation in front of the person
+  for a turn nobody asked for.
+- **`isManagerMode` counted wrongly** (it read a row's id as a count) and counted teammates still
+  waiting for approval.
+- **The new markers leaked into the task body** in the UI.
+- **The Team sidebar showed on every parent task**, listing a team of one, before manager mode was on.
+
+#### Fixed after the live check (2026-09-11)
+
+- **The manager was never recognised.** The wizard files the first agent as `general`, not `ceo`,
+  so `getManager` found nobody and manager mode never switched on in a real organization. The
+  manager is now the `ceo` if there is one, otherwise the oldest agent that reports to nobody and is
+  not a worker or a reviewer (`pickManagerFromRoster`); the role backfill uses the same rule.
+- **A worker's hand-in reached no reviewer.** The reviewer is hired for the lead, so a hand-in by a
+  worker found no reviewer and was never judged. `findJudgeAgentForHandIn` looks it up through the
+  manager when nothing was hired for the worker itself.
+- **A status line in backticks read as a question.** The instruction shows `` `STATUS: done` `` in
+  backticks and qwen2.5-coder copies them; the parser only tolerated asterisks, so such a hand-in
+  waited on the person instead of the reviewer. Backticks are now decoration like asterisks.
+
+Live on Ollama qwen2.5-coder:14b (throwaway organization, one worker hired by API): every plan
+child went to the worker, none to the manager; each hand-in got the reviewer's verdict and one line
+on the conversation task ("… the reviewer passed it."); a person's send-back produced the manager's
+`guidance` document and the task went back to the worker; the person's note on a worker task was
+echoed to the conversation task in one line.
+
+#### Open
+
+- **A person's send-back is two API calls** (status to To do, then the note). The first starts the
+  worker before the note arrives; the second hands the task to the manager, which cancels that queued
+  turn. If the worker's turn has already started, its hand-in can land on top of the manager's. Worth
+  collapsing into one call.
+- `applyManagerAssignments` / `applyRuleBasedAssignments` in `manager-assignment.ts` are the strict,
+  all-or-nothing variants from the core branch. Production uses the per-task tolerant
+  `resolveManagerAssignments` instead; the strict pair is still covered by its own tests but is not
+  called. Delete or fold together in the next pass.
+- The manager is not told what the *reviewer* said on a second fail beyond the reviewer's own note
+  riding along in the turn's context. It does not read the task's Output document.
+- No end-to-end test drives the whole loop against a live model; the live-verification steps below
+  are the check.
+- Not run on this machine: e2e, storybook visual, and the full server suite. The required and touched
+  suites were run.
+
+#### Live verification on this machine
+
+Ollama with `qwen2.5-coder:14b`, one model at a time. Parallelism is 1, so Todero's own rules will
+**not** hire a second worker - `decideExtraWorker` sees no spare capacity. The check therefore hires
+the second worker by API before the plan is approved, which is what switches manager mode on.
+
+Set up once:
+
+```sh
+export TODERO=http://127.0.0.1:4000
+export KEY=<board API key>     # header: Authorization: Bearer $KEY
+```
+
+1. **Hire the first agent through the wizard** (Ollama, `qwen2.5-coder:14b`) and let the connection
+   test pass. Start a mission and answer its questions until it proposes a plan with **two features
+   and at least three tasks** - two features is what makes the assignment interesting.
+
+2. **Read the first agent and the organization.**
+   - `GET /api/companies` -> `companyId`
+   - `GET /api/companies/{companyId}/agents` -> the first agent (the wizard files it as `general`; a `ceo` wins if one exists); keep its `id`,
+     `adapterType` (`http`), `adapterConfig` and `runtimeConfig`.
+   - `GET /api/companies/{companyId}/issues` -> the conversation task's `id`.
+
+3. **Hire the second worker by API, before approving.** Copy the first agent's connection verbatim:
+
+   ```sh
+   curl -X POST $TODERO/api/companies/$COMPANY/agents \
+     -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+     -d '{"name":"Ash 2","role":"worker","reportsTo":"FIRST-AGENT-ID",
+          "adapterType":"http","adapterConfig":{ copied verbatim },
+          "runtimeConfig":{ copied verbatim }}'
+   ```
+
+   Check `GET /api/companies/{companyId}/agents` shows it with `status: "idle"` (not
+   `pending_approval`) and `role: "worker"`. **Manager mode is now on.**
+
+4. **Approve the plan.**
+   `POST /api/issues/{conversationIssueId}/plan/approve` with `{"keep":[]}`.
+   The response carries the children. Immediately after:
+   - `GET /api/companies/{companyId}/issues?parentId={conversationIssueId}` - **every child is
+     assigned to "Ash 2", none to the manager.** That is the rule's sharing-out.
+   - No child is In progress yet: the manager's assignment turn runs first.
+
+5. **Watch the manager's assignment reply.**
+   - `GET /api/issues/{conversationIssueId}/comments` - the manager's turn ends with a comment
+     listing "ZZW-1 - TITLE -> Ash 2" for each task.
+   - `GET /api/companies/{companyId}/agents/{managerId}/runs` (or the Agent page) - the reply text
+     should contain an `assignments:` block. If it does not, the comment says "shared out by the
+     usual rule" and the tasks still start - that is the fallback working, not a failure.
+   - The children now show one of them In progress with its worker.
+   - In the UI, open a child: "Assigned by MANAGER-NAME" sits under the assignee when the manager
+     named it. Open the conversation task: the sidebar's **Team** section lists the manager, "Ash 2"
+     with its open count, and the reviewer.
+
+6. **Watch a reviewer verdict reach the conversation task.** Let one child finish.
+   `GET /api/issues/{conversationIssueId}/comments` gains one line:
+   "ZZW-1 - TITLE: the reviewer passed it." (or "... sent it back."). No turn was spent on it.
+
+7. **Drive the send-back path (the person sends one task back).** Take a child that is waiting on you
+   to accept (its work-item view offers Accept / Send back):
+
+   ```sh
+   curl -X PATCH $TODERO/api/issues/$CHILD -H "Authorization: Bearer $KEY" \
+     -H 'Content-Type: application/json' -d '{"status":"todo"}'
+   curl -X POST $TODERO/api/issues/$CHILD/comments -H "Authorization: Bearer $KEY" \
+     -H 'Content-Type: application/json' \
+     -d '{"body":"The prices are out of date - lead with the price table."}'
+   ```
+
+   Then check, in order:
+   - `GET /api/issues/{conversationIssueId}/comments` - one line "The person wrote on ZZW-2 - TITLE."
+   - `GET /api/issues/{child}` - `assigneeAgentId` is the **manager** and the description carries
+     `todero-waiting-for-manager-sendback`.
+   - After the manager's turn: `GET /api/issues/{child}/documents` contains a **`guidance`** document
+     titled "What to change" holding one paragraph.
+   - `GET /api/issues/{child}/comments` - the manager said the same paragraph on the task.
+   - `GET /api/issues/{child}` - back to `todo`, `assigneeAgentId` is **"Ash 2"** again (or whoever
+     the manager named in an `assignments:` block).
+   - `GET /api/companies/{companyId}/agents/{workerId}/runs` - the worker took a turn on it.
+
+8. **Reviewer's second fail** (optional, harder to force): let the same task fail the reviewer twice.
+   The conversation task gains "... sent it back again; MANAGER is rewriting the brief.", and the
+   same guidance-then-worker sequence as step 7 follows.
+
+API calls used, in order: `GET /api/companies`, `GET /api/companies/{id}/agents`,
+`GET /api/companies/{id}/issues`, `POST /api/companies/{id}/agents`,
+`POST /api/issues/{id}/plan/approve`, `GET /api/companies/{id}/issues?parentId=...`,
+`GET /api/issues/{id}/comments`, `GET /api/issues/{id}`, `GET /api/issues/{id}/documents`,
+`PATCH /api/issues/{id}`, `POST /api/issues/{id}/comments`,
+`GET /api/companies/{id}/agents/{agentId}/runs`. No route was added by this wave, so
+`server/src/routes/openapi.ts` is unchanged.

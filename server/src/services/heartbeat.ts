@@ -145,7 +145,27 @@ import {
 import { resolveAvailableModelIdsForRun } from "../todero/available-models.js";
 import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
-import { applyJudgeReview } from "../todero/judge-apply.js";
+import { applyJudgeReview, judgeFailRound } from "../todero/judge-apply.js";
+import { isManagerMode, getManager } from "../todero/manager-mode.js";
+import { isWaitingForManagerSendback } from "../todero/manager-sendback.js";
+import { buildManagerAssignmentTurnInstruction } from "../todero/manager-assignment.js";
+import {
+  buildManagerSendbackInstruction,
+  MANAGER_ASSIGNMENT_WAKE_REASON,
+  MANAGER_SENDBACK_WAKE_REASON,
+} from "../todero/manager-wave.js";
+import {
+  applyManagerAssignmentReply,
+  applyManagerGuidanceReply,
+  postReviewVerdictLine,
+  type ManagerWaveDeps,
+} from "../todero/manager-wave-apply.js";
+import {
+  loadManagerWaveTask,
+  loadOpenPlanChildren,
+  loadWorkersWithLoad,
+  readAgentName,
+} from "../todero/manager-wave-context.js";
 import { enqueueWakesForClosedIssue } from "./issue-closed-wakeups.js";
 import { resolveToderoTaskKind } from "../todero/model-routing.js";
 import { documentService } from "./documents.js";
@@ -14906,7 +14926,39 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // this turn is the wrap-up, not another round of questions.
       delete context.toderoTurnInstruction;
       const conversationWakeReason = readNonEmptyString(context.wakeReason);
-      if (
+      if (conversationWakeReason === MANAGER_ASSIGNMENT_WAKE_REASON && issueRef) {
+        // Manager mode: the first agent hands the plan's tasks out. Both halves
+        // of the instruction are read live, so a team that changed between the
+        // approval and this turn is the team it sees.
+        const [assignmentChildren, assignmentWorkers] = await Promise.all([
+          loadOpenPlanChildren(db, { companyId: agent.companyId, issueId: issueRef.id }).catch(() => []),
+          loadWorkersWithLoad(db, agent.companyId).catch(() => []),
+        ]);
+        if (assignmentChildren.length > 0 && assignmentWorkers.length > 0) {
+          context.toderoTurnInstruction = buildManagerAssignmentTurnInstruction(
+            assignmentChildren.map((child) => ({
+              taskId: child.id,
+              taskIdentifier: child.identifier,
+              taskTitle: child.title,
+              taskFeature: child.feature,
+            })),
+            assignmentWorkers,
+          );
+        }
+      } else if (conversationWakeReason === MANAGER_SENDBACK_WAKE_REASON && issueRef) {
+        // Manager mode: a task came back and the manager rewrites the brief.
+        const sendbackWorkers = await loadWorkersWithLoad(db, agent.companyId).catch(() => []);
+        context.toderoTurnInstruction = buildManagerSendbackInstruction({
+          identifier: issueRef.identifier ?? null,
+          title: issueRef.title,
+          reason:
+            readNonEmptyString(context.managerSendbackReason) === "person_sendback"
+              ? "person_sendback"
+              : "reviewer_fail",
+          note: readNonEmptyString(context.managerSendbackNote) ?? null,
+          workerNames: sendbackWorkers.map((worker) => worker.name),
+        });
+      } else if (
         conversationWakeReason === ISSUE_BLOCKERS_RESOLVED_WAKE_REASON ||
         conversationWakeReason === "issue_children_completed"
       ) {
@@ -17261,6 +17313,105 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             );
           }
         }
+        // Manager mode: the first agent's own turns are not hand-ins. A reply
+        // to the assignment turn hands the plan's tasks out; a reply on a task
+        // that came back becomes that task's guidance and starts its worker.
+        // Both are consumed here, and the generic reply handling below is
+        // skipped, so neither turn puts the conversation in front of a person.
+        const managerWaveWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
+        let managerWaveHandled = false;
+        if (
+          issueId &&
+          outcome === "succeeded" &&
+          (managerWaveWakeReason === MANAGER_ASSIGNMENT_WAKE_REASON ||
+            managerWaveWakeReason === MANAGER_SENDBACK_WAKE_REASON)
+        ) {
+          const managerReply = readNonEmptyString(parseObject(persistedResultJson).summary) ?? "";
+          const managerWaveDeps: ManagerWaveDeps = {
+            updateIssue: (id, patch) => issuesSvc.update(id, { ...patch, actorAgentId: agent.id }),
+            addComment: (id, body, authorAgentId) =>
+              issuesSvc.addComment(id, body, { agentId: authorAgentId, runId: livenessRun.id }),
+            wakeWorker: ({ issueId: wakeIssueId, agentId: wakeAgentId }) =>
+              enqueueWakeup(wakeAgentId, {
+                source: "assignment",
+                triggerDetail: "system",
+                reason: "issue_assigned",
+                payload: { issueId: wakeIssueId, mutation: "update" },
+                requestedByActorType: "agent",
+                requestedByActorId: agent.id,
+                contextSnapshot: {
+                  issueId: wakeIssueId,
+                  taskId: wakeIssueId,
+                  source: "issue.manager_assigned",
+                  wakeReason: "issue_assigned",
+                },
+              }).catch(() => null),
+            saveDocument: ({ issueId: docIssueId, key, title, body }) =>
+              documentService(db).upsertIssueDocument({
+                issueId: docIssueId,
+                key,
+                title,
+                format: "markdown",
+                body,
+                changeSummary: "Written by the manager when the task came back.",
+                createdByAgentId: agent.id,
+                createdByRunId: livenessRun.id,
+                lockedDocumentStrategy: "conflict",
+              }),
+            log: (message) => {
+              void onLog("stdout", message);
+            },
+          };
+          try {
+            if (managerWaveWakeReason === MANAGER_ASSIGNMENT_WAKE_REASON) {
+              const [assignChildren, assignWorkers] = await Promise.all([
+                loadOpenPlanChildren(db, { companyId: agent.companyId, issueId }),
+                loadWorkersWithLoad(db, agent.companyId),
+              ]);
+              if (assignChildren.length > 0 && assignWorkers.length > 0) {
+                const readyIds = parseObject(livenessRun.contextSnapshot).readyChildIssueIds;
+                const readyChildIssueIds = Array.isArray(readyIds)
+                  ? readyIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+                  : [];
+                await applyManagerAssignmentReply(managerWaveDeps, {
+                  managerId: agent.id,
+                  conversationIssueId: issueId,
+                  reply: managerReply,
+                  children: assignChildren,
+                  workers: assignWorkers,
+                  readyChildIssueIds,
+                });
+              }
+              // The conversation goes back to waiting on its own tasks; this
+              // turn was never the person's to answer.
+              const conversationNow = await issuesSvc.getById(issueId).catch(() => null);
+              await issuesSvc.update(issueId, {
+                status: "blocked",
+                description: descriptionWithoutConversationMarkers(conversationNow?.description ?? null),
+                actorAgentId: agent.id,
+              });
+              managerWaveHandled = true;
+            } else {
+              const sendbackTask = await loadManagerWaveTask(db, issueId);
+              const sendbackWorkers = await loadWorkersWithLoad(db, agent.companyId);
+              if (sendbackTask) {
+                await applyManagerGuidanceReply(managerWaveDeps, {
+                  managerId: agent.id,
+                  reply: managerReply,
+                  task: sendbackTask,
+                  workers: sendbackWorkers,
+                });
+                managerWaveHandled = true;
+              }
+            }
+          } catch (err) {
+            await onLog(
+              "stderr",
+              `[todero] The manager's reply could not be applied: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
+        }
+
         // A conversational reply carries its own disposition: close the task
         // or hand the turn back to the person. Without this the run leaves the
         // issue in_progress and recovery blocks it as "missing disposition".
@@ -17268,8 +17419,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         // Set once the reply's own disposition has been applied, so the
         // successful-run handoff below does not raise a second wake for a turn
         // that already reached its end state.
-        let conversationDispositionApplied = false;
-        if (issueId && outcome === "succeeded" && conversationDisposition) {
+        let conversationDispositionApplied = managerWaveHandled;
+        if (issueId && outcome === "succeeded" && conversationDisposition && !managerWaveHandled) {
           try {
             const currentIssue = await issuesSvc.getById(issueId);
             const conversationRunWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
@@ -17330,6 +17481,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                     companyRow?.interactionResolverGovernance ?? {},
                   ),
                 });
+                // Check if manager mode is on
+                const managerModeOn = await isManagerMode(db, currentIssue.companyId);
+                const manager = managerModeOn ? await getManager(db, currentIssue.companyId) : null;
+
                 const applied = await applyJudgeReview(
                   {
                     addComment: (id, body, judgeAgentId) => issuesSvc.addComment(id, body, { agentId: judgeAgentId }),
@@ -17344,6 +17499,27 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                         requestedByActorId: agent.id,
                         contextSnapshot: { issueId: wakeIssueId, source: "issue.judge_review" },
                       }).catch(() => null),
+                    wakeManagerForSendback: manager
+                      ? async ({ issueId: wakeIssueId, managerId, reason, taskIdentifier, taskTitle }) => {
+                          await enqueueWakeup(managerId, {
+                            source: "assignment",
+                            triggerDetail: "system",
+                            reason: MANAGER_SENDBACK_WAKE_REASON,
+                            payload: { issueId: wakeIssueId, mutation: "update" },
+                            requestedByActorType: "agent",
+                            requestedByActorId: agent.id,
+                            contextSnapshot: {
+                              issueId: wakeIssueId,
+                              taskId: wakeIssueId,
+                              source: "issue.judge_review",
+                              wakeReason: MANAGER_SENDBACK_WAKE_REASON,
+                              managerSendbackReason: reason,
+                              managerSendbackNote: review.comment ?? null,
+                              managerSendbackTask: `${taskIdentifier ?? ""} ${taskTitle}`.trim(),
+                            },
+                          }).catch(() => null);
+                        }
+                      : undefined,
                     log: (message) => {
                       void onLog("stdout", message);
                     },
@@ -17351,14 +17527,47 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                   {
                     issue: {
                       id: currentIssue.id,
+                      identifier: currentIssue.identifier,
+                      title: currentIssue.title,
                       description: descriptionWithoutConversationMarkers(currentIssue.description),
                     },
                     assigneeAgentId: currentIssue.assigneeAgentId ?? agent.id,
                     review,
+                    managerMode: managerModeOn,
+                    managerId: manager?.id,
                   },
                 );
                 plan = planReviewedOutcome(handIn, applied);
                 acceptedByReviewer = applied === "accept";
+                // Manager mode, item 3: the verdict is read on the conversation
+                // task rather than costing the manager a turn. A pass is one
+                // line; a second send-back already started the manager's turn
+                // above, and this line says so.
+                if (managerModeOn && manager && currentIssue.parentId && review.judgeAgent && review.verdict) {
+                  const verdictRound =
+                    judgeFailRound(review.outcome, currentIssue.description) ?? undefined;
+                  await postReviewVerdictLine(
+                    {
+                      addComment: (id, body, agentId) => issuesSvc.addComment(id, body, { agentId }),
+                      log: (message) => {
+                        void onLog("stdout", message);
+                      },
+                    },
+                    {
+                      conversationIssueId: currentIssue.parentId,
+                      reviewerAgentId: review.judgeAgent.id,
+                      task: { identifier: currentIssue.identifier ?? null, title: currentIssue.title },
+                      verdict: review.verdict === "pass" ? "passed" : "sent-back",
+                      round: verdictRound,
+                      managerName: manager.name,
+                    },
+                  ).catch((err) => {
+                    void onLog(
+                      "stderr",
+                      `[todero] Could not say on the conversation what the reviewer decided: ${err instanceof Error ? err.message : String(err)}\n`,
+                    );
+                  });
+                }
               } catch (reviewErr) {
                 await onLog(
                   "stderr",

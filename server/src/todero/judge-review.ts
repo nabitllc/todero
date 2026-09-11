@@ -25,6 +25,7 @@ import {
   type JudgeOutcome,
   type JudgeVerdict,
 } from "./judge.js";
+import { getManager } from "./manager-mode.js";
 
 /** A cold second model load can be slow; the worker's own timeout is the same order. */
 export const JUDGE_REVIEW_TIMEOUT_MS = 120_000;
@@ -136,6 +137,22 @@ const SKIPPED: Omit<JudgeReviewResult, "skipped"> = {
  * Review one handed-in child task. Returns what should happen to it; the
  * caller writes the comment and the status.
  */
+/**
+ * The reviewer for a hand-in. The reviewer is hired for the organization's
+ * lead, so a worker's hand-in (manager mode) looks it up through the manager
+ * when nothing was hired for the worker itself.
+ */
+export async function findJudgeAgentForHandIn(
+  db: Db,
+  input: { companyId: string; leadAgentId: string },
+) {
+  const own = await findJudgeAgentForLead(db, input);
+  if (own) return own;
+  const manager = await getManager(db, input.companyId);
+  if (!manager || manager.id === input.leadAgentId) return null;
+  return findJudgeAgentForLead(db, { companyId: input.companyId, leadAgentId: manager.id });
+}
+
 export async function reviewConversationHandIn(
   db: Db,
   input: {
@@ -151,7 +168,7 @@ export async function reviewConversationHandIn(
   const deliverable = input.deliverable.trim();
   if (!deliverable) return { ...SKIPPED, skipped: "no_deliverable" };
 
-  const judgeAgent = await findJudgeAgentForLead(db, {
+  const judgeAgent = await findJudgeAgentForHandIn(db, {
     companyId: input.issue.companyId,
     leadAgentId: input.leadAgentId,
   });

@@ -75,6 +75,20 @@ describe("work-item model", () => {
     expect(parsed.body).toBe("Write the sign up words.");
   });
 
+  it("keeps the manager's own notes out of the body", () => {
+    const parsed = parseWorkItemDescription(
+      [
+        "<!-- todero-type: Task -->",
+        "<!-- todero-assigned-by: 0f5f2e36-6a34-4e8a-9b9e-f9f2a7a0f111 -->",
+        "<!-- todero-waiting-for-manager-sendback: 0f5f2e36-6a34-4e8a-9b9e-f9f2a7a0f222 -->",
+        "<!-- todero-has-guidance -->",
+        "Write the sign up words.",
+      ].join("\n"),
+    );
+    expect(parsed.type).toBe("Task");
+    expect(parsed.body).toBe("Write the sign up words.");
+  });
+
   it("refuses In progress without an assignee and Blocked without blocked-by", () => {
     expect(
       commitWorkItemStatus({ status: "in_progress", assigned: false, blockedBy: null }),

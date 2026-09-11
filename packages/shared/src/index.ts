@@ -2730,3 +2730,12 @@ export type {
   ToderoPlanTask,
   ToderoPlanTaskDependency,
 } from "./todero-plan.js";
+export {
+  parseToderoPlanAssignmentsBlock,
+  taskRefMatches,
+  agentNameMatches,
+} from "./todero-assignments.js";
+export type {
+  ToderoPlanAssignment,
+  ToderoPlanAssignments,
+} from "./todero-assignments.js";

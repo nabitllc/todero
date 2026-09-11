@@ -97,6 +97,7 @@ import {
   toDateTimeLocalValue,
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
+import { AssignedByCaption, TeamSection } from "./ManagerRoleSections";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
 import { WorkItemStatusRow } from "./WorkItemStatusRow";
 import { PANEL_EMPTY_VALUE, panelClosedAt, panelTokenCostLabel, panelTokenUsageLabel } from "./panel-cost";
@@ -2168,6 +2169,13 @@ export function IssueProperties({
           {assigneeContent}
         </PropertyPicker>
 
+        {issue.assigneeAgentId && (
+          <AssignedByCaption
+            description={issue.description}
+            selectedCompanyId={selectedCompanyId || undefined}
+          />
+        )}
+
         {showAssigneeAdapterOptions ? (
           <PropertyPicker
             inline={inline}
@@ -2346,6 +2354,13 @@ export function IssueProperties({
           onRetryExternalObjects={onRetryExternalObjects}
         />
       </PropertySection>
+
+      {childIssues && childIssues.length > 0 && (
+        <TeamSection
+          childIssues={childIssues}
+          selectedCompanyId={selectedCompanyId || undefined}
+        />
+      )}
 
       <PropertySection title="Cost and time">
         <PropertyRow label="Token usage">
@@ -2718,3 +2733,4 @@ export function IssueProperties({
     </Tabs>
   );
 }
+
