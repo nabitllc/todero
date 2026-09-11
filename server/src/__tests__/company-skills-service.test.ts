@@ -444,10 +444,17 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     if (!bundledSkill) throw new Error("Expected bundled Todero skills fixture");
 
     const preservedUpdatedAt = new Date("2026-01-04T00:00:00.000Z");
+    // Keep the skill's own frontmatter metadata (the skill pack carries
+    // version, upstream and routing fields) so the only stale thing is the
+    // missing-source note; dropping it would be a real change to refresh.
+    const ownMetadata = bundledSkill.metadata && typeof bundledSkill.metadata === "object"
+      ? (bundledSkill.metadata as Record<string, unknown>)
+      : {};
     await db
       .update(companySkills)
       .set({
         metadata: {
+          ...ownMetadata,
           skillKey: bundledSkill.key,
           sourceKind: "paperclip_bundled",
           missingSource: {
