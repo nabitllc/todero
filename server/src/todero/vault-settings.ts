@@ -106,7 +106,13 @@ export function ensureRecommendedVault(options?: { gitExec?: RecommendedVaultGit
   return dest;
 }
 
-function openSqlite(): { exec: (sql: string) => void; prepare: (sql: string) => { get: (...args: unknown[]) => unknown; run: (...args: unknown[]) => void } } | null {
+type VaultSettingsSqlite = {
+  exec: (sql: string) => void;
+  prepare: (sql: string) => { get: (...args: unknown[]) => unknown; run: (...args: unknown[]) => void };
+  close: () => void;
+};
+
+function openSqlite(): VaultSettingsSqlite | null {
   try {
     // Node 22+/24 DatabaseSync. Optional — JSON is the fallback row store.
     const mod = require("node:sqlite") as { DatabaseSync: new (p: string) => any };
@@ -120,6 +126,21 @@ function openSqlite(): { exec: (sql: string) => void; prepare: (sql: string) => 
     return db;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Every open here is short-lived: the row is read or written and the file is
+ * closed again. Leaving the handle open leaks one file descriptor per read —
+ * and on Windows it keeps a lock on the settings folder, which is why deleting
+ * that folder used to fail.
+ */
+function closeSqlite(db: VaultSettingsSqlite | null): void {
+  if (!db) return;
+  try {
+    db.close();
+  } catch {
+    // Already closed, or a build without close(); nothing to do either way.
   }
 }
 
@@ -149,6 +170,8 @@ export function getVaultSettings(): VaultSettingsRow | null {
       }
     } catch {
       // fall through to JSON
+    } finally {
+      closeSqlite(db);
     }
   }
   try {
@@ -193,9 +216,13 @@ export function saveVaultSettings(
 
   const db = openSqlite();
   if (db) {
-    db.prepare(
-      "INSERT INTO vault_settings (id, source, path, updated_at) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET source = excluded.source, path = excluded.path, updated_at = excluded.updated_at",
-    ).run(row.source, row.path, row.updatedAt);
+    try {
+      db.prepare(
+        "INSERT INTO vault_settings (id, source, path, updated_at) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET source = excluded.source, path = excluded.path, updated_at = excluded.updated_at",
+      ).run(row.source, row.path, row.updatedAt);
+    } finally {
+      closeSqlite(db);
+    }
   }
   fs.writeFileSync(jsonPath(), `${JSON.stringify(row, null, 2)}\n`, "utf8");
   return row;

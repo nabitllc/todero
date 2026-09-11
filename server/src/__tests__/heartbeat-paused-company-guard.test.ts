@@ -89,8 +89,13 @@ describeEmbeddedPostgres("heartbeat paused-company guard", () => {
     // organization first stops the scheduler from starting anything new — the
     // guarantee this file exists to prove — and then whatever was already in
     // flight is waited out, re-reading the table each pass because a chained run
-    // can appear while an earlier one is still draining. A write that landed
-    // after the delete would fail the next test instead of this one.
+    // can appear while an earlier one is still draining. A wake already claimed
+    // is the other half: it has no run row yet, and letting the pool close under
+    // it is what printed CONNECTION_ENDED here. A wake still queued is not
+    // waited for — every organization is paused by the line below, so a queued
+    // wake stays queued on purpose and waiting for it would never return. A
+    // write that landed after the delete would fail the next test instead of
+    // this one.
     await db
       .update(companies)
       .set({ status: "paused", pauseReason: "manual", pausedAt: new Date() });
@@ -100,12 +105,18 @@ describeEmbeddedPostgres("heartbeat paused-company guard", () => {
       const runs = await db
         .select({ id: heartbeatRuns.id, status: heartbeatRuns.status })
         .from(heartbeatRuns);
+      // A wake taken off the queue but not yet turned into a run row.
+      const inFlightWakeups = await db
+        .select({ status: agentWakeupRequests.status })
+        .from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.status, "claimed"));
       await Promise.all(
         runs.map((run) =>
           heartbeat.waitForRunExecutionDrain(run.id, { timeoutMs: 15_000 }).catch(() => undefined),
         ),
       );
-      quietPasses = runs.some((run) => run.status === "running") ? 0 : quietPasses + 1;
+      // Start the count again while a run is going or a wake is mid-flight.
+      quietPasses = runs.some((run) => run.status === "running") || inFlightWakeups.length > 0 ? 0 : quietPasses + 1;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     await db.delete(environmentLeases);

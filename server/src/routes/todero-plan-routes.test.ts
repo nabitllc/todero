@@ -8,6 +8,7 @@ const mockIssueService = vi.hoisted(() => ({
   create: vi.fn(),
   update: vi.fn(),
   listComments: vi.fn(),
+  addComment: vi.fn(),
 }));
 const mockDocumentService = vi.hoisted(() => ({
   getIssueDocumentByKey: vi.fn(),
@@ -25,8 +26,20 @@ const mockGoalService = vi.hoisted(() => ({
   getDefaultCompanyGoal: vi.fn(),
   create: vi.fn(),
 }));
-vi.mock("../todero/judge-agent.js", () => ({ ensureJudgeAgentForLead: vi.fn(async () => null) }));
+const mockJudgeAgent = vi.hoisted(() => ({
+  ensureJudgeAgentForLead: vi.fn(async () => null as null | Record<string, unknown>),
+  findJudgeAgentForLead: vi.fn(async () => null as null | Record<string, unknown>),
+}));
+vi.mock("../todero/judge-agent.js", () => mockJudgeAgent);
 vi.mock("../services/goals.js", () => ({ goalService: () => mockGoalService }));
+const mockApprovalService = vi.hoisted(() => ({
+  create: vi.fn(async (companyId: string, data: Record<string, unknown>) => ({
+    id: "approval-1",
+    companyId,
+    ...data,
+  })),
+}));
+vi.mock("../services/approvals.js", () => ({ approvalService: () => mockApprovalService }));
 
 const { buildPlanFeatureGoalDrafts, selectApprovedPlanTasks, toderoPlanRoutes } = await import("./todero-plan-routes.js");
 
@@ -171,6 +184,21 @@ function planBlock(tasks: Array<{ title: string; feature: string; after?: string
 
 const wakeup = vi.fn(async () => undefined);
 
+/**
+ * Only the one read the approve path makes straight on the database: does this
+ * organization want a person to approve a new teammate first?
+ */
+let requireBoardApprovalForNewAgents = false;
+const stubDb = {
+  select: () => ({
+    from: () => ({
+      where: () => ({
+        limit: async () => [{ require: requireBoardApprovalForNewAgents }],
+      }),
+    }),
+  }),
+};
+
 function buildApp() {
   const app = express();
   app.use(express.json());
@@ -178,7 +206,7 @@ function buildApp() {
     (req as unknown as { actor: unknown }).actor = { type: "board", userId: "person-1" };
     next();
   });
-  app.use("/api", toderoPlanRoutes({} as never, { heartbeat: { wakeup } }));
+  app.use("/api", toderoPlanRoutes(stubDb as never, { heartbeat: { wakeup } }));
   return app;
 }
 
@@ -199,6 +227,9 @@ function wakenAgentIds(): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  requireBoardApprovalForNewAgents = false;
+  mockJudgeAgent.ensureJudgeAgentForLead.mockResolvedValue(null);
+  mockJudgeAgent.findJudgeAgentForLead.mockResolvedValue(null);
   mockIssueService.getById.mockResolvedValue(CONVERSATION_ISSUE);
   mockIssueService.update.mockImplementation(async (id: string, input: Record<string, unknown>) => ({
     id,
@@ -366,6 +397,105 @@ describe("POST /issues/:id/plan/approve", () => {
     expect(byTitle.get("List the dinners")).toMatchObject({ assigneeAgentId: "agent-1", status: "todo" });
     // The added agent has work from the first minute.
     expect(wakenAgentIds()).toContain("agent-2");
+  });
+
+  /**
+   * When the organization asks a person to approve a new teammate, the two
+   * hires the approval makes take that same path: the records exist but do no
+   * work, and the task says in plain words what the person has to answer.
+   */
+  describe("when the organization asks a person to approve a new teammate", () => {
+    const REVIEWER = {
+      id: "agent-judge",
+      name: "Ash's reviewer",
+      companyId: "company-1",
+      status: "pending_approval",
+      adapterType: "http",
+      adapterConfig: { url: "http://localhost:11434/v1/chat/completions", model: "qwen" },
+    };
+
+    function twoFeaturePlan() {
+      mockAgentService.getById.mockResolvedValue({
+        ...PRIMARY_AGENT,
+        runtimeConfig: { heartbeat: { maxConcurrentRuns: 2 } },
+      });
+      mockDocumentService.getIssueDocumentByKey.mockResolvedValue(
+        planDocument(
+          planBlock([
+            { title: "Draft the sign up screen", feature: "Sign up" },
+            { title: "Write the invite", feature: "Invite" },
+          ]),
+        ),
+      );
+    }
+
+    it("asks for approval for both hires and gives the second agent no work yet", async () => {
+      requireBoardApprovalForNewAgents = true;
+      mockJudgeAgent.ensureJudgeAgentForLead.mockResolvedValue(REVIEWER);
+      twoFeaturePlan();
+
+      const res = await request(buildApp()).post("/api/issues/issue-parent/plan/approve").send({});
+
+      expect(res.status).toBe(201);
+      expect(mockJudgeAgent.ensureJudgeAgentForLead).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ id: "agent-1" }),
+        { status: "pending_approval" },
+      );
+      // The second agent's record exists but does nothing until the person says yes.
+      expect(mockAgentService.create).toHaveBeenCalledWith(
+        "company-1",
+        expect.objectContaining({ status: "pending_approval" }),
+      );
+      expect(mockApprovalService.create).toHaveBeenCalledTimes(2);
+      expect(mockApprovalService.create.mock.calls.every((call) => call[1].type === "hire_agent")).toBe(true);
+      expect(res.body.hiresPendingApproval).toBe(true);
+      // Every task stays with the agent the person already approved.
+      expect(createdIssues().every((row) => row.input.assigneeAgentId === "agent-1")).toBe(true);
+      expect(wakenAgentIds().every((id) => id === "agent-1")).toBe(true);
+    });
+
+    it("says on the task, in plain words, what is waiting for the person", async () => {
+      requireBoardApprovalForNewAgents = true;
+      mockJudgeAgent.ensureJudgeAgentForLead.mockResolvedValue(REVIEWER);
+      twoFeaturePlan();
+
+      await request(buildApp()).post("/api/issues/issue-parent/plan/approve").send({});
+
+      expect(mockIssueService.addComment).toHaveBeenCalledTimes(1);
+      const body = mockIssueService.addComment.mock.calls[0]![1] as string;
+      expect(body).toContain("Ash's reviewer");
+      expect(body).toContain("Inbox");
+      for (const forbidden of ["issue", "disposition", "handoff", "run", "wake", "heartbeat"]) {
+        expect(body.toLowerCase()).not.toContain(forbidden);
+      }
+    });
+
+    it("changes nothing when the setting is off", async () => {
+      requireBoardApprovalForNewAgents = false;
+      mockJudgeAgent.ensureJudgeAgentForLead.mockResolvedValue({ ...REVIEWER, status: "idle" });
+      twoFeaturePlan();
+
+      const res = await request(buildApp()).post("/api/issues/issue-parent/plan/approve").send({});
+
+      expect(res.status).toBe(201);
+      expect(mockJudgeAgent.ensureJudgeAgentForLead).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ id: "agent-1" }),
+        {},
+      );
+      expect(mockApprovalService.create).not.toHaveBeenCalled();
+      expect(mockIssueService.addComment).not.toHaveBeenCalled();
+      expect(res.body.hiresPendingApproval).toBe(false);
+      expect(mockAgentService.create).toHaveBeenCalledWith(
+        "company-1",
+        expect.not.objectContaining({ status: expect.anything() }),
+      );
+      // The second agent picks up its feature straight away, as before.
+      expect(createdIssues().some((row) => row.input.assigneeAgentId === "agent-2")).toBe(true);
+    });
   });
 
   it("does not add an agent when only one feature can start", async () => {

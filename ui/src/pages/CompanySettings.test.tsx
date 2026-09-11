@@ -30,6 +30,8 @@ const mockEnvironmentsApi = vi.hoisted(() => ({
   probe: vi.fn(),
   probeConfig: vi.fn(),
   archive: vi.fn(),
+  deleteBlastRadius: vi.fn(),
+  secretRefs: vi.fn(),
 }));
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
@@ -176,6 +178,8 @@ describe("CompanyEnvironments", () => {
     mockEnvironmentsApi.capabilities.mockResolvedValue(
       getEnvironmentCapabilities(AGENT_ADAPTER_TYPES),
     );
+    mockEnvironmentsApi.deleteBlastRadius.mockResolvedValue({ affected: [] });
+    mockEnvironmentsApi.secretRefs.mockResolvedValue({ refs: [] });
     mockSecretsApi.list.mockResolvedValue([]);
     mockCompaniesApi.update.mockResolvedValue({
       id: "company-1",

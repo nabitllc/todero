@@ -566,9 +566,12 @@ describe("OnboardingWizard first-run LLM lock", () => {
       if (/Connected/i.test(testStatus())) break;
     }
 
+    // The organization is named too, so a passing test is where the server
+    // writes down every model this machine serves.
     expect(mockLocalLlmApi.test).toHaveBeenCalledWith({
       baseUrl: leftoverPick.baseUrl,
       modelId: leftoverPick.modelId,
+      companyId: expect.anything(),
     });
     expect(testStatus()).toMatch(/Connected\. .* answered in 1\.2 s/);
     expect(connectButton()!.disabled).toBe(false);

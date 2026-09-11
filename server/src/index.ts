@@ -69,6 +69,7 @@ import {
   toolAccessService,
   workspaceOperationService,
 } from "./services/index.js";
+import { runStartupBackfills } from "./todero/startup-backfills.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
 import { createSecretProposalsService } from "./services/secret-proposals.js";
@@ -90,6 +91,7 @@ import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
+import { checkSchemaDrift } from "./todero/schema-drift-check.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
@@ -619,6 +621,64 @@ export async function startServer(): Promise<StartedServer> {
     .sweepSupersededPendingRequestConfirmations();
   if (confirmationSweep.expired > 0) {
     logger.info(confirmationSweep, "Expired pending confirmations superseded by newer agent requests");
+  }
+  try {
+    const driftCheck = await checkSchemaDrift(db as any);
+    if (driftCheck.issuesFound) {
+      for (const { table, columns } of driftCheck.extraNotNullColumns) {
+        logger.warn(
+          { table, columns },
+          "schema drift: NOT NULL columns without defaults present in database (inserts will fail)",
+        );
+      }
+      for (const { table, columns } of driftCheck.extraNullableColumns) {
+        logger.warn(
+          { table, columns },
+          "schema drift: unexpected columns present in database",
+        );
+      }
+      for (const { table, columns } of driftCheck.missingColumns) {
+        logger.warn(
+          { table, columns },
+          "schema drift: expected columns missing from database",
+        );
+      }
+    } else {
+      logger.info("Database schema matches Drizzle definitions (no drift detected)");
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to run the schema drift check (non-blocking)");
+  }
+  // Wave J hardening backfills: timer config for conversational agents and backlog to todo conversion
+  try {
+    const backfillResult = await runStartupBackfills(db as any);
+    // One line per organization something changed in, plus one total.
+    for (const row of backfillResult.timerBackfill.perCompany) {
+      logger.info(row, "Backfilled timer configuration for conversational agents");
+    }
+    if (backfillResult.timerBackfill.agentsBackfilled > 0) {
+      logger.info(
+        {
+          companiesProcessed: backfillResult.timerBackfill.companiesProcessed,
+          agentsBackfilled: backfillResult.timerBackfill.agentsBackfilled,
+        },
+        "Backfilled timer configuration for conversational agents (total)",
+      );
+    }
+    for (const row of backfillResult.backlogBackfill.perCompany) {
+      logger.info(row, "Backfilled backlog issues to todo for plan-carrying parents");
+    }
+    if (backfillResult.backlogBackfill.issuesConverted > 0) {
+      logger.info(
+        {
+          companiesProcessed: backfillResult.backlogBackfill.companiesProcessed,
+          issuesConverted: backfillResult.backlogBackfill.issuesConverted,
+        },
+        "Backfilled backlog issues to todo for plan-carrying parents (total)",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "Failed to run startup backfills (non-blocking)");
   }
   if (config.deploymentMode === "authenticated") {
     const {

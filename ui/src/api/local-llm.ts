@@ -70,12 +70,16 @@ export function liveLocalLlmSelection<T extends { runtimeId: string; modelId: st
 export const LOCAL_LLM_TEST_PATH = "/todero/local-llm/test";
 
 export type LocalLlmTestResult =
-  | { ok: true; reply: string; latencyMs: number }
-  | { ok: false; error: string; latencyMs: number };
+  | { ok: true; reply: string; latencyMs: number; availableModels?: string[] }
+  | { ok: false; error: string; latencyMs: number; availableModels?: string[] };
 
 export const toderoLocalLlmApi = {
   detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>(LOCAL_LLM_DETECT_PATH),
-  /** One short completion against the picked model; proves it answers, not just that it is listed. */
-  test: (input: { baseUrl: string; modelId: string }) =>
+  /**
+   * One short completion against the picked model; proves it answers, not just
+   * that it is listed. Naming the organization lets the server remember every
+   * model this machine serves, which is what picks a model per turn later.
+   */
+  test: (input: { baseUrl: string; modelId: string; companyId?: string | null }) =>
     api.post<LocalLlmTestResult>(LOCAL_LLM_TEST_PATH, input),
 };

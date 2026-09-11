@@ -8167,6 +8167,10 @@ registry.registerPath({
       z.object({
         baseUrl: z.string().describe("Loopback base URL of the runtime, e.g. http://127.0.0.1:11434"),
         modelId: z.string(),
+        companyId: z
+          .string()
+          .optional()
+          .describe("Remember every model this machine serves for this organization when the test passes"),
       }),
     ),
   },

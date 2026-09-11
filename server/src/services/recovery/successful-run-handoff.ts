@@ -132,6 +132,7 @@ const SUCCESSFUL_RUN_HANDOFF_VALID_PATH_SKIP_REASONS = new Set([
   "open recovery issue owns the ambiguity",
   "issue is under an active pause hold",
   "corrective handoff wake already exists for this source run",
+  "conversation disposition was already applied",
 ]);
 
 export function isSuccessfulRunHandoffValidPathSkip(
@@ -352,6 +353,18 @@ function isCommentDrivenWake(run: HeartbeatRunRow) {
     wakeReason === "issue_reopened_via_comment";
 }
 
+/**
+ * A conversational agent's reply contains no recognizable disposition (STATUS: line),
+ * or the disposition was already applied by conversation-outcome. Either way, the
+ * handoff machinery should not attempt to handle it with a generic "missing disposition"
+ * instruction, which is nonsensical for a chat-only agent. The flag is set by heartbeat.ts
+ * after the disposition block completes.
+ */
+function isConversationDispositionAlreadyApplied(run: HeartbeatRunRow): boolean {
+  const context = readRecord(run.contextSnapshot);
+  return context.toderoDispositionApplied === true;
+}
+
 function isProductiveSuccessfulRun(input: {
   livenessState: RunLivenessState | null;
   detectedProgressSummary: string | null;
@@ -459,6 +472,7 @@ export function decideSuccessfulRunHandoff(input: {
   if (isRecoveryActionDrivenRun(run)) return { kind: "skip", reason: "recovery action run owns its own follow-up path" };
   if (isIssueMonitorMaintenanceRun(run)) return { kind: "skip", reason: "issue monitor run owns its own recovery path" };
   if (isCommentDrivenWake(run)) return { kind: "skip", reason: "comment-driven wake already owns the next action" };
+  if (isConversationDispositionAlreadyApplied(run)) return { kind: "skip", reason: "conversation disposition was already applied" };
   if (run.issueCommentStatus === "retry_queued" || run.issueCommentStatus === "retry_exhausted") {
     return { kind: "skip", reason: "missing issue comment retry owns the next action" };
   }

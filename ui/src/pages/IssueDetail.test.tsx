@@ -2275,6 +2275,86 @@ describe("IssueDetail", () => {
     });
   });
 
+  /**
+   * Only a task that can carry a plan asks for one. A child task has none, and
+   * asking every ten seconds is what put a 404 in the console.
+   */
+  describe("plan document requests", () => {
+    async function renderAndSettle() {
+      // The shared beforeEach re-stubs this mock but keeps its call list, so
+      // only the calls this render makes are counted.
+      mockIssuesApi.getDocument.mockClear();
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <IssueDetail />
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+      await flushReact();
+    }
+
+    function planRequests() {
+      return mockIssuesApi.getDocument.mock.calls.filter((call) => call[1] === "plan");
+    }
+
+    it("never asks for a plan on a child task", async () => {
+      mockIssuesApi.get.mockResolvedValue(
+        createIssue({ id: "child-1", parentId: "issue-1", identifier: "PAP-2", issueNumber: 2 }),
+      );
+
+      await renderAndSettle();
+
+      expect(planRequests()).toHaveLength(0);
+    });
+
+    it("asks for the plan on the conversation task", async () => {
+      mockIssuesApi.get.mockResolvedValue(createIssue({ parentId: null }));
+
+      await renderAndSettle();
+
+      await waitForAssertion(() => {
+        expect(planRequests().length).toBeGreaterThan(0);
+      });
+    });
+
+    it("asks for the plan on a task still waiting for one", async () => {
+      mockIssuesApi.get.mockResolvedValue(
+        createIssue({
+          id: "child-1",
+          parentId: "issue-1",
+          identifier: "PAP-2",
+          issueNumber: 2,
+          description: "Draft the plan\n<!-- todero-plan: pending -->",
+        }),
+      );
+
+      await renderAndSettle();
+
+      await waitForAssertion(() => {
+        expect(planRequests().length).toBeGreaterThan(0);
+      });
+    });
+
+    it("keeps asking on a child whose plan is already in hand", async () => {
+      queryClient.setQueryData(["issues", "child-1", "documents", "plan", "work-item"], {
+        id: "doc-1",
+        key: "plan",
+      });
+      mockIssuesApi.get.mockResolvedValue(
+        createIssue({ id: "child-1", parentId: "issue-1", identifier: "PAP-2", issueNumber: 2 }),
+      );
+
+      await renderAndSettle();
+
+      await waitForAssertion(() => {
+        expect(planRequests().length).toBeGreaterThan(0);
+      });
+    });
+  });
+
   it("passes blocker attention to the issue detail header status icon", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue({
       status: "blocked",
