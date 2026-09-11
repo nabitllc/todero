@@ -1,4 +1,5 @@
 import type { Issue, IssueComment, IssuePriority, IssueStatus } from "@todero/shared";
+import type { VerdictInfo } from "./work-item-verdict";
 
 // "Brief" is the conversation an agent starts from: the first task of an
 // onboarding, where the person and the agent agree what the work is. Everything
@@ -422,7 +423,16 @@ export function isAgentComment(comment: Pick<IssueComment, "authorType" | "autho
   return comment.authorType === "agent" || Boolean(comment.authorAgentId || comment.derivedAuthorAgentId);
 }
 
-export type WorkItemActivityKind = "agent" | "agent-overflow" | "human" | "system";
+export type WorkItemActivityKind =
+  | "agent"
+  | "agent-overflow"
+  | "human"
+  | "system"
+  | "cluster"
+  /** A reviewer's verdict, rendered as its own card rather than as a reply. */
+  | "verdict"
+  /** The reply that came with a hand-in, rendered as the one-line open card. */
+  | "handed-in";
 
 export type WorkItemActivityItem = {
   id: string;
@@ -431,6 +441,17 @@ export type WorkItemActivityItem = {
   time?: string;
   body?: string;
   text?: string;
+  /** For kind==="cluster": the items that are clustered. */
+  items?: WorkItemActivityItem[];
+  /** For kind==="verdict": what the reviewer decided, parsed from the reply. */
+  verdict?: VerdictInfo;
+  /** For kind==="handed-in": which version of the output the reply handed in. */
+  version?: number;
+  /**
+   * For kind==="system": a notice that is not routine. Recovery notices carry
+   * it, and keep their warning tone inside the cluster they fold into.
+   */
+  tone?: "warning";
 };
 
 export function highlightMentions(body: string): Array<{ text: string; mention: boolean }> {

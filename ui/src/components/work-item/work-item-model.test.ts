@@ -185,4 +185,3 @@ describe("review and plan markers", () => {
     expect(taskRowLabel({ status: "todo", queued: false })).toBe("To do");
   });
 });
-

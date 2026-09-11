@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@todero/shared";
+import type { Issue, IssueComment } from "@todero/shared";
 import { ONBOARDING_FIRST_TASK_ORIGIN_KIND } from "@todero/shared";
 import {
+  buildWorkItemActivity,
   isOnboardingFirstTask,
   missionFromFirstTaskDescription,
+  systemNoticeItem,
   toWorkItemViewProps,
   workItemTypeFor,
 } from "./work-item-adapter";
@@ -163,5 +165,75 @@ describe("the three markers the turn bar reads", () => {
     expect(props.waitingOnYou).toBe(false);
     expect(props.reviewPending).toBe(false);
     expect(props.planPending).toBe(false);
+  });
+});
+
+describe("notices the product posted", () => {
+  const commentFixture = (overrides: Record<string, unknown> = {}) =>
+    ({
+      id: "c1",
+      companyId: "co",
+      issueId: "i1",
+      authorType: "system",
+      authorAgentId: null,
+      authorUserId: null,
+      body: "Recovery attempt failed.\n\nCause: recovery_issue_failed",
+      presentation: null,
+      metadata: null,
+      createdAt: new Date("2026-09-11T10:00:00Z"),
+      updatedAt: new Date("2026-09-11T10:00:00Z"),
+      ...overrides,
+    }) as unknown as IssueComment;
+
+  it("leaves a person's reply and an agent's reply alone", () => {
+    expect(systemNoticeItem(commentFixture({ authorType: "user", authorUserId: "u1" }))).toBeNull();
+    expect(systemNoticeItem(commentFixture({ authorType: "agent", authorAgentId: "a1" }))).toBeNull();
+  });
+
+  it("turns a posted notice into one machinery line, not anyone's words", () => {
+    const item = systemNoticeItem(commentFixture());
+    expect(item?.kind).toBe("system");
+    expect(item?.text).toBe("Recovery attempt failed.");
+    expect(item?.tone).toBeUndefined();
+  });
+
+  it("keeps a recovery notice's warning tone", () => {
+    const item = systemNoticeItem(
+      commentFixture({
+        presentation: { kind: "system_notice", tone: "warning", title: "Recovery: it came back blocked" },
+      }),
+    );
+    expect(item?.text).toBe("Recovery: it came back blocked");
+    expect(item?.tone).toBe("warning");
+  });
+
+  it("treats a danger notice as a warning too", () => {
+    const item = systemNoticeItem(
+      commentFixture({ presentation: { kind: "system_notice", tone: "danger", title: "It stopped" } }),
+    );
+    expect(item?.tone).toBe("warning");
+  });
+
+  it("takes a notice posted under a name at its presentation's word", () => {
+    const item = systemNoticeItem(
+      commentFixture({
+        authorType: "user",
+        authorUserId: "u1",
+        presentation: { kind: "system_notice", tone: "info", title: "Moved by the board" },
+      }),
+    );
+    expect(item?.kind).toBe("system");
+    expect(item?.tone).toBeUndefined();
+  });
+
+  it("never draws a posted notice as the person's own reply", () => {
+    const items = buildWorkItemActivity({
+      comments: [commentFixture()],
+      activity: [],
+      agentMap: new Map(),
+      userLabelMap: null,
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("system");
   });
 });

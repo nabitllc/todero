@@ -1,0 +1,117 @@
+/* "What Nova sees": a read-only panel in the task sidebar, so it borrows the
+   sidebar's own tokens rather than the task card's. Nothing here is a control;
+   it is a transcript of what the model was given on its last turn. */
+
+.agent-sees-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  padding: 0.25rem 0;
+  background: transparent;
+  border: 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-sees-toggle:hover {
+  color: var(--muted-foreground);
+}
+
+.agent-sees-toggle-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.agent-sees {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  max-height: 24rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.agent-sees-empty {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.agent-sees-block + .agent-sees-block {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.agent-sees-block-title {
+  margin: 0 0 0.25rem;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+.agent-sees-line {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+
+.agent-sees-muted {
+  color: var(--muted-foreground);
+}
+
+.agent-sees-markdown {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.agent-sees-markdown > :first-child {
+  margin-top: 0;
+}
+
+.agent-sees-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.agent-sees-markdown pre {
+  overflow-x: auto;
+}
+
+.agent-sees-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.agent-sees-turn {
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--border);
+}
+
+.agent-sees-turn-agent {
+  border-left-color: var(--muted-foreground);
+}
+
+.agent-sees-turn-role {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
