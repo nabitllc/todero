@@ -165,9 +165,11 @@ def main() -> int:
             open_children = [i for i in issues_of(C) if i.get("parentId") == root["id"] and i["status"] not in ("done", "cancelled")]
             if not open_children:
                 break
-            settled = wait_for(lambda: None if any(r["status"] in ("queued", "running") for r in runs_of(C)) else True, 600, every=5)
+            # Four serial turns on a busy machine can take ten minutes by
+            # themselves (wave 5), so the queue gets the whole remaining budget.
+            settled = wait_for(lambda: None if any(r["status"] in ("queued", "running") for r in runs_of(C)) else True, max(30, children_deadline - time.time()), every=5)
             if not settled:
-                expect(False, "turns still running after ten minutes")
+                expect(False, "turns still running at the 25-minute mark")
                 break
             acted = False
             for child in open_children:
