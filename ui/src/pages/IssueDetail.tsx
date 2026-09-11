@@ -1443,7 +1443,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
             href: createIssueDetailPath(child.identifier ?? child.id),
             createdAt: child.createdAt,
           }))}
-          planRevisionNumber={proposedPlanDocument?.latestRevisionNumber ?? null}
           nextProjectSuggestion={nextProjectSuggestion}
           agentWorking={liveIssueIds.has(issue.id)}
           onPlanApprove={(keep) => approveProposedPlan.mutate(keep)}

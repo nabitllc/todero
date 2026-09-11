@@ -469,25 +469,7 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
   });
 });
 
-describe("bolt and the next-project card", () => {
-  it("shows the placeholder before a plan exists, then the gate count once one does", async () => {
-    await render(fixture());
-    expect(container.querySelector('[data-testid="work-item-bolt"]')!.textContent).toBe(BOLT_VALUE);
-
-    const plan = { goal: "Ship it.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "", after: "" }] };
-    await render(
-      fixture({
-        plan,
-        planRevisionNumber: 2,
-        tasks: [{ id: "a", identifier: "ZZW-2", title: "First", status: "done", href: "/ZZW/issues/ZZW-2" }],
-        status: "done",
-      }),
-    );
-    const bolt = container.querySelector('[data-testid="work-item-bolt"]')!;
-    expect(bolt.textContent).toBe("Bolt 2 · 3 of 3 gates");
-    expect(bolt.getAttribute("title")).toContain("Plan approved");
-  });
-
+describe("the next-project card", () => {
   it("offers Start a project only once the task is done and a Next suggestion exists", async () => {
     await render(fixture({ status: "in_progress", nextProjectSuggestion: "a billing dashboard" }));
     expect(container.querySelector('[data-testid="work-item-next-card"]')).toBeNull();

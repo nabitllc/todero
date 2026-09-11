@@ -20,9 +20,7 @@ import {
   WORK_ITEM_STATUS_LABELS,
   WORK_ITEM_STATUSES,
   blockedChipLabel,
-  boltTooltip,
   commitWorkItemStatus,
-  computeWorkItemBolt,
   displayPriority,
   highlightMentions,
   statusFreezesAssignee,
@@ -57,8 +55,6 @@ export type WorkItemViewProps = {
   planApprovable?: boolean;
   /** Child tasks created from the plan, oldest first. */
   tasks?: WorkItemTaskRow[];
-  /** The plan document's revision number — one bolt per proposed plan. */
-  planRevisionNumber?: number | null;
   /** A `Next:` project the agent named in its wrap-up; not offered again once started. */
   nextProjectSuggestion?: string | null;
   /** The agent handed in its output; show Accept / Send back. */
@@ -141,7 +137,6 @@ export function WorkItemView(props: WorkItemViewProps) {
     plan = null,
     planApprovable = false,
     tasks = [],
-    planRevisionNumber = null,
     nextProjectSuggestion = null,
     reviewPending = false,
     planPending = false,
@@ -202,16 +197,6 @@ export function WorkItemView(props: WorkItemViewProps) {
   useEffect(() => {
     setDroppedPlanTasks(new Set());
   }, [planKey]);
-  const bolt = useMemo(
-    () =>
-      computeWorkItemBolt({
-        hasPlan: Boolean(plan),
-        planRevisionNumber,
-        tasks,
-        parentStatus: status,
-      }),
-    [plan, planRevisionNumber, tasks, status],
-  );
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [sendBackNote, setSendBackNote] = useState("");
@@ -664,13 +649,7 @@ export function WorkItemView(props: WorkItemViewProps) {
             )}
 
             <Fact label="Bolt">
-              {bolt ? (
-                <span className="work-item-bolt" data-testid="work-item-bolt" title={boltTooltip(bolt)}>
-                  {bolt.label}
-                </span>
-              ) : (
-                <span className="work-item-bolt" data-testid="work-item-bolt">{BOLT_VALUE}</span>
-              )}
+              <span className="work-item-bolt" data-testid="work-item-bolt">{BOLT_VALUE}</span>
             </Fact>
           </aside>
         </div>
