@@ -427,3 +427,12 @@ export function resolveBlockedBy(issue: {
   if (waiting) return { kind: "waiting-on-you" };
   return null;
 }
+
+/** A child task created from an approved plan, as the work-item view lists it. */
+export type WorkItemTaskRow = {
+  id: string;
+  identifier: string;
+  title: string;
+  status: WorkItemStatus;
+  href: string;
+};

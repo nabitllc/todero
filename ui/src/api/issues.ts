@@ -309,6 +309,12 @@ export const issuesApi = {
       `/issues/${id}/documents${options?.includeSystem ? "?includeSystem=true" : ""}`,
     ),
   getDocument: (id: string, key: string) => api.get<IssueDocument>(`/issues/${id}/documents/${encodeURIComponent(key)}`),
+  /** Approve the plan an agent proposed on this task: Todero creates the kept tasks as chained children. */
+  approvePlan: (id: string, keep: string[]) =>
+    api.post<{ parent: Issue; children: Array<{ id: string; identifier: string | null; title: string; status: string }> }>(
+      `/issues/${id}/plan/approve`,
+      { keep },
+    ),
   upsertDocument: (id: string, key: string, data: UpsertIssueDocument) =>
     api.put<IssueDocument>(`/issues/${id}/documents/${encodeURIComponent(key)}`, data),
   lockDocument: (id: string, key: string) =>

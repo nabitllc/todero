@@ -72,6 +72,7 @@ import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { toderoVaultRoutes } from "./routes/vault-routes.js";
 import { toderoLocalLlmRoutes } from "./routes/local-llm-routes.js";
+import { toderoPlanRoutes } from "./routes/todero-plan-routes.js";
 import { instanceSettingsService } from "./services/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
 import {
@@ -597,6 +598,8 @@ export async function createApp(
   const connectionIntentHeartbeat = heartbeatService(db, {
     pluginWorkerManager: workerManager,
   });
+  // Plan approval creates the child tasks and wakes the agent on the first.
+  api.use(toderoPlanRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(toolAccessRoutes(db, {
     deploymentMode: opts.deploymentMode,
     deploymentExposure: opts.deploymentExposure,

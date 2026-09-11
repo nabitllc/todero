@@ -1,10 +1,13 @@
+import { formatToderoPlanBlock, parseToderoPlanBlock } from "@todero/shared";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "../types.js";
 import { asString, asNumber, parseObject } from "../utils.js";
 import {
   buildChatCompletionsBody,
+  CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE,
   isChatCompletionsUrl,
   parseChatCompletionsReply,
   parseChatCompletionsText,
+  type ChatCompletionsMessage,
 } from "./chat-completions.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -62,21 +65,55 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // via buildHeartbeatRunIssueComment. Discarding a 2xx body used to count as
     // success with nothing on the ticket.
     const raw = await res.text();
-    const completion = parseChatCompletionsText(raw);
+    let completion = parseChatCompletionsText(raw);
     if (!completion) {
       throw new Error("HTTP chat completions returned empty assistant text");
     }
     await ctx.onLog("stdout", completion.endsWith("\n") ? completion : `${completion}\n`);
     // The trailing status line is for Todero, not the user: it tells the
     // heartbeat whether to close the task or hand the turn back.
-    const reply = parseChatCompletionsReply(completion);
-    const summary = reply.body || completion;
+    let reply = parseChatCompletionsReply(completion);
+    // A local model sometimes answers a fresh task with nothing but the status
+    // line. One nudge in the same run gets the actual reply far more often
+    // than a new wake would, and costs one extra request.
+    if (!reply.body && Array.isArray(body.messages) && !controller.signal.aborted) {
+      const retryBody = {
+        ...body,
+        messages: [
+          ...(body.messages as ChatCompletionsMessage[]),
+          { role: "assistant", content: completion },
+          { role: "user", content: CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE },
+        ],
+      };
+      const retry = await fetch(url, {
+        method,
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(retryBody),
+        ...(timer ? { signal: controller.signal } : {}),
+      });
+      if (retry.ok) {
+        const retried = parseChatCompletionsText(await retry.text());
+        if (retried) {
+          await ctx.onLog("stdout", `[todero] Empty reply; asked once more.\n${retried}\n`);
+          completion = retried;
+          reply = parseChatCompletionsReply(retried);
+        }
+      }
+    }
+    // A plan block is for Todero too: it becomes the task's Plan document and
+    // the approval card, and the person reads the words around it.
+    const planned = parseToderoPlanBlock(reply.body);
+    const summary = (planned ? planned.body : reply.body) || completion;
     return {
       exitCode: 0,
       signal: null,
       timedOut: false,
       summary,
-      resultJson: { summary, toderoDisposition: reply.disposition },
+      resultJson: {
+        summary,
+        toderoDisposition: reply.disposition,
+        ...(planned ? { toderoPlanBlock: formatToderoPlanBlock(planned.plan) } : {}),
+      },
     };
   } catch (err) {
     if (timer && err instanceof Error && err.name === "AbortError") {

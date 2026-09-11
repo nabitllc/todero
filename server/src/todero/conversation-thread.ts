@@ -184,3 +184,15 @@ export async function loadConversationIdentity(
     mission,
   };
 }
+
+/** The issue document the proposed plan lives in; the product already treats `plan` as the plan. */
+export const CONVERSATION_PLAN_DOCUMENT_KEY = "plan";
+
+/**
+ * The Plan document body: a heading for people plus the canonical block the
+ * approve endpoint and the work-item view both parse. Keeping the block verbatim
+ * means one parser everywhere and no second store for the structured plan.
+ */
+export function buildConversationPlanDocumentBody(planBlock: string): string {
+  return `# Plan\n\nProposed by the agent in the task thread. Approve it on the task, or ask for changes there.\n\n${planBlock.trim()}\n`;
+}

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useNavigationType, useParams } from "@/
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { ApiError } from "../api/client";
+import { displayStatus } from "@/components/work-item/work-item-model";
 import { issuesApi } from "../api/issues";
 import { approvalsApi } from "../api/approvals";
 import { activityApi, type RunForIssue } from "../api/activity";
@@ -241,6 +242,7 @@ import {
   type IssueTreeControlMode,
   type WorkspaceFileRef,
   workspaceFileRefSchema,
+  parseToderoPlanBlock,
 } from "@todero/shared";
 
 // Stable empty array for React Query `data` defaults. A literal `= []` default
@@ -956,6 +958,8 @@ function InboxMobileToolbar({
 
 type IssueDetailChatTabProps = {
   issue: Issue;
+  /** Tasks created from an approved plan; oldest first. */
+  childIssues: Issue[];
   projects: Array<{ id: string; name: string }>;
   onUpdate: (data: Record<string, unknown>) => void;
   issueId: string;
@@ -1068,6 +1072,7 @@ type IssueDetailChatTabProps = {
 
 const IssueDetailChatTab = memo(function IssueDetailChatTab({
   issue,
+  childIssues,
   projects,
   onUpdate,
   issueId,
@@ -1153,6 +1158,33 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   // default) renders the work-item view. The work item is the work; activity
   // is a log, not a messenger.
   const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
+  // The plan the agent proposed lives in the task's `plan` document as a
+  // fenced block; the work-item view shows it as the approval card until the
+  // person approves it and Todero creates the child tasks.
+  const workItemQueryClient = useQueryClient();
+  const { data: proposedPlanDocument } = useQuery({
+    queryKey: ["issues", issueId, "documents", "plan", "work-item"],
+    queryFn: async () => {
+      try {
+        return await issuesApi.getDocument(issueId, "plan");
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
+    enabled: !classicTaskInterfaceEnabled && Boolean(issueId),
+    refetchInterval: 10_000,
+  });
+  const proposedPlan = useMemo(() => {
+    const body = proposedPlanDocument?.body;
+    return body ? (parseToderoPlanBlock(body)?.plan ?? null) : null;
+  }, [proposedPlanDocument?.body]);
+  const approveProposedPlan = useMutation({
+    mutationFn: (keep: string[]) => issuesApi.approvePlan(issueId, keep),
+    onSuccess: () => {
+      void workItemQueryClient.invalidateQueries({ queryKey: ["issues"] });
+    },
+  });
   const { data: activity } = useQuery({
     queryKey: queryKeys.issues.activity(issueId),
     queryFn: () => activityApi.forIssue(issueId),
@@ -1362,6 +1394,21 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           onComment={(body) => { void onAdd(body); }}
           onAttach={(file) => { void onAttachImage(file); }}
           onWorkModeChange={onWorkModeChange}
+          plan={proposedPlan}
+          planApprovable={
+            Boolean(proposedPlan) &&
+            childIssues.length === 0 &&
+            issue.status === "blocked" &&
+            !approveProposedPlan.isPending
+          }
+          tasks={childIssues.map((child) => ({
+            id: child.id,
+            identifier: child.identifier ?? child.id,
+            title: child.title,
+            status: displayStatus(child),
+            href: createIssueDetailPath(child.identifier ?? child.id),
+          }))}
+          onPlanApprove={(keep) => approveProposedPlan.mutate(keep)}
         />
       </div>
     );
@@ -5354,6 +5401,7 @@ export function IssueDetail() {
           {resolvedDetailTab === "chat" ? (
             <IssueDetailChatTab
               issue={issue}
+              childIssues={childIssues}
               projects={(projects ?? []).map((project) => ({ id: project.id, name: project.name }))}
               onUpdate={(data) => updateIssue.mutate(data)}
               threadHeader={taskChatThreadHeader}

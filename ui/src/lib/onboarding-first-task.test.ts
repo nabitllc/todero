@@ -40,7 +40,9 @@ describe("conversational first task", () => {
     const brief = buildOnboardingFirstTaskDescription("Ship the marketplace.", { conversational: true });
     expect(brief).toContain("Ship the marketplace.");
     expect(brief).toContain("at most three questions");
-    expect(brief).toContain("propose one plan in plain text");
+    expect(brief).toContain("propose one plan");
+    expect(brief).toContain("```todero-plan");
+    expect(brief).toContain("done_when:");
     expect(brief).not.toContain("request_checkbox_confirmation");
     expect(brief).not.toContain("plan` document");
     expect(brief).not.toContain("hire the checked agents");
