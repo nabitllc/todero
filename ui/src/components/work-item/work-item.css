@@ -550,3 +550,159 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Tasks created from an approved plan */
+.work-item-task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-8);
+}
+
+.work-item-task-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wi-space-8);
+  font-family: var(--wi-sans);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.work-item-task-status {
+  font-family: var(--wi-mono);
+  font-size: 11px;
+  color: var(--wi-muted);
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-stamp);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.work-item-task-status-done {
+  color: var(--wi-mark);
+  border-color: var(--wi-mark);
+}
+
+.work-item-task-link {
+  color: var(--wi-fg);
+  text-decoration: none;
+}
+
+.work-item-task-link:hover {
+  text-decoration: underline;
+}
+
+.work-item-task-id {
+  font-family: var(--wi-mono);
+  font-size: 12px;
+  color: var(--wi-muted);
+}
+
+/* The proposed plan, waiting for a yes */
+.work-item-plan-card {
+  border: 1px solid var(--wi-border);
+  border-radius: var(--wi-radius-input);
+  padding: var(--wi-space-16);
+  margin-bottom: var(--wi-space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-12);
+  max-width: 65ch;
+}
+
+.work-item-plan-card-label {
+  font-family: var(--wi-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wi-muted);
+}
+
+.work-item-plan-goal {
+  font-family: var(--wi-sans);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--wi-fg);
+  margin: var(--wi-space-4) 0 0;
+}
+
+.work-item-plan-features,
+.work-item-plan-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--wi-space-4);
+}
+
+.work-item-plan-feature {
+  font-family: var(--wi-sans);
+  font-size: 13px;
+  color: var(--wi-fg);
+}
+
+.work-item-plan-feature-done {
+  color: var(--wi-muted);
+}
+
+.work-item-plan-task-label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--wi-space-8);
+  font-family: var(--wi-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.work-item-plan-task-check {
+  accent-color: var(--wi-mark);
+  margin: 0;
+  position: relative;
+  top: 2px;
+}
+
+.work-item-plan-task-dropped {
+  color: var(--wi-muted);
+  text-decoration: line-through;
+}
+
+.work-item-plan-task-feature {
+  font-family: var(--wi-mono);
+  font-size: 11px;
+  color: var(--wi-muted);
+}
+
+.work-item-plan-actions {
+  display: flex;
+  gap: var(--wi-space-8);
+  padding-top: var(--wi-space-4);
+}
+
+.work-item-plan-approve,
+.work-item-plan-changes {
+  font-family: var(--wi-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: var(--wi-radius-stamp);
+  border: 1px solid var(--wi-border);
+  background: transparent;
+  color: var(--wi-fg);
+  cursor: pointer;
+}
+
+.work-item-plan-approve {
+  background: var(--wi-mark);
+  border-color: var(--wi-mark);
+  color: var(--wi-ink);
+}
+
+.work-item-plan-approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

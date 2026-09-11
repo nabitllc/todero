@@ -5,6 +5,8 @@
  * operator already typed a mission, that text has to be in the prompt — and
  * the prompt must not tell the agent to ask for a goal or not to guess.
  */
+import { TODERO_PLAN_BLOCK_INSTRUCTIONS } from "@todero/shared";
+
 export const DEFAULT_TASK_TITLE = "Todero onboarding";
 
 const FIRST_TASK_TITLE_MAX = 80;
@@ -68,9 +70,11 @@ How to work:
 
 1. Ask at most three questions, only ones whose answers would change the plan: what must be in the first version, what can wait, and what "done" looks like. Then stop and wait for the answers.
 
-2. Once you have answers, propose one plan in plain text: the goal in one sentence, the three to seven pieces the first version needs, and the four to twelve tasks to get there, each tied to a piece. Keep it short enough to read on a phone. Then stop and wait for approval.
+2. Once you have answers, propose one plan. Say in one or two sentences what you are proposing, then write the plan itself in the fenced block below. Todero reads that block and shows it to the person as a checklist they can approve. Then stop and wait for approval.
 
-3. If they ask for changes, revise the plan and stop again. Do not hire anyone, do not promise documents you cannot write, and do not describe your own process.
+${TODERO_PLAN_BLOCK_INSTRUCTIONS}
+
+3. If they ask for changes, send the whole plan again in the same block with the changes made, and stop again. Do not hire anyone, do not promise documents you cannot write, and do not describe your own process.
 
 Write for the person, not for a machine: short sentences, a list where a list helps.`;
 }

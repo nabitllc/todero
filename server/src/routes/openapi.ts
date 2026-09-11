@@ -8102,6 +8102,22 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/issues/{id}/plan/approve",
+  tags: ["todero"],
+  summary: "Approve the plan an agent proposed on a task: create the kept tasks as chained children and wake the agent on the first",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(
+      z.object({
+        keep: z.array(z.string()).optional().describe("Plan task ids to keep (t1, t2, ...). Omit to keep all."),
+      }),
+    ),
+  },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/todero/local-llm/test",
   tags: ["todero"],
   summary: "Send one short message to a detected local LLM model and report whether it answered",

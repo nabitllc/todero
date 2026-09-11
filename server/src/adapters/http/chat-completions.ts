@@ -17,6 +17,7 @@ export const CHAT_COMPLETIONS_STATUS_DONE = "STATUS: done";
 export const CHAT_COMPLETIONS_STATUS_WAITING = "STATUS: waiting";
 
 const STATUS_LINE_RE = /^\s*\**\s*status\s*:\s*\**\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*\**\s*\.?\s*$/i;
+const STATUS_SUFFIX_RE = /\s+\**\s*status\s*:\s*\**\s*(done|waiting|finished|complete|completed|blocked|working|continue)\s*\**\s*\.?\s*$/i;
 
 /**
  * Local LLM hire points the http adapter at `/v1/chat/completions`.
@@ -96,6 +97,12 @@ export function parseChatCompletionsReply(text: string): {
 } {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   let disposition: ChatCompletionsDisposition = "waiting";
+  const readWord = (word: string) => {
+    const lower = word.toLowerCase();
+    if (lower === "done" || lower === "finished" || lower === "complete" || lower === "completed") {
+      disposition = "done";
+    }
+  };
   while (lines.length > 0) {
     const last = lines[lines.length - 1]!;
     if (!last.trim()) {
@@ -103,12 +110,19 @@ export function parseChatCompletionsReply(text: string): {
       continue;
     }
     const match = last.match(STATUS_LINE_RE);
-    if (!match) break;
-    const word = match[1]!.toLowerCase();
-    if (word === "done" || word === "finished" || word === "complete" || word === "completed") {
-      disposition = "done";
+    if (match) {
+      readWord(match[1]!);
+      lines.pop();
+      continue;
     }
-    lines.pop();
+    // Small models sometimes tack the status onto the end of the last
+    // sentence ("Please choose one. STATUS: waiting"). Strip that suffix too.
+    const suffix = last.match(STATUS_SUFFIX_RE);
+    if (suffix) {
+      readWord(suffix[1]!);
+      lines[lines.length - 1] = last.slice(0, suffix.index).trimEnd();
+    }
+    break;
   }
   return { body: lines.join("\n").trim(), disposition };
 }
@@ -197,6 +211,9 @@ export function readChatCompletionsThread(context: Record<string, unknown>): Cha
  * status nudge). A chat model given a transcript that ends in its own turn
  * returns an empty completion; it needs a user turn to answer.
  */
+export const CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE =
+  "That reply had only a status line and no content. Write the reply itself now: the output the task asks for, or the one question you need answered. Then end with the status line.";
+
 export const CHAT_COMPLETIONS_CONTINUE_NUDGE =
   "(No reply from the person yet. Pick up where you left off in one short message, or restate the one question you most need answered.)";
 

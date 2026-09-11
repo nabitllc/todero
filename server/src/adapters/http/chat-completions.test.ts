@@ -178,3 +178,14 @@ describe("http adapter chat completions identity", () => {
     expect(system).not.toContain("The company mission:");
   });
 });
+
+describe("status line tacked onto the last sentence", () => {
+  it("strips a trailing status suffix and reads it", () => {
+    const reply = parseChatCompletionsReply("Which provider do you want? Please choose one. STATUS: waiting");
+    expect(reply.body).toBe("Which provider do you want? Please choose one.");
+    expect(reply.disposition).toBe("waiting");
+    const done = parseChatCompletionsReply("Here is the spec.\n\n1. Form\n2. Code **STATUS: done**");
+    expect(done.body).toBe("Here is the spec.\n\n1. Form\n2. Code");
+    expect(done.disposition).toBe("done");
+  });
+});

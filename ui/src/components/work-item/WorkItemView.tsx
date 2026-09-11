@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Paperclip } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Link } from "@/lib/router";
 import { relativeTime, formatDateTime } from "@/lib/utils";
 import { workModeMetaFor, nextWorkMode } from "@/lib/work-mode-meta";
-import type { IssueWorkMode } from "@todero/shared";
+import type { IssueWorkMode, ToderoPlan } from "@todero/shared";
 import "./work-item.css";
 import {
   BOLT_VALUE,
@@ -28,6 +28,7 @@ import {
   type WorkItemBlockedBy,
   type WorkItemChecklistItem,
   type WorkItemPriority,
+  type WorkItemTaskRow,
   type WorkItemSection,
   type WorkItemStatus,
   type WorkItemTrailEntry,
@@ -45,6 +46,12 @@ export type WorkItemViewProps = {
   body: string;
   /** False on the onboarding first task, whose description is the agent's brief. */
   bodyEditable?: boolean;
+  /** The plan the agent proposed, parsed from the task's Plan document. */
+  plan?: ToderoPlan | null;
+  /** True while the plan is waiting for the person: shows the approval card. */
+  planApprovable?: boolean;
+  /** Child tasks created from the plan, oldest first. */
+  tasks?: WorkItemTaskRow[];
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
   trail: WorkItemTrailEntry[];
@@ -68,6 +75,8 @@ export type WorkItemViewProps = {
   onTypeChange?: (type: WorkItemType) => void;
   onTitleSave?: (title: string) => void;
   onBodySave?: (body: string) => void;
+  onPlanApprove?: (keep: string[]) => void;
+  onPlanChanges?: () => void;
   onStatusChange?: (status: WorkItemStatus) => void;
   onPriorityChange?: (priority: WorkItemPriority) => void;
   onAssigneeChange?: (assigneeId: string | null) => void;
@@ -108,6 +117,9 @@ export function WorkItemView(props: WorkItemViewProps) {
     title,
     body,
     bodyEditable = true,
+    plan = null,
+    planApprovable = false,
+    tasks = [],
     sections,
     checklist,
     trail,
@@ -131,6 +143,8 @@ export function WorkItemView(props: WorkItemViewProps) {
     onTypeChange,
     onTitleSave,
     onBodySave,
+    onPlanApprove,
+    onPlanChanges,
     onStatusChange,
     onPriorityChange,
     onAssigneeChange,
@@ -152,6 +166,13 @@ export function WorkItemView(props: WorkItemViewProps) {
   const [bodyDraft, setBodyDraft] = useState(body);
   const [titleDraft, setTitleDraft] = useState(title);
   const [comment, setComment] = useState("");
+  // Unticked plan tasks. Reset whenever a different plan arrives.
+  const [droppedPlanTasks, setDroppedPlanTasks] = useState<Set<string>>(() => new Set());
+  const planKey = plan ? plan.tasks.map((task) => task.id + task.title).join("|") : "";
+  useEffect(() => {
+    setDroppedPlanTasks(new Set());
+  }, [planKey]);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [agentListOpen, setAgentListOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const frozen = statusFreezesAssignee(status);
@@ -362,6 +383,24 @@ export function WorkItemView(props: WorkItemViewProps) {
               </section>
             ))}
 
+            {tasks.length > 0 && (
+              <section className="work-item-section" data-testid="work-item-tasks">
+                <h2 className="work-item-section-title">Tasks</h2>
+                <ol className="work-item-task-list">
+                  {tasks.map((task) => (
+                    <li key={task.id} className="work-item-task-row" data-testid="work-item-task-row" data-status={task.status}>
+                      <span className={`work-item-task-status work-item-task-status-${task.status}`}>
+                        {WORK_ITEM_STATUS_LABELS[task.status]}
+                      </span>
+                      <Link to={task.href} className="work-item-task-link">
+                        <span className="work-item-task-id">{task.identifier}</span> {task.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+
             {checklist.length > 0 ? (
               <div className="work-item-checklist" data-testid="work-item-checklist">
                 {checklist.map((item) => (
@@ -568,6 +607,15 @@ export function WorkItemView(props: WorkItemViewProps) {
               <span className="work-item-fact-value work-item-fact-mono" data-testid="work-item-token-cost">{tokenCost}</span>
             </Fact>
 
+            {plan && (
+              <Fact label="Plan" testId="work-item-plan-fact">
+                <span className="work-item-fact-value">
+                  {plan.features.length} {plan.features.length === 1 ? "feature" : "features"} · {plan.tasks.length}{" "}
+                  {plan.tasks.length === 1 ? "task" : "tasks"}
+                </span>
+              </Fact>
+            )}
+
             <Fact label="Bolt">
               <span className="work-item-bolt" data-testid="work-item-bolt">{BOLT_VALUE}</span>
             </Fact>
@@ -624,8 +672,80 @@ export function WorkItemView(props: WorkItemViewProps) {
           )}
         </div>
 
+        {plan && planApprovable && (
+          <section className="work-item-plan-card" data-testid="work-item-plan-card">
+            <div className="work-item-plan-card-head">
+              <span className="work-item-plan-card-label">Proposed plan</span>
+              <p className="work-item-plan-goal">{plan.goal}</p>
+            </div>
+            {plan.features.length > 0 && (
+              <ul className="work-item-plan-features">
+                {plan.features.map((feature) => (
+                  <li key={feature.id} className="work-item-plan-feature">
+                    <span className="work-item-plan-feature-name">{feature.name}</span>
+                    {feature.doneWhen ? <span className="work-item-plan-feature-done"> · done when {feature.doneWhen}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <ul className="work-item-plan-tasks">
+              {plan.tasks.map((task) => {
+                const kept = !droppedPlanTasks.has(task.id);
+                return (
+                  <li key={task.id} className="work-item-plan-task">
+                    <label className="work-item-plan-task-label">
+                      <input
+                        type="checkbox"
+                        className="work-item-plan-task-check"
+                        data-testid="work-item-plan-task-check"
+                        data-task-id={task.id}
+                        checked={kept}
+                        onChange={() => {
+                          setDroppedPlanTasks((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(task.id)) next.delete(task.id);
+                            else next.add(task.id);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span className={kept ? "work-item-plan-task-title" : "work-item-plan-task-title work-item-plan-task-dropped"}>
+                        {task.title}
+                      </span>
+                      {task.feature ? <span className="work-item-plan-task-feature">{task.feature}</span> : null}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="work-item-plan-actions">
+              <button
+                type="button"
+                className="work-item-plan-approve"
+                data-testid="work-item-plan-approve"
+                disabled={droppedPlanTasks.size >= plan.tasks.length}
+                onClick={() => onPlanApprove?.(plan.tasks.filter((task) => !droppedPlanTasks.has(task.id)).map((task) => task.id))}
+              >
+                Approve {plan.tasks.length - droppedPlanTasks.size} of {plan.tasks.length}
+              </button>
+              <button
+                type="button"
+                className="work-item-plan-changes"
+                data-testid="work-item-plan-changes"
+                onClick={() => {
+                  onPlanChanges?.();
+                  composerRef.current?.focus();
+                }}
+              >
+                Ask for changes
+              </button>
+            </div>
+          </section>
+        )}
+
         <form className="work-item-composer" data-testid="work-item-composer" onSubmit={submitComment}>
           <textarea
+            ref={composerRef}
             className="work-item-composer-input"
             data-testid="work-item-composer-input"
             placeholder={COMPOSER_PLACEHOLDER}

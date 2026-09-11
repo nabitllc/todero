@@ -116,12 +116,15 @@ import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 import {
+  buildConversationPlanDocumentBody,
+  CONVERSATION_PLAN_DOCUMENT_KEY,
   isConversationalHttpAgent,
   loadConversationIdentity,
   loadConversationThread,
   planConversationDisposition,
   readConversationDisposition,
 } from "../todero/conversation-thread.js";
+import { documentService } from "./documents.js";
 import {
   buildHeartbeatRunIssueComment,
   HEARTBEAT_RUN_RESULT_OUTPUT_MAX_CHARS,
@@ -17113,6 +17116,30 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             await onLog(
               "stderr",
               `[todero] Failed to post run summary comment: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
+        }
+        // A conversational reply that carried a plan block becomes the task's
+        // Plan document; the work-item view shows it as the approval card.
+        const conversationPlanBlock = readNonEmptyString(parseObject(persistedResultJson).toderoPlanBlock);
+        if (issueId && outcome === "succeeded" && conversationPlanBlock) {
+          try {
+            await documentService(db).upsertIssueDocument({
+              issueId,
+              key: CONVERSATION_PLAN_DOCUMENT_KEY,
+              title: "Plan",
+              format: "markdown",
+              body: buildConversationPlanDocumentBody(conversationPlanBlock),
+              changeSummary: "Proposed by the agent in the task thread.",
+              createdByAgentId: agent.id,
+              createdByRunId: livenessRun.id,
+              lockedDocumentStrategy: "conflict",
+            });
+            await onLog("stdout", "[todero] Saved the proposed plan.\n");
+          } catch (err) {
+            await onLog(
+              "stderr",
+              `[todero] Failed to save the proposed plan: ${err instanceof Error ? err.message : String(err)}\n`,
             );
           }
         }

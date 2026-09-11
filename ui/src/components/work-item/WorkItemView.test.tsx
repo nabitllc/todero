@@ -299,3 +299,71 @@ describe("WorkItemView TESA-1", () => {
   });
 
 });
+
+describe("proposed plan card and tasks", () => {
+  const plan = {
+    goal: "Seat Tampa neighbors at weekend dinners with strangers.",
+    features: [
+      { id: "f1", name: "Sign up", why: "Accounts", doneWhen: "a phone code works" },
+      { id: "f2", name: "Pick a dinner", why: "The product", doneWhen: "one dinner can be picked" },
+    ],
+    tasks: [
+      { id: "t1", title: "Write the sign-up spec", feature: "Sign up", output: "A spec" },
+      { id: "t2", title: "List ten restaurants", feature: "Pick a dinner", output: "A table" },
+      { id: "t3", title: "Draft the matching rules", feature: "Pick a dinner", output: "A document" },
+    ],
+  };
+
+  it("shows the plan as ticked tasks and approves only what stays ticked", async () => {
+    const onPlanApprove = vi.fn();
+    await render(fixture({ status: "blocked", blockedBy: { kind: "waiting-on-you" }, plan, planApprovable: true, onPlanApprove }));
+    const card = container.querySelector('[data-testid="work-item-plan-card"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain("Seat Tampa neighbors");
+    expect(card!.textContent).toContain("done when a phone code works");
+    const checks = [...container.querySelectorAll<HTMLInputElement>('[data-testid="work-item-plan-task-check"]')];
+    expect(checks).toHaveLength(3);
+    expect(checks.every((c) => c.checked)).toBe(true);
+    expect(container.querySelector('[data-testid="work-item-plan-approve"]')!.textContent).toBe("Approve 3 of 3");
+
+    await act(async () => {
+      checks[1]!.click();
+    });
+    expect(container.querySelector('[data-testid="work-item-plan-approve"]')!.textContent).toBe("Approve 2 of 3");
+    await act(async () => {
+      (container.querySelector('[data-testid="work-item-plan-approve"]') as HTMLButtonElement).click();
+    });
+    expect(onPlanApprove).toHaveBeenCalledWith(["t1", "t3"]);
+  });
+
+  it("cannot approve an empty plan and hides the card once it is not approvable", async () => {
+    await render(fixture({ plan, planApprovable: true }));
+    const checks = [...container.querySelectorAll<HTMLInputElement>('[data-testid="work-item-plan-task-check"]')];
+    await act(async () => {
+      for (const check of checks) check.click();
+    });
+    expect((container.querySelector('[data-testid="work-item-plan-approve"]') as HTMLButtonElement).disabled).toBe(true);
+
+    await render(fixture({ plan, planApprovable: false }));
+    expect(container.querySelector('[data-testid="work-item-plan-card"]')).toBeNull();
+    expect(container.querySelector('[data-testid="work-item-plan-fact"]')?.textContent).toContain("2 features · 3 tasks");
+  });
+
+  it("lists the tasks created from the plan with their status", async () => {
+    await render(
+      fixture({
+        tasks: [
+          { id: "a", identifier: "ZZW-2", title: "Write the sign-up spec", status: "done", href: "/ZZW/issues/ZZW-2" },
+          { id: "b", identifier: "ZZW-3", title: "List ten restaurants", status: "in_progress", href: "/ZZW/issues/ZZW-3" },
+          { id: "c", identifier: "ZZW-4", title: "Draft the matching rules", status: "new", href: "/ZZW/issues/ZZW-4" },
+        ],
+      }),
+    );
+    const rows = [...container.querySelectorAll('[data-testid="work-item-task-row"]')];
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toContain("ZZW-2");
+    expect(rows[0]!.textContent).toContain("Done");
+    expect(rows[1]!.textContent).toContain("In progress");
+    expect(rows[2]!.querySelector("a")?.getAttribute("href")).toBe("/ZZW/issues/ZZW-4");
+  });
+});

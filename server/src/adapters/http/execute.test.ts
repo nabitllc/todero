@@ -241,3 +241,43 @@ describe("http adapter execute", () => {
     );
   });
 });
+
+describe("http adapter chat completions: plan block and empty replies", () => {
+  it("lifts a plan block out of the reply and keeps the words around it as the comment", async () => {
+    const reply = [
+      "Here is my proposal.",
+      "",
+      "```todero-plan",
+      "goal: Seat neighbors at dinners",
+      "tasks:",
+      "  - title: Draft the sign-up spec",
+      "```",
+      "",
+      "STATUS: waiting",
+    ].join("\n");
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(reply)));
+    const result = await execute(localLlmExecuteArgs());
+    expect(result.summary).toBe("Here is my proposal.");
+    expect(result.resultJson).toMatchObject({ toderoDisposition: "waiting" });
+    expect(String((result.resultJson as Record<string, unknown>).toderoPlanBlock)).toContain("goal: Seat neighbors at dinners");
+    expect(String((result.resultJson as Record<string, unknown>).toderoPlanBlock)).toContain("- title: Draft the sign-up spec");
+  });
+
+  it("asks once more when the model answers with only a status line", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatCompletionsResponse("STATUS: waiting"))
+      .mockResolvedValueOnce(chatCompletionsResponse("Here is the registration form spec.\nSTATUS: done"));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await execute(localLlmExecuteArgs());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const secondBody = JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body)) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    expect(secondBody.messages.at(-2)).toEqual({ role: "assistant", content: "STATUS: waiting" });
+    expect(secondBody.messages.at(-1)?.role).toBe("user");
+    expect(secondBody.messages.at(-1)?.content).toContain("only a status line");
+    expect(result.summary).toBe("Here is the registration form spec.");
+    expect(result.resultJson).toMatchObject({ toderoDisposition: "done" });
+  });
+});
