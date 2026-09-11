@@ -46,6 +46,23 @@ export function descriptionWithPlanMarker(description: string | null | undefined
 
 export type ConversationOutcome = "done" | "review" | "waiting";
 
+export type ConversationOutcomePlan = {
+  outcome: ConversationOutcome;
+  status: "done" | "blocked";
+  description: string;
+};
+
+/**
+ * Every conversation marker off. What a task keeps once it closes, and the
+ * clean base a task sent back for another round starts from.
+ */
+export function descriptionWithoutConversationMarkers(description: string | null | undefined): string {
+  return descriptionWithWaitingMarker(
+    descriptionWithPlanMarker(descriptionWithReviewMarker(description, false), false),
+    false,
+  );
+}
+
 /**
  * Wave C: a child task's "done" is not the end. Its output goes to the
  * person first (blocked, waiting on you, review pending); Accept closes it
@@ -62,7 +79,7 @@ export function planConversationOutcome(input: {
    * after proposing a plan, is handing the turn back, whatever it wrote.
    */
   closeAllowed?: boolean;
-}): { outcome: ConversationOutcome; status: "done" | "blocked"; description: string } | null {
+}): ConversationOutcomePlan | null {
   if (input.issue.status !== "in_progress") return null;
   const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false);
   const isConversation = !input.issue.parentId;
@@ -82,6 +99,30 @@ export function planConversationOutcome(input: {
     description: input.proposedPlan
       ? descriptionWithPlanMarker(descriptionWithWaitingMarker(base, true), true)
       : descriptionWithWaitingMarker(base, true),
+  };
+}
+
+/** What the reviewer decided about a hand-in that was headed for the person. */
+export type ReviewerDecision = "accept" | "handoff" | "revise" | "none";
+
+/**
+ * Wave E: the reviewer reads the hand-in before the person does, and only its
+ * "accept" changes where the task lands — it closes the task the same way the
+ * person's Accept does. "revise" means the reviewer already sent the task back
+ * to the agent, so there is nothing left for the caller to write (null).
+ * Anything else leaves the review gate exactly where Wave C put it.
+ */
+export function planReviewedOutcome(
+  plan: ConversationOutcomePlan,
+  decision: ReviewerDecision,
+): ConversationOutcomePlan | null {
+  if (plan.outcome !== "review") return plan;
+  if (decision === "revise") return null;
+  if (decision !== "accept") return plan;
+  return {
+    outcome: "done",
+    status: "done",
+    description: descriptionWithoutConversationMarkers(plan.description),
   };
 }
 

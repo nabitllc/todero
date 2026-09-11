@@ -34,13 +34,35 @@ function clipTurn(body: string): string {
 }
 
 /**
+ * Whose turn a comment is, from the point of view of the agent about to read
+ * the thread. Its own comments are its own turns; everything else — the
+ * person, and any other agent such as the reviewer — is a turn it must answer.
+ * Without the reader, any agent comment counts as its own, which is what the
+ * single-agent case has always done.
+ */
+export function conversationTurnRole(
+  comment: {
+    authorType: string | null;
+    authorAgentId: string | null;
+    derivedAuthorAgentId: string | null;
+  },
+  readerAgentId?: string | null,
+): "agent" | "user" {
+  const authorAgentId = comment.authorAgentId || comment.derivedAuthorAgentId || null;
+  const fromAnAgent = comment.authorType === "agent" || Boolean(authorAgentId);
+  if (!fromAnAgent) return "user";
+  if (!readerAgentId) return "agent";
+  return authorAgentId === readerAgentId ? "agent" : "user";
+}
+
+/**
  * Oldest-first turns of the human/agent conversation on an issue. System
  * notices (comments with a presentation block) are Todero talking to itself
  * about recovery and never belong in the model's context.
  */
 export async function loadConversationThread(
   db: Db,
-  input: { companyId: string; issueId: string; limit?: number },
+  input: { companyId: string; issueId: string; limit?: number; readerAgentId?: string | null },
 ): Promise<ConversationTurn[]> {
   const limit = input.limit ?? CONVERSATION_THREAD_MAX_TURNS;
   const rows = await db
@@ -67,9 +89,7 @@ export async function loadConversationThread(
     if (row.presentation) continue;
     const body = clipTurn(row.body ?? "");
     if (!body) continue;
-    const isAgent =
-      row.authorType === "agent" || Boolean(row.authorAgentId || row.derivedAuthorAgentId);
-    turns.push({ role: isAgent ? "agent" : "user", body });
+    turns.push({ role: conversationTurnRole(row, input.readerAgentId), body });
     if (turns.length >= limit) break;
   }
   return turns.reverse();

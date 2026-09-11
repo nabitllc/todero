@@ -3,10 +3,12 @@ import { descriptionWithWaitingMarker, WAITING_ON_YOU_MARKER } from "./conversat
 import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
+  descriptionWithoutConversationMarkers,
   descriptionWithPlanMarker,
   descriptionWithReviewMarker,
   PLAN_PENDING_MARKER,
   planConversationOutcome,
+  planReviewedOutcome,
   REVIEW_PENDING_MARKER,
 } from "./conversation-outcome.js";
 
@@ -94,5 +96,54 @@ describe("plan wrap-up turn", () => {
     const turn = buildPlanSummaryTurnInstruction(children);
     expect(turn).toContain("- T-2 Spec (done)");
     expect(turn).toContain("STATUS: done");
+  });
+});
+
+describe("planReviewedOutcome", () => {
+  const handIn = planConversationOutcome({
+    issue: { status: "in_progress", description: "<!-- todero-type: Task -->\nDraft it\n", parentId: "parent" },
+    disposition: "done",
+  })!;
+
+  it("closes the task when the reviewer accepts, with no marker left behind", () => {
+    const accepted = planReviewedOutcome(handIn, "accept");
+    expect(accepted?.outcome).toBe("done");
+    expect(accepted?.status).toBe("done");
+    expect(accepted?.description).not.toContain(WAITING_ON_YOU_MARKER);
+    expect(accepted?.description).not.toContain(REVIEW_PENDING_MARKER);
+    expect(accepted?.description).not.toContain(PLAN_PENDING_MARKER);
+    expect(accepted?.description).toContain("Draft it");
+  });
+
+  it("leaves the review gate standing for a hand-off and for no review at all", () => {
+    expect(planReviewedOutcome(handIn, "handoff")).toEqual(handIn);
+    expect(planReviewedOutcome(handIn, "none")).toEqual(handIn);
+  });
+
+  it("writes nothing when the reviewer already sent the task back", () => {
+    expect(planReviewedOutcome(handIn, "revise")).toBeNull();
+  });
+
+  it("never touches an outcome that was not a hand-in", () => {
+    const waiting = planConversationOutcome({
+      issue: { status: "in_progress", description: "Mission", parentId: null },
+      disposition: "waiting",
+    })!;
+    expect(planReviewedOutcome(waiting, "accept")).toEqual(waiting);
+  });
+});
+
+describe("descriptionWithoutConversationMarkers", () => {
+  it("strips every conversation marker and keeps the body", () => {
+    const noisy = descriptionWithReviewMarker(
+      descriptionWithPlanMarker(descriptionWithWaitingMarker("<!-- todero-type: Task -->\nBody", true), true),
+      true,
+    );
+    const clean = descriptionWithoutConversationMarkers(noisy);
+    expect(clean).not.toContain(WAITING_ON_YOU_MARKER);
+    expect(clean).not.toContain(REVIEW_PENDING_MARKER);
+    expect(clean).not.toContain(PLAN_PENDING_MARKER);
+    expect(clean).toContain("Body");
+    expect(clean).toContain("<!-- todero-type: Task -->");
   });
 });
