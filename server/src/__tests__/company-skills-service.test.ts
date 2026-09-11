@@ -447,8 +447,9 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     // Keep the skill's own frontmatter metadata (the skill pack carries
     // version, upstream and routing fields) so the only stale thing is the
     // missing-source note; dropping it would be a real change to refresh.
-    const ownMetadata = bundledSkill.metadata && typeof bundledSkill.metadata === "object"
-      ? (bundledSkill.metadata as Record<string, unknown>)
+    const storedBefore = await svc.getById(companyId, bundledSkill.id);
+    const ownMetadata = storedBefore?.metadata && typeof storedBefore.metadata === "object"
+      ? (storedBefore.metadata as Record<string, unknown>)
       : {};
     await db
       .update(companySkills)
