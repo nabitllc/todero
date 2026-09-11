@@ -6,7 +6,9 @@ checks, diffs the previous wave, captures the telemetry window and writes the re
 
 - `checks.json`: the surface at the top, then the checks. Baseline checks first (smoke, tokens,
   typecheck, unit per package, file-size caps, the live loop on Ollama), then one check per work
-  item that fails until the item is done.
+  item that fails until the item is done. Item tests are named `*.gauntlet.ts(x)` so the ordinary
+  suites and CI never pick them up; `checks/vitest.mjs --gauntlet` runs them through the package's
+  `vitest.gauntlet.config.ts`.
 - `checks/`: the scripts the checks call. `_lib.mjs` resolves the repo root; `vitest.mjs`, `tsc.mjs`
   and `pnpm-run.mjs` wrap the per-package commands that run on Windows (the full `pnpm typecheck` and
   `pnpm test` do not, see `../session_gates.md`); `repeat.mjs` runs a test file N times for timing

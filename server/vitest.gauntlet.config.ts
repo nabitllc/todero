@@ -1,8 +1,8 @@
 // The gauntlet's item checks: tests that are meant to fail until a work item
 // is done (docs/ai_context/gauntlet/checks.json). They are named
-// *.gauntlet.test.ts and excluded from the ordinary suite so CI stays green
+// *.gauntlet.ts, a name the ordinary suite never picks up, so CI stays green
 // while an item is open; the gauntlet runs them by path through this config.
-// Built by spreading, not mergeConfig: merging would keep the base exclusion.
+// Built by spreading, not mergeConfig, so the include is replaced.
 import { defineConfig } from "vitest/config";
 import base from "./vitest.config.ts";
 
@@ -10,7 +10,7 @@ export default defineConfig({
   ...base,
   test: {
     ...base.test,
-    include: ["src/**/*.gauntlet.test.ts"],
+    include: ["src/**/*.gauntlet.ts"],
     exclude: ["**/node_modules/**", "**/dist/**"],
   },
 });

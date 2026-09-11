@@ -8,7 +8,7 @@ import path from "node:path";
 import { REPO_ROOT, run, vitestBin } from "./_lib.mjs";
 
 // --gauntlet runs through the package's vitest.gauntlet.config.ts, the only
-// config that includes the *.gauntlet.test.* item checks.
+// config that includes the *.gauntlet.ts(x) item checks.
 const argv = process.argv.slice(2);
 const gauntlet = argv.includes("--gauntlet");
 const [pkg, ...targets] = argv.filter((arg) => arg !== "--gauntlet");

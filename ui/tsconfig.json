@@ -17,6 +17,6 @@
     }
   },
   "include": ["src", "storybook"],
-  // *.gauntlet.test.* fail on purpose until their work item is done (docs/ai_context/gauntlet); vitest runs them, tsc does not.
-  "exclude": ["src/**/*.gauntlet.test.ts", "src/**/*.gauntlet.test.tsx"]
+  // *.gauntlet.ts(x) fail on purpose until their work item is done (docs/ai_context/gauntlet); vitest runs them, tsc does not.
+  "exclude": ["src/**/*.gauntlet.ts", "src/**/*.gauntlet.tsx"]
 }

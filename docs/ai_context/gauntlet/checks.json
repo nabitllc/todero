@@ -11,10 +11,10 @@
     { "id": "unit_server_core", "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts", "timeout": 1200 },
     { "id": "file_size_caps", "cmd": "node checks/file-size-caps.mjs", "timeout": 120 },
     { "id": "live_loop_ollama", "cmd": "python checks/live-loop.py", "timeout": 1200 },
-    { "id": "item1_skill_rows", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.test.ts src/components/skills/SkillPackRowMeta.gauntlet.test.tsx", "timeout": 600 },
-    { "id": "item2_wizard_window", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.test.ts", "timeout": 600 },
-    { "id": "item3_board_reorder", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.test.ts", "timeout": 600 },
-    { "id": "item4_send_back_one_call", "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.test.ts", "timeout": 900 },
+    { "id": "item1_skill_rows", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx", "timeout": 600 },
+    { "id": "item2_wizard_window", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts", "timeout": 600 },
+    { "id": "item3_board_reorder", "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts", "timeout": 600 },
+    { "id": "item4_send_back_one_call", "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts", "timeout": 900 },
     { "id": "item5_task_drain_stable", "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts", "timeout": 1500 }
   ]
 }

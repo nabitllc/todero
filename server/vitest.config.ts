@@ -16,9 +16,6 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
-    // *.gauntlet.test.ts are the gauntlet's item checks, which fail on purpose
-    // until their work item is done; vitest.gauntlet.config.ts runs them.
-    exclude: ["**/node_modules/**", "**/dist/**", "**/*.gauntlet.test.ts"],
     // Each server suite boots + tears down its own embedded Postgres in
     // beforeAll/afterAll. Under the loaded serial shard (maxWorkers=1) the
     // graceful shutdown can occasionally cross vitest's default 10s hookTimeout,
