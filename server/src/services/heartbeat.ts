@@ -130,6 +130,7 @@ import {
   loadPlanChildren,
   planConversationOutcome,
 } from "../todero/conversation-outcome.js";
+import type { ModelRoutingTaskKind } from "../todero/model-routing.js";
 import { documentService } from "./documents.js";
 import {
   buildHeartbeatRunIssueComment,
@@ -14840,10 +14841,20 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           context.toderoTurnInstruction = buildPlanSummaryTurnInstruction(planChildren);
         }
       }
+      // Model routing (server/src/todero/model-routing.ts) reads this to pick
+      // a model per turn. A closing instruction (set just above, when this
+      // wake is the wrap-up) means wrap-up; a task created under a parent
+      // from an approved plan is drafting; otherwise this is the standing
+      // conversation task.
+      const turnInstruction: ModelRoutingTaskKind | null = readNonEmptyString(context.toderoTurnInstruction)
+        ? "wrap-up"
+        : null;
+      context.toderoTaskKind = turnInstruction ?? (issueContext?.parentId ? "drafting" : "planning");
     } else {
       delete context.toderoThread;
       delete context.toderoIdentity;
       delete context.toderoTurnInstruction;
+      delete context.toderoTaskKind;
     }
     if (issueRef) {
       context.toderoIssue = {

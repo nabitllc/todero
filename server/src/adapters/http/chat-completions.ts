@@ -1,4 +1,5 @@
 import { asString, parseObject } from "../utils.js";
+import { pickModelForKind, type ModelRoutingTaskKind } from "../../todero/model-routing.js";
 
 export type ChatCompletionsMessage = {
   role: string;
@@ -259,14 +260,50 @@ export function buildChatCompletionsMessages(
   return messages;
 }
 
+const MODEL_ROUTING_TASK_KINDS: ModelRoutingTaskKind[] = [
+  "planning",
+  "judging",
+  "drafting",
+  "wrap-up",
+  "formatting",
+];
+
+/**
+ * `context.toderoTaskKind`, set by the heartbeat before invoking the
+ * adapter. Unrecognized or missing values mean "no routing preference" —
+ * the caller keeps the model it already resolved from config.
+ */
+function readTaskKind(context: Record<string, unknown>): ModelRoutingTaskKind | null {
+  const raw = readNonEmptyString(context.toderoTaskKind);
+  return (MODEL_ROUTING_TASK_KINDS as string[]).includes(raw) ? (raw as ModelRoutingTaskKind) : null;
+}
+
+/**
+ * `context.toderoAvailableModels`, the flat list of model ids the local-llm
+ * detect endpoint reported for the runtime in use. Not always populated —
+ * `pickModelForKind` falls back to the default model when it is empty.
+ */
+function readAvailableModels(context: Record<string, unknown>): string[] {
+  const raw = context.toderoAvailableModels;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
 export function buildChatCompletionsBody(input: {
   config: Record<string, unknown>;
   context: Record<string, unknown>;
   payloadTemplate: Record<string, unknown>;
   agentName?: string;
 }): Record<string, unknown> {
-  const model =
+  const configuredModel =
     asString(input.config.model, "") || asString(input.payloadTemplate.model, "");
+  const kind = readTaskKind(input.context);
+  // Routing only has an opinion when the heartbeat named a task kind; with
+  // no kind (a non-conversational http agent, or a call site that predates
+  // this) the previously configured model is used unchanged.
+  const model = kind
+    ? pickModelForKind({ kind, available: readAvailableModels(input.context), defaultModel: configuredModel })
+    : configuredModel;
   return {
     ...input.payloadTemplate,
     ...(model ? { model } : {}),

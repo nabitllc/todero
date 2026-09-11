@@ -175,6 +175,35 @@ describe("http adapter execute", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v1/chat/completions");
   });
 
+  it("records the model that actually answered in resultJson.toderoModel", async () => {
+    const fetchMock = vi.fn(async () => chatCompletionsResponse(LOCAL_LLM_COMPLETION));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = localLlmExecuteArgs();
+    const result = await execute(args);
+
+    expect((result.resultJson as Record<string, unknown> | undefined)?.toderoModel).toBe(
+      "local-model",
+    );
+  });
+
+  it("records the routed model, not the configured default, when a task kind picks a different one", async () => {
+    const fetchMock = vi.fn(async () => chatCompletionsResponse(LOCAL_LLM_COMPLETION));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = localLlmExecuteArgs();
+    args.context = {
+      ...args.context,
+      toderoTaskKind: "planning",
+      toderoAvailableModels: ["qwen2.5-coder:14b"],
+    };
+    const result = await execute(args);
+
+    expect((result.resultJson as Record<string, unknown> | undefined)?.toderoModel).toBe(
+      "qwen2.5-coder:14b",
+    );
+  });
+
   it("writes a 2xx chat completion onto the ticket comment the heartbeat posts", async () => {
     const fetchMock = vi.fn(async () => chatCompletionsResponse(LOCAL_LLM_COMPLETION));
     vi.stubGlobal("fetch", fetchMock);

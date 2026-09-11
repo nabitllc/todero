@@ -312,3 +312,36 @@ instead of guessing.
   `server/src/services/heartbeat.ts` (thread context and disposition), `server/src/services/company-skills.ts`
   (snapshot refresh), `server/src/services/heartbeat-run-summary.ts` (comment cap),
   `ui/src/components/work-item/WorkItemView.tsx`, `ui/src/components/OnboardingWizard.tsx`.
+
+## ADR-013 — Local model routing and orchestration rules are data
+
+- **Date:** 2026-09-10
+- **Status:** Accepted
+- **Context:** Which local model answers a turn, and how many workers or judge passes run, were
+  either hardcoded one call site at a time or not decided anywhere yet. A machine serving more
+  than one model size (a strongest-available class alongside a small fast one) had no place to
+  express "use the bigger one for planning, the smallest for reformatting."
+- **Decision:** `server/src/todero/model-routing.ts` holds a table from task kind (`planning`,
+  `judging`, `drafting`, `wrap-up`, `formatting`) to a preference order of model classes
+  (`strongest_local` = 12-16B parsed from the model id, `fastest_local` = smallest parsed size,
+  `wizard_default` = the agent's configured model). `pickModelForKind` resolves the first class
+  that matches a model in the list the local-llm detect endpoint reports, falling back to the
+  default. `chat-completions.ts`'s `buildChatCompletionsBody` calls it via `context.toderoTaskKind`,
+  which the heartbeat sets to `planning` for the standing conversation task, `drafting` for a task
+  with a parent, and `wrap-up` when a closing turn instruction is present; the chosen model is
+  recorded as `resultJson.toderoModel`. Separately, `server/src/todero/orchestration-rules.json` +
+  `orchestration-rules.ts` hold `judgeAfterFirstPlan`, `extraWorkerWhenReadyTasksAbove`,
+  `neverMoreAgentsThanModelsServed`, `maxJudgeRounds`, and `busyTimerSec` as one file with a
+  tolerant loader (missing file, bad JSON, or a wrong-typed field all fall back to the built-in
+  defaults field-by-field). Nothing consumes the orchestration rules yet — no judge pass, extra
+  worker, or busy timer exists in the code to wire them into.
+- **Consequences:**
+  - Adding a model class or a task kind is a table edit, not a new `if` at a call site.
+  - The rules file has no consumer yet by design; a future wave wires `heartbeat.ts` /
+    `issues.ts` to it instead of inventing another local constant.
+  - `context.toderoAvailableModels` (the list `pickModelForKind` ranks) is not populated by the
+    heartbeat yet, since no wave threads a live detect result into run context; until it is,
+    routing always falls through to the default model, which matches today's behavior exactly.
+- **Source:** `server/src/todero/model-routing.ts`, `server/src/todero/orchestration-rules.ts`,
+  `server/src/todero/orchestration-rules.json`, `server/src/adapters/http/chat-completions.ts`,
+  `server/src/adapters/http/execute.ts`, `server/src/services/heartbeat.ts`.
