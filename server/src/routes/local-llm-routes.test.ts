@@ -14,6 +14,15 @@ vi.mock("../todero/local-llm-test.js", () => ({
   testLocalLlmConnection: mockTestLocalLlmConnection,
 }));
 
+// The served window is asked of the runtime after a passing test; a fixed
+// answer keeps this file off the network.
+const mockDetectContextLength = vi.hoisted(() => vi.fn(async () => 4096));
+
+vi.mock("../todero/available-models.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../todero/available-models.js")>();
+  return { ...actual, detectContextLength: mockDetectContextLength };
+});
+
 import { toderoLocalLlmRoutes } from "./local-llm-routes.js";
 
 describe("toderoLocalLlmRoutes", () => {
@@ -53,7 +62,7 @@ describe("POST /api/todero/local-llm/test", () => {
       .post("/api/todero/local-llm/test")
       .send({ baseUrl: "http://127.0.0.1:11434", modelId: "qwen2.5-coder:latest" });
     expect(ok.status).toBe(200);
-    expect(ok.body).toEqual({ ok: true, reply: "OK", latencyMs: 12, availableModels: [] });
+    expect(ok.body).toEqual({ ok: true, reply: "OK", latencyMs: 12, availableModels: [], contextLength: 4096 });
     expect(mockTestLocalLlmConnection).toHaveBeenCalledWith({
       baseUrl: "http://127.0.0.1:11434",
       modelId: "qwen2.5-coder:latest",
@@ -97,10 +106,16 @@ describe("POST /api/todero/local-llm/test", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.availableModels).toEqual(["llama3.2:1b", "qwen2.5-coder:14b"]);
+    expect(res.body.contextLength).toBe(4096);
     expect(updates).toEqual([
       {
         interactionResolverGovernance: {
           toderoLocalLlmAvailableModelIds: ["llama3.2:1b", "qwen2.5-coder:14b"],
+        },
+      },
+      {
+        interactionResolverGovernance: {
+          toderoLocalLlmContextLength: 4096,
         },
       },
     ]);

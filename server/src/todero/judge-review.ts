@@ -8,8 +8,9 @@
  * copy of the worker's, so there is nothing extra to configure.
  */
 import type { Db } from "@todero/db";
-import { parseToderoPlanBlock, type ToderoPlan } from "@todero/shared";
+import { parseToderoPlanBlock, type CompanySkill, type ToderoPlan } from "@todero/shared";
 import { isChatCompletionsUrl, parseChatCompletionsText } from "../adapters/http/chat-completions.js";
+import { companySkillService } from "../services/company-skills.js";
 import { documentService } from "../services/documents.js";
 import { CONVERSATION_PLAN_DOCUMENT_KEY } from "./conversation-thread.js";
 import { findJudgeAgentForLead, type JudgeAgentRow } from "./judge-agent.js";
@@ -26,6 +27,7 @@ import {
   type JudgeVerdict,
 } from "./judge.js";
 import { getManager } from "./manager-mode.js";
+import { loadAgentSkillText } from "./skill-pack.js";
 
 /** A cold second model load can be slow; the worker's own timeout is the same order. */
 export const JUDGE_REVIEW_TIMEOUT_MS = 120_000;
@@ -181,9 +183,24 @@ export async function reviewConversationHandIn(
   const planTask = findPlanTaskByTitle(plan, input.issue.title);
   const feature = findPlanFeatureForTask(plan, planTask);
 
+  // What the reviewer knows. The reviewer never goes through the worker's
+  // message path, so its skill is appended to its standing brief instead.
+  const reviewerSkills = await companySkillService(db)
+    .listFull(input.issue.companyId)
+    .catch(() => [] as CompanySkill[]);
+  const reviewerSkillText = loadAgentSkillText({
+    agent: judgeAgent,
+    kind: "judging",
+    companySkills: reviewerSkills,
+  }).text;
+
   const review = await requestJudgeVerdict({
     config,
-    systemPrompt: buildJudgeSystemPrompt({ judgeName: judgeAgent.name, companyName: input.companyName ?? null }),
+    systemPrompt: buildJudgeSystemPrompt({
+      judgeName: judgeAgent.name,
+      companyName: input.companyName ?? null,
+      skillText: reviewerSkillText || null,
+    }),
     prompt: buildJudgeReviewPrompt({
       goal: plan?.goal ?? null,
       featureName: feature?.name ?? planTask?.feature ?? null,

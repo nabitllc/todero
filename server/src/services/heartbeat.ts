@@ -21,6 +21,7 @@ import {
   envBindingSchema,
   isEnvironmentDriverSupportedForAdapter,
   type BillingType,
+  type CompanySkill,
   type CostStatus,
   type EnvironmentLeaseStatus,
   type ExecutionWorkspace,
@@ -142,7 +143,9 @@ import {
   markConversationDispositionApplied,
   withConversationDispositionApplied,
 } from "../todero/conversation-disposition-applied.js";
-import { resolveAvailableModelIdsForRun } from "../todero/available-models.js";
+import { resolveAvailableModelIdsForRun, resolveContextLengthForRun } from "../todero/available-models.js";
+import { loadAgentSkillText } from "../todero/skill-pack.js";
+import { syncAgentSkillFolder, writeAgentHandIn } from "../todero/agent-folder.js";
 import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
 import { applyJudgeReview, judgeFailRound } from "../todero/judge-apply.js";
@@ -14918,10 +14921,11 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         readerAgentId: agent.id,
       });
       // Its standing brief, since the http adapter never reads AGENTS.md.
-      context.toderoIdentity = await loadConversationIdentity(db, {
+      const conversationIdentity = await loadConversationIdentity(db, {
         agent,
         issueId: issueRef.id,
       });
+      context.toderoIdentity = conversationIdentity;
       // Woken because its last blocker closed and every child task is done:
       // this turn is the wrap-up, not another round of questions.
       delete context.toderoTurnInstruction;
@@ -14971,9 +14975,46 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // a model per turn. See resolveToderoTaskKind for the precedence: a
       // closing instruction (set just above, when this wake is the wrap-up)
       // always wins over the parent check.
-      context.toderoTaskKind = resolveToderoTaskKind({
+      const toderoTaskKind = resolveToderoTaskKind({
         turnInstructionPresent: Boolean(readNonEmptyString(context.toderoTurnInstruction)),
         hasParentIssue: Boolean(issueContext?.parentId),
+      });
+      context.toderoTaskKind = toderoTaskKind;
+      // What this agent knows for this kind of turn. The rows are the
+      // organization's own copies, so a person's edit takes effect on the
+      // next turn without a restart.
+      const skillPackSkills = await companySkills.listFull(agent.companyId).catch(() => [] as CompanySkill[]);
+      // The runtime's window bounds how much of the pack a turn can carry;
+      // recorded by the connection test, null (a 4,096-token default) before.
+      const skillPackContextLength = await resolveContextLengthForRun(db, agent.companyId).catch(() => null);
+      const skillPack = loadAgentSkillText({
+        agent,
+        kind: toderoTaskKind,
+        companySkills: skillPackSkills,
+        contextLength: skillPackContextLength,
+      });
+      if (skillPack.text) {
+        context.toderoSkillText = skillPack.text;
+      } else {
+        delete context.toderoSkillText;
+      }
+      if (skillPack.dropped.length > 0) {
+        // More than this model can follow at once was turned on for it. The
+        // lowest-priority ones sit this turn out, and the log says which.
+        logger.info(
+          { agentId: agent.id, issueId: issueRef.id, leftOut: skillPack.dropped },
+          "left some of what the agent knows out of this turn",
+        );
+      }
+      // The agent's own folder: its brief and a copy of everything turned on
+      // for it. Written once, and again whenever the set changed.
+      await syncAgentSkillFolder({
+        agent,
+        companySkills: skillPackSkills,
+        companyName: conversationIdentity.companyName,
+        mission: conversationIdentity.mission,
+      }).catch((error: unknown) => {
+        logger.warn({ err: error, agentId: agent.id }, "could not write the agent's folder");
       });
       // What this machine can actually serve, so model routing can prefer a
       // stronger or faster model for this kind of turn. Stored on the
@@ -14993,6 +15034,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       delete context.toderoIdentity;
       delete context.toderoTurnInstruction;
       delete context.toderoTaskKind;
+      delete context.toderoSkillText;
       delete context.toderoAvailableModels;
     }
     if (issueRef) {
@@ -17449,6 +17491,22 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 createdByRunId: livenessRun.id,
                 lockedDocumentStrategy: "conflict",
               });
+
+              // The same deliverable, kept beside the agent's own files as a
+              // dated copy. A failure here never costs the hand-in itself.
+              const handInWrite = await writeAgentHandIn({
+                companyId: agent.companyId,
+                agentId: agent.id,
+                taskIdentifier: readNonEmptyString(currentIssue?.identifier),
+                taskTitle: readNonEmptyString(currentIssue?.title),
+                body: deliverable,
+              }).catch((error: unknown) => {
+                logger.warn({ err: error, agentId: agent.id, issueId }, "could not write the agent's copy of the hand-in");
+                return null;
+              });
+              if (handInWrite) {
+                logger.info({ agentId: agent.id, issueId, path: handInWrite }, "wrote the agent's copy of the hand-in");
+              }
             }
             // Wave E: a hand-in goes past the reviewer before it reaches the
             // person. The reviewer is another agent on the same local model;

@@ -943,3 +943,208 @@ API calls used, in order: `GET /api/companies`, `GET /api/companies/{id}/agents`
 `PATCH /api/issues/{id}`, `POST /api/issues/{id}/comments`,
 `GET /api/companies/{id}/agents/{agentId}/runs`. No route was added by this wave, so
 `server/src/routes/openapi.ts` is unchanged.
+
+### Wave: the skill pack
+
+**Goal.** The ten skills in `skills/todero-*/SKILL.md` reach the local model only for the kind of
+turn each applies to, the person can read and edit each one per organization and turn it on or off
+per agent, and the agent keeps its brief, its skills and its hand-ins in a folder beside its
+instructions.
+
+**Where the files live.**
+
+- **In the repo,** beside the five that already exist: `skills/todero-plan-a-project/SKILL.md` and
+  its nine siblings. Same format as the open spec: a folder whose name equals the frontmatter name,
+  with `SKILL.md` inside. No `scripts/`, `references/` or `assets/` - the local model cannot open a
+  second file, so everything a skill says is in the body.
+- **Per organization,** copied into the managed skills root Todero already uses on the first pass
+  that touches the Skills page: `{instance}/skills/{companyId}/{name}/SKILL.md`, registered with
+  `upsertImportedSkills`, so each one gets a row, a version history, and a card. The copy is what the
+  person edits; the repo file is the reset target.
+- **Next to the agent,** in a folder beside the instructions bundle `resolveManagedInstructionsRoot`
+  already builds: `{instance}/companies/{companyId}/agents/{agentId}/` gains `brief.md` (the agent's
+  one-paragraph brief and the files it reads), `skills/` (a copy of each skill turned on for this
+  agent), and `documents/` (what it has produced). The model has no tools and cannot write a file, so
+  Todero writes it: the hand-in branch in `server/src/services/heartbeat.ts` that already saves a
+  deliverable as the task's Output document also drops a dated copy into `documents/`.
+- **On the Skills page** the ten appear in their own group, "What your agent knows", separate from
+  the command-line skills.
+
+**How the text reaches the model.** Four places, no new plumbing:
+
+1. `resolveToderoTaskKind` (`server/src/todero/model-routing.ts`) already labels every turn
+   planning, drafting or wrap-up, and this wave does not touch it. The judging kind is out of band
+   and handled by step 4.
+2. The conversational block in `server/src/services/heartbeat.ts` also sets `context.toderoSkillText`
+   from `loadAgentSkillText({ agent, kind, companySkills })`, which keeps only the skills turned on
+   for this agent whose `todero-task-kinds` names this kind.
+3. `buildChatCompletionsMessages` (`server/src/adapters/http/chat-completions.ts`) puts that text in
+   as a second system message, straight after the identity prompt and before the task. Order is
+   deliberate: who you are, what you know, what you are doing, the conversation, then
+   `toderoTurnInstruction` last as today.
+4. The reviewer does not go through that path: its skill is appended inside `buildJudgeSystemPrompt`
+   in `server/src/todero/judge.ts`, which stays the reviewer's only brief.
+
+**Which skill loads when.** Planning turns get 1 (`todero-plan-a-project`), 2 (`todero-when-to-hire`),
+3 (`todero-hand-off-a-task`), 5 (`todero-ask-or-decide`), 9 (`todero-cost-and-time`); drafting gets
+3, 5, 6 (`todero-files-with-the-work`); judging gets 4 (`todero-review-against-done-when`); wrap-up
+gets 6, 7 (`todero-propose-a-skill`), 8 (`todero-retrospective`). Number 10
+(`todero-talk-like-a-colleague`) loads on every turn the agent itself takes - the reviewer is out of
+band and reads only the skill that names judging, so it is handed one rubric and not two. There is a
+ceiling: when the pack is over it, the lowest-priority skills for that kind are dropped and a line is
+written to the run log, because a 7B model that reads four rubrics follows none of them. The
+frontmatter carries `todero-task-kinds` and `todero-priority` (1 highest).
+
+#### What shipped (code half)
+
+- **One loader, `server/src/todero/skill-pack.ts`.** Reads the pack facts off the stored skill
+  metadata - no new column, no migration. `parseSkillPackKinds` accepts every shape the repo's
+  frontmatter parser produces: a real array, the flow-list string `"[a, b]"`, `"a, b"`, a single
+  kind, or `"all"`. `loadAgentSkillText` reads the **organization's own rows**, so an edit a person
+  makes takes effect on the next turn with no restart.
+- **The ceiling is 20,000 characters**, which carries the whole pack for the busiest kind (a planning
+  turn reads six of the ten) and still bites once an organization adds long skills of its own. Over
+  it, the reading stops where the budget runs out: the skill that did not fit and everything below it
+  in priority order sit the turn out together, and the run log names them. The stop is deliberate -
+  trying the next one instead would let a one-line low-priority skill in ahead of the long
+  high-priority skill it displaced, which is the opposite of what the priority field is for.
+- **Per-organization copies**, `ensureSkillPackCopies` in `server/src/services/company-skills.ts`,
+  run on the same pass that mounts the bundled skills. Each copy is a normal editable managed-local
+  skill with a version history. The ten are no longer mounted read-only from the checkout, so a
+  person's edit survives the next pull.
+- **Their own group.** `toderoBundledFolderCategory` keys off the skill's own frontmatter rather than
+  its key, so the copy lands in the same group as the file it came from; the group reads
+  "What your agent knows".
+- **Reset to the original**: `POST /api/companies/{companyId}/skills/{skillId}/reset-to-original`
+  writes the shipped text back, stores `last_changed_because: Reset to the original` in the skill's
+  frontmatter, and adds a version row labelled the same way. Registered in `openapi.ts`.
+- **Injection**, `buildChatCompletionsMessages`: a second system message between the identity and the
+  task, present only when something is turned on. The same change fixed a latent bug - the
+  same-side-collapse guard was the literal `messages.length > 2`, which assumed exactly two leading
+  messages and would have folded the conversation's first turn into the task once a third one
+  existed. It now counts the opening block.
+- **The reviewer**: `buildJudgeSystemPrompt` takes the judging skill and nothing else. The reviewer is
+  hired with a copy of the lead's settings, so everything the lead has turned on is turned on for it
+  too; `skillPackAppliesToKind` treats judging as out of band, so a skill written for every turn stops
+  at the agent's own turns and never becomes a second rubric for a model that was asked for a verdict.
+- **The agent's folder**, `server/src/todero/agent-folder.ts`: `brief.md` and `skills/` written at
+  hire and refreshed on each conversational turn (idempotent - a second run with the same inputs
+  writes nothing); `documents/` gets a dated copy of every hand-in, beside the Output document.
+  `GET /api/companies/{companyId}/agents/{agentId}/folder` reads it back; the agent page gained a
+  **Files** tab.
+- **Hiring turns the pack on.** A chat-only local agent is hired with every pack skill in its desired
+  set. Agents on adapters that bring their own tooling are untouched.
+- **Two lines moved out of code into skills.** The "at most three questions" line left
+  `ui/src/lib/onboarding-first-task.ts` for skill 5; the tone clause left
+  `buildChatCompletionsSystemPrompt` for skill 10. The system prompt keeps the identity and the
+  STATUS contract.
+
+#### Open
+
+- **The proposal card and the proposal block parser** - the next half.
+- **The retrospective turn** - the next half.
+- **Approving an edit with a because-line** - the next half. Today the because-line is written by a
+  reset; a person's own edit does not yet prompt for one.
+- **Version and "Last changed because" on the skill row.** The pack group and the ten editable rows
+  are there, but the card does not yet show the version number or the because-line, and the
+  "Reset to the original" button is not wired to the route. `CompanySkillListItem` carries no
+  `metadata`, so surfacing the because-line needs a field added to the list response.
+- **An organization created before this wave** keeps whatever read-only `nabitllc/todero/todero-*`
+  rows it already had; nothing deletes them. A fresh organization is clean.
+- **The folder is a read-only view.** The Files tab lists names and shows the brief; it does not open
+  a hand-in or let anyone edit one there.
+
+#### Fixed after the live check (2026-09-11)
+
+- **The hire was refused on an ordinary installation.** Turning the pack on pinned each skill's
+  version, and a pinned version is a beta-only feature ("Beta skill version pins require the Beta
+  skills experimental setting"). The pack is now turned on unpinned; the agent follows the
+  organization's current copy, which is what a person edits.
+- **The whole pack did not fit the model's window.** Ollama serves qwen2.5-coder:14b with a
+  4,096-token window unless the person raised it (`OLLAMA_CONTEXT_LENGTH` or a Modelfile), and the
+  OpenAI-compatible endpoint cannot ask for more per request. Six planning skills were about 17,000
+  characters, so the model lost the plan shape and answered in prose for four rounds. Now the
+  connection test records the served window (`/api/ps`, stored as `toderoLocalLlmContextLength`),
+  the ceiling is 35% of that window in characters (5,734 for 4,096 tokens, never above 20,000), and
+  the "What Todero changed" sections, written for the person, are not sent to the model. On this
+  machine a planning turn carries `todero-plan-a-project` and drops the rest, and the run log names
+  what sat out. Raising the window to 16,384 lets the whole pack in; that is a setting on the
+  person's runtime, so the wizard should say so (queued for the next half).
+
+#### Live verification on this machine (Ollama, `qwen2.5-coder:14b`)
+
+Run the server the usual way. `B=http://localhost:4000/api`, with the auth header the other waves
+use; `$C` is the organization id and `$A` the hired agent's id.
+
+1. **A fresh organization through the wizard.** Take the first-run wizard end to end with a new
+   organization and a one-line mission. The connection test must pass before the hire, as the local
+   LLM onboarding wave requires.
+
+2. **Ten rows, turned on.** Open the organization's Skills page: a group named **"What your agent
+   knows"** sits beside the command-line group and holds ten rows, each editable. Then the agent's
+   Skills tab: all ten are turned on for it.
+
+   ```
+   curl -s "$B/companies/$C/skills" | jq -r '.[] | select(.key|startswith("company/")) | [.slug, .folderPath, .editable] | @tsv'
+   curl -s "$B/agents/$A" | jq -r '.adapterConfig.toderoSkillSync.desiredSkills[]' | grep -c "^company/"
+   ```
+
+   Expect ten rows under "What your agent knows" with `editable: true`, and a count of `10`.
+
+3. **The agent's folder.** `brief.md` plus ten files under `skills/`:
+
+   ```
+   ls ~/.todero/instances/default/companies/$C/agents/$A
+   ls ~/.todero/instances/default/companies/$C/agents/$A/skills | wc -l
+   curl -s "$B/companies/$C/agents/$A/folder" | jq '{brief:(.brief|length), skills:(.skills|length), documents:(.documents|length)}'
+   ```
+
+   Expect `brief.md skills documents`, `10`, and `skills: 10`. The agent page's **Files** tab shows
+   the same three sections.
+
+4. **What the first planning turn actually read.** Take the conversation task's first run and read
+   the context Todero stored for it:
+
+   ```
+   RUN=$(curl -s "$B/companies/$C/agents/$A/runs" | jq -r '.[-1].id')
+   curl -s "$B/runs/$RUN" | jq -r '.contextSnapshot.toderoTaskKind'
+   curl -s "$B/runs/$RUN" | jq -r '.contextSnapshot.toderoSkillText' | grep "^## "
+   ```
+
+   Expect `planning`, and exactly six headings - `todero-plan-a-project`,
+   `todero-talk-like-a-colleague`, `todero-ask-or-decide`, `todero-hand-off-a-task`,
+   `todero-when-to-hire`, `todero-cost-and-time`. The text begins `What you know`, and the adapter
+   sends it as the message right after the identity one and before the task. (When the run does not
+   keep the snapshot, read the same thing off the request the adapter built for that turn: the
+   second `system` message in `messages`.)
+
+5. **A hand-in writes a dated copy.** Approve the plan, let a child task run to a hand-in, then:
+
+   ```
+   ls ~/.todero/instances/default/companies/$C/agents/*/documents
+   curl -s "$B/issues/$CHILD/documents" | jq -r '.[].key'
+   ```
+
+   Expect one `YYYY-MM-DD-<task>.md` beside the task's `output` document, holding the same
+   deliverable.
+
+6. **The reviewer carries skill 4.** When the reviewer takes that hand-in, its brief carries
+   `todero-review-against-done-when` and nothing else from the pack - the reviewer's turn shows the
+   judging skill appended to its system prompt, and the task's comments carry the verdict as usual.
+
+7. **Reset to the original.** Edit one pack skill on the Skills page, then:
+
+   ```
+   SKILL=$(curl -s "$B/companies/$C/skills" | jq -r '.[] | select(.slug=="todero-plan-a-project") | .id')
+   curl -s -X POST "$B/companies/$C/skills/$SKILL/reset-to-original" | jq -r .markdown | grep last_changed_because
+   curl -s "$B/companies/$C/skills/$SKILL/versions" | jq -r '.[0].label'
+   ```
+
+   Expect `last_changed_because: Reset to the original` and a newest version labelled the same.
+
+API calls used, in order: `GET /api/companies/{id}/skills`, `GET /api/agents/{id}`,
+`GET /api/companies/{id}/agents/{agentId}/folder`, `GET /api/companies/{id}/agents/{agentId}/runs`,
+`GET /api/runs/{id}`, `GET /api/issues/{id}/documents`,
+`POST /api/companies/{id}/skills/{skillId}/reset-to-original`,
+`GET /api/companies/{id}/skills/{skillId}/versions`. Two routes were added by this wave and both are
+registered in `server/src/routes/openapi.ts`.

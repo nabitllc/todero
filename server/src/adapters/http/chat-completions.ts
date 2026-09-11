@@ -197,7 +197,6 @@ export function buildChatCompletionsSystemPrompt(identity: ChatCompletionsIdenti
     who,
     ...(mission ? [`The company mission: ${mission}`] : []),
     "You have no tools and cannot call any API, create tasks, or hire anyone. Do the work in plain text: answer, ask, propose, or draft. Never claim to have taken an action you could not take.",
-    "Write for that person: short, direct, no narration of your own process. Use plain prose or a short list. If you need something from them, ask one clear question and stop.",
     "The first message is the task. Later messages are the conversation so far. Continue it naturally; do not re-introduce yourself or repeat what was already said.",
     `End every reply with exactly one line: \`${CHAT_COMPLETIONS_STATUS_DONE}\` if the task is finished and nothing more is expected from you, or \`${CHAT_COMPLETIONS_STATUS_WAITING}\` if you need the person to answer, approve, or decide before you can go on.`,
   ].join("\n\n");
@@ -243,14 +242,27 @@ export function buildChatCompletionsMessages(
         readChatCompletionsIdentity(context, options.agentName ?? ""),
       ),
     },
-    { role: "user", content: buildChatCompletionsPrompt(context) },
   ];
+
+  // What the agent knows, straight after who it is and before what it is
+  // doing. The order is deliberate and the whole block is optional: an agent
+  // with nothing turned on sends exactly the messages it sent before.
+  const skillText = readNonEmptyString(context.toderoSkillText);
+  if (skillText) {
+    messages.push({ role: "system", content: skillText });
+  }
+
+  messages.push({ role: "user", content: buildChatCompletionsPrompt(context) });
+  // Everything above is the opening block: the identity, what the agent knows
+  // when it knows anything, and the task. Nothing from the conversation is
+  // ever folded into it, so the count is taken here rather than assumed.
+  const openingMessageCount = messages.length;
   // Consecutive turns from the same side collapse into one message: chat
   // templates expect strict alternation and some models go silent otherwise.
   for (const turn of readChatCompletionsThread(context)) {
     const role = turn.role === "agent" ? "assistant" : "user";
     const last = messages[messages.length - 1]!;
-    if (last.role === role && messages.length > 2) {
+    if (last.role === role && messages.length > openingMessageCount) {
       last.content = `${last.content}\n\n${turn.body}`;
       continue;
     }
@@ -261,7 +273,7 @@ export function buildChatCompletionsMessages(
   const turnInstruction = readNonEmptyString(context.toderoTurnInstruction);
   if (turnInstruction) {
     const last = messages[messages.length - 1]!;
-    if (last.role === "user" && messages.length > 2) last.content = `${last.content}\n\n${turnInstruction}`;
+    if (last.role === "user" && messages.length > openingMessageCount) last.content = `${last.content}\n\n${turnInstruction}`;
     else messages.push({ role: "user", content: turnInstruction });
     return messages;
   }

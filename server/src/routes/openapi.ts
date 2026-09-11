@@ -2113,6 +2113,17 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/agents/{agentId}/folder",
+  tags: ["agents"],
+  summary: "List agent folder contents (brief, skills, documents)",
+  request: {
+    params: z.object({ companyId: z.string(), agentId: z.string() }),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/agents/{id}/keys",
   tags: ["agents"],
   summary: "List agent API keys",
@@ -6920,6 +6931,11 @@ for (const route of [
   ["patch", "/api/companies/{companyId}/skills/{skillId}/comments/{commentId}", "Update a skill comment"],
   ["delete", "/api/companies/{companyId}/skills/{skillId}/comments/{commentId}", "Delete a skill comment"],
   ["post", "/api/companies/{companyId}/skills/{skillId}/reset", "Reset a company skill"],
+  [
+    "post",
+    "/api/companies/{companyId}/skills/{skillId}/reset-to-original",
+    "Put a skill Todero shipped back to the text it shipped with",
+  ],
 ] as const) {
   registerCurrentRoute({
     method: route[0],

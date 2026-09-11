@@ -39,7 +39,10 @@ describe("conversational first task", () => {
   it("gives a chat-only agent a brief it can follow: questions, then a prose plan, no tools", () => {
     const brief = buildOnboardingFirstTaskDescription("Ship the marketplace.", { conversational: true });
     expect(brief).toContain("Ship the marketplace.");
-    expect(brief).toContain("at most three questions");
+    expect(brief).toContain("Ask once, in one message");
+    // How many to ask, and which ones are worth asking, is what the agent
+    // knows (todero-ask-or-decide) rather than something this brief repeats.
+    expect(brief).not.toContain("at most three questions");
     expect(brief).toContain("propose one plan");
     expect(brief).toContain("```todero-plan");
     expect(brief).toContain("done_when:");

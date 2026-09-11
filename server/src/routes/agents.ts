@@ -62,6 +62,8 @@ import {
 } from "../services/index.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { PAPERCLIP_CORE_SKILL_KEYS } from "../services/company-skills.js";
+import { readAgentFolder, syncAgentSkillFolder } from "../todero/agent-folder.js";
+import { isConversationalHttpAgent } from "../todero/conversation-thread.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { assertAuthenticated, assertBoard, assertCompanyAccess, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 import { runAdapterLoginStartSpine } from "./adapter-login-route-spine.js";
@@ -3135,6 +3137,22 @@ export function agentRoutes(
     },
   );
 
+  router.get("/companies/:companyId/agents/:agentId/folder", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const agentId = req.params.agentId as string;
+    await assertCanReadConfigurations(req, companyId);
+
+    const agent = await svc.getById(agentId);
+    if (!agent || agent.companyId !== companyId) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    // A folder that has not been written yet reads as empty: nothing about a
+    // newly hired agent is wrong, and the page says so in its own words.
+    res.json(await readAgentFolder(companyId, agentId));
+  });
+
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -3546,13 +3564,25 @@ export function agentRoutes(
         rawHireAdapterConfig,
       ),
     );
+    // A chat-only local model reads nothing but what Todero hands it, so a new
+    // one starts with everything Todero ships turned on. Agents on adapters
+    // that bring their own tooling are untouched.
+    const skillPackSelections = isConversationalHttpAgent({
+      adapterType: hireInput.adapterType,
+      adapterConfig: requestedAdapterConfig,
+    })
+      ? await companySkillService(db).listSkillPackSelections(companyId).catch(() => [])
+      : [];
     const desiredSkillAssignment = await resolveDesiredSkillAssignment(
       companyId,
       hireInput.adapterType,
       requestedAdapterConfig,
       withDefaultRoleSkillSelections(
         normalizeDesiredSkillSelections(Array.isArray(requestedDesiredSkills) ? requestedDesiredSkills : undefined),
-        defaultRoleSkillSelections(hireInput.role, hireInput.adapterType),
+        withDefaultRoleSkillSelections(
+          skillPackSelections.length > 0 ? skillPackSelections : undefined,
+          defaultRoleSkillSelections(hireInput.role, hireInput.adapterType),
+        ),
       ),
       "add",
     );
@@ -3606,6 +3636,17 @@ export function agentRoutes(
       },
     );
     const agent = await materializeDefaultInstructionsBundleForNewAgent(createdAgent, instructionsBundle);
+
+    // The agent's own folder: its brief and a copy of everything turned on for
+    // it, written now so the folder is there before its first task. A failure
+    // here is never worth losing the hire over.
+    if (skillPackSelections.length > 0) {
+      await syncAgentSkillFolder({
+        agent,
+        companySkills: await companySkillService(db).listFull(companyId).catch(() => []),
+        companyName: company.name,
+      }).catch(() => null);
+    }
 
     let approval: Awaited<ReturnType<typeof approvalsSvc.getById>> | null = null;
     const actor = getActorInfo(req);

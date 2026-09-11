@@ -5,9 +5,12 @@ vi.mock("./local-llm-detect.js", () => ({ detectLocalLlms: mockDetectLocalLlms }
 
 const {
   detectAvailableModelIds,
+  detectContextLength,
   readStoredAvailableModelIds,
+  readStoredContextLength,
   resolveAvailableModelIdsForRun,
   storeAvailableModelIds,
+  storeContextLength,
 } = await import("./available-models.js");
 
 function fakeDb(input: { governance: unknown; rows?: number }) {
@@ -120,5 +123,42 @@ describe("resolveAvailableModelIdsForRun", () => {
       resolveAvailableModelIdsForRun(db, { companyId: "company-1", baseUrl: "http://127.0.0.1:11434" }),
     ).resolves.toEqual([]);
     expect(updates).toEqual([]);
+  });
+});
+
+describe("context length", () => {
+  it("reads a stored window and ignores junk", () => {
+    expect(readStoredContextLength({ toderoLocalLlmContextLength: 4096 })).toBe(4096);
+    expect(readStoredContextLength({ toderoLocalLlmContextLength: "big" })).toBeNull();
+    expect(readStoredContextLength(null)).toBeNull();
+  });
+
+  it("asks Ollama's /api/ps for the served model's window", async () => {
+    const fetcher = (async (url: string | URL | Request) => {
+      expect(String(url)).toBe("http://127.0.0.1:11434/api/ps");
+      return new Response(JSON.stringify({ models: [{ name: "qwen2.5-coder:14b", context_length: 4096 }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434/v1/chat/completions", "qwen2.5-coder:14b", fetcher)).toBe(4096);
+  });
+
+  it("answers null when the runtime does not say or is down", async () => {
+    const silent = (async () => new Response(JSON.stringify({ models: [] }), { status: 200 })) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434", "x", silent)).toBeNull();
+    const down = (async () => {
+      throw new Error("refused");
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434", "x", down)).toBeNull();
+  });
+
+  it("stores the window once and leaves an unchanged one alone", async () => {
+    const fresh = fakeDb({ governance: {} });
+    await storeContextLength(fresh.db, "company-1", 4096);
+    expect(fresh.updates).toHaveLength(1);
+    const same = fakeDb({ governance: { toderoLocalLlmContextLength: 4096 } });
+    await storeContextLength(same.db, "company-1", 4096);
+    expect(same.updates).toHaveLength(0);
+    const unknown = fakeDb({ governance: {} });
+    await storeContextLength(unknown.db, "company-1", null);
+    expect(unknown.updates).toHaveLength(0);
   });
 });

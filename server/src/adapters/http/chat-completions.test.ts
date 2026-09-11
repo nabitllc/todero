@@ -181,6 +181,39 @@ describe("http adapter chat completions conversation", () => {
     expect(messages[3]!.content).toBe("Austin.");
   });
 
+  it("adds skill text as a second system message when present", () => {
+    const skillText = "## Ask or Decide\n\nAsk at most three questions...";
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoSkillText: skillText,
+        toderoThread: [
+          { role: "agent", body: "Which city first?" },
+          { role: "user", body: "Austin." },
+        ],
+      },
+      { agentName: "Ron" },
+    );
+    expect(messages.map((message) => message.role)).toEqual(["system", "system", "user", "assistant", "user"]);
+    expect(messages[0]!.content).toContain("You are Ron");
+    expect(messages[1]!.content).toBe(skillText);
+    expect(messages[2]!.content).toContain(MISSION);
+    expect(messages[3]!.content).toBe("Which city first?");
+    expect(messages[4]!.content).toBe("Austin.");
+  });
+
+  it("does not add skill text message when skill text is empty", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoSkillText: "",
+        toderoThread: [{ role: "user", body: "Start here." }],
+      },
+      { agentName: "Ron" },
+    );
+    expect(messages.map((message) => message.role)).toEqual(["system", "user", "user"]);
+  });
+
   it("merges same-side turns and nudges when the thread ends with the agent", () => {
     const messages = buildChatCompletionsMessages({
       toderoTaskMarkdown: TASK_MARKDOWN,
@@ -209,6 +242,53 @@ describe("http adapter chat completions conversation", () => {
       toderoThread: [null, { role: "system", body: "nope" }, { role: "user", body: "   " }, "text"],
     });
     expect(messages).toHaveLength(2);
+  });
+
+  it("keeps the first turn of the conversation out of the task, skills or not", () => {
+    // The task is the opening user message and nothing from the thread is ever
+    // folded into it. Adding a second system message moved where the opening
+    // block ends, which is why this is asserted both ways.
+    const withSkills = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoSkillText: "What you know\n\n## plan\n\nHow to plan.",
+      toderoThread: [{ role: "user", body: "Start now." }],
+    });
+    expect(withSkills.map((m) => m.role)).toEqual(["system", "system", "user", "user"]);
+    expect(withSkills[2]!.content).not.toContain("Start now.");
+    expect(withSkills[3]!.content).toBe("Start now.");
+
+    const withoutSkills = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoThread: [{ role: "user", body: "Start now." }],
+    });
+    expect(withoutSkills.map((m) => m.role)).toEqual(["system", "user", "user"]);
+  });
+
+  it("still merges same-side turns inside the conversation when skills are present", () => {
+    const messages = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoSkillText: "What you know\n\n## plan\n\nHow to plan.",
+      toderoThread: [
+        { role: "user", body: "First." },
+        { role: "user", body: "Second." },
+      ],
+    });
+    expect(messages.map((m) => m.role)).toEqual(["system", "system", "user", "user"]);
+    expect(messages[3]!.content).toBe("First.\n\nSecond.");
+  });
+
+  it("preserves turn instruction at the end even with skill text", () => {
+    const skillText = "**What your agent knows:**\n\nSkill content";
+    const turnInstruction = "Wrap up: summarize what you did.";
+    const messages = buildChatCompletionsMessages({
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoSkillText: skillText,
+      toderoTurnInstruction: turnInstruction,
+      toderoThread: [{ role: "user", body: "Please start." }],
+    });
+    const lastMessage = messages[messages.length - 1]!;
+    expect(lastMessage.role).toBe("user");
+    expect(lastMessage.content).toContain(turnInstruction);
   });
 
   it("strips the trailing status line and reads done", () => {

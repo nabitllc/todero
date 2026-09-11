@@ -15,6 +15,8 @@ import { detectLocalLlms } from "./local-llm-detect.js";
 
 /** The key inside `interactionResolverGovernance`. Mirrored in @todero/shared. */
 export const AVAILABLE_MODEL_IDS_KEY = "toderoLocalLlmAvailableModelIds";
+/** The context window, in tokens, the runtime served the organization's model with. */
+export const CONTEXT_LENGTH_KEY = "toderoLocalLlmContextLength";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -105,4 +107,70 @@ export async function resolveAvailableModelIdsForRun(
   const detected = await detectAvailableModelIds(input.baseUrl);
   if (detected.length === 0) return [];
   return storeAvailableModelIds(db, input.companyId, detected);
+}
+
+/** The stored context window, or null when no connection test recorded one. */
+export function readStoredContextLength(governance: unknown): number | null {
+  const raw = asRecord(governance)[CONTEXT_LENGTH_KEY];
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : null;
+}
+
+/**
+ * Ask an Ollama runtime what window it is serving a model with. Ollama's
+ * /api/ps lists the loaded models with their context_length; the model is
+ * loaded right after a connection test, which is when this is asked. Any
+ * other runtime, or a runtime that does not say, answers null.
+ */
+export async function detectContextLength(
+  baseUrl: string,
+  modelId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<number | null> {
+  const root = normalizeBaseUrl(baseUrl).replace(/\/v1(\/.*)?$/, "");
+  if (!root) return null;
+  try {
+    const response = await fetcher(`${root}/api/ps`, { signal: AbortSignal.timeout(2_000) });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      models?: Array<{ name?: string; model?: string; context_length?: number }>;
+    };
+    const models = Array.isArray(body.models) ? body.models : [];
+    const match = models.find((m) => m.name === modelId || m.model === modelId) ?? models[0];
+    const length = match?.context_length;
+    return typeof length === "number" && Number.isFinite(length) && length > 0 ? Math.floor(length) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remember the window for an organization; a no-op when unchanged or unknown. */
+export async function storeContextLength(db: Db, companyId: string, contextLength: number | null): Promise<void> {
+  if (!contextLength) return;
+  const rows = await db
+    .select({ governance: companies.interactionResolverGovernance })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+  if (rows.length === 0) return;
+  const governance = asRecord(rows[0]?.governance);
+  if (readStoredContextLength(governance) === contextLength) return;
+  await db
+    .update(companies)
+    .set({
+      interactionResolverGovernance: {
+        ...governance,
+        [CONTEXT_LENGTH_KEY]: contextLength,
+      } as unknown as (typeof companies.$inferInsert)["interactionResolverGovernance"],
+    })
+    .where(eq(companies.id, companyId));
+}
+
+/** The stored window for a run's organization, or null. */
+export async function resolveContextLengthForRun(db: Db, companyId: string): Promise<number | null> {
+  const rows = await db
+    .select({ governance: companies.interactionResolverGovernance })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+  return rows.length > 0 ? readStoredContextLength(rows[0]?.governance) : null;
 }
