@@ -73,6 +73,7 @@ import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { toderoVaultRoutes } from "./routes/vault-routes.js";
 import { toderoLocalLlmRoutes } from "./routes/local-llm-routes.js";
 import { toderoPlanRoutes } from "./routes/todero-plan-routes.js";
+import { toderoPauseRoutes } from "./routes/todero-pause-routes.js";
 import { instanceSettingsService } from "./services/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
 import {
@@ -600,6 +601,8 @@ export async function createApp(
   });
   // Plan approval creates the child tasks and wakes the agent on the first.
   api.use(toderoPlanRoutes(db, { heartbeat: connectionIntentHeartbeat }));
+  // Play / Pause: one organization, or the whole instance at once.
+  api.use(toderoPauseRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(toolAccessRoutes(db, {
     deploymentMode: opts.deploymentMode,
     deploymentExposure: opts.deploymentExposure,

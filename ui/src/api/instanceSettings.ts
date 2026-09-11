@@ -9,7 +9,21 @@ import type {
 } from "@todero/shared";
 import { api } from "./client";
 
+/** What the instance-wide Pause / Play switch reports back. */
+export interface InstancePauseResult {
+  paused?: number;
+  resumed?: number;
+  companyIds: string[];
+}
+
 export const instanceSettingsApi = {
+  /** Pause every organization that is running right now. */
+  pauseAll: () => api.post<InstancePauseResult>("/instance/pause-all", {}),
+  /**
+   * Put back only what this switch stopped. An organization the person paused
+   * by hand keeps its own pause.
+   */
+  resumeAll: () => api.post<InstancePauseResult>("/instance/resume-all", {}),
   get: () =>
     api.get<InstanceSettings>("/instance/settings"),
   update: (patch: PatchInstanceSettings) =>

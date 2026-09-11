@@ -95,6 +95,8 @@ const ACTIVITY_ROW_VERBS: Record<string, string> = {
   "company.updated": "updated organization",
   "company.archived": "archived",
   "company.reactivated": "reactivated",
+  "company.paused": "paused",
+  "company.resumed": "resumed",
   "company.budget_updated": "updated budget for",
   "audit.exported": "exported the agent audit log for",
 };

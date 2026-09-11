@@ -718,7 +718,17 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
     getInvocationBlock: async (
       companyId: string,
       agentId: string,
-      context?: { issueId?: string | null; projectId?: string | null },
+      context?: {
+        issueId?: string | null;
+        projectId?: string | null;
+        /**
+         * A manually paused organization holds new work instead of refusing it:
+         * the wake is written and its run waits for Play. Only a budget pause
+         * still blocks. Callers that must not create anything while paused
+         * (a person pressing "start now") leave this unset.
+         */
+        queueWhilePaused?: boolean;
+      },
     ) => {
       const agent = await db
         .select({
@@ -742,7 +752,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         .where(eq(companies.id, companyId))
         .then((rows) => rows[0] ?? null);
       if (!company) throw notFound("Company not found");
-      if (company.status === "paused") {
+      if (
+        company.status === "paused" &&
+        !(context?.queueWhilePaused && company.pauseReason !== "budget")
+      ) {
         return {
           scopeType: "company" as const,
           scopeId: companyId,

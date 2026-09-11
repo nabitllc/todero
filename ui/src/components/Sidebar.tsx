@@ -47,6 +47,7 @@ import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
+import { PauseControl, PauseEverythingControl } from "./todero/PauseControl";
 
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
@@ -170,6 +171,11 @@ export function Sidebar() {
         ) : null}
       </div>
 
+      {/* Play / Pause for this organization, directly under its name. In the
+          collapsed rail there is no room for the button and its caption, and
+          the state is repeated on the Dashboard anyway. */}
+      {!rail ? <PauseControl /> : null}
+
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 pointer-coarse:gap-3 px-3 py-2">
         <div className="flex flex-col gap-0.5">
           {/* New Task button aligned with nav items */}
@@ -285,6 +291,15 @@ export function Sidebar() {
           missingBehavior="placeholder"
         />
       </nav>
+
+      {/* The master switch, out of the way in the footer: it stops or restarts
+          every organization at once, which is not something to press by
+          accident on the way to a nav item. */}
+      {!rail ? (
+        <div className="shrink-0 border-t border-border">
+          <PauseEverythingControl />
+        </div>
+      ) : null}
     </aside>
   );
 }

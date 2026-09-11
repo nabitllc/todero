@@ -8118,6 +8118,47 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/companies/{companyId}/pause",
+  tags: ["todero"],
+  summary: "Pause an organization: work already started finishes, nothing new starts, queued work stays queued",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(
+      z.object({
+        reason: z.literal("manual").optional().describe("Always recorded as manual; only the instance switch writes master."),
+      }),
+    ),
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/resume",
+  tags: ["todero"],
+  summary: "Resume a paused organization: queued work picks up where it stopped",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/instance/pause-all",
+  tags: ["todero"],
+  summary: "Pause every active organization on this instance",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/instance/resume-all",
+  tags: ["todero"],
+  summary: "Resume only the organizations the instance-wide switch paused; a hand-paused one stays paused",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/todero/local-llm/test",
   tags: ["todero"],
   summary: "Send one short message to a detected local LLM model and report whether it answered",

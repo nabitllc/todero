@@ -12940,6 +12940,19 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       return null;
     }
 
+    // A manually paused organization holds its queued work for Play: the row
+    // stays queued and resumeQueuedRuns() starts it once the organization is
+    // active again. Only a budget pause falls through to the block below and
+    // cancels the run.
+    const companyPause = await db
+      .select({ status: companies.status, pauseReason: companies.pauseReason })
+      .from(companies)
+      .where(eq(companies.id, run.companyId))
+      .then((rows) => rows[0] ?? null);
+    if (companyPause?.status === "paused" && companyPause.pauseReason !== "budget") {
+      return null;
+    }
+
     const context = parseObject(run.contextSnapshot);
     const budgetBlock = await budgets.getInvocationBlock(run.companyId, run.agentId, {
       issueId: readNonEmptyString(context.issueId),
@@ -18730,7 +18743,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       .where(eq(companies.id, agent.companyId))
       .then((rows) => rows[0] ?? null);
 
-    if (!company || company.status !== "active") {
+    // A paused organization queues: the wake and its run are created as usual
+    // and the run-start path holds them until Play. Only a missing or
+    // archived organization discards the wake.
+    if (!company || (company.status !== "active" && company.status !== "paused")) {
       const companyStatus = company?.status ?? "missing";
       if (opts.requestedByActorType === "user") {
         throw conflict("Company is not active", { status: companyStatus });
@@ -18855,6 +18871,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     const budgetBlock = await budgets.getInvocationBlock(agent.companyId, agentId, {
       issueId,
       projectId,
+      queueWhilePaused: true,
     });
     if (budgetBlock) {
       await writeSkippedRequest("budget.blocked");

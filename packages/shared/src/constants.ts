@@ -672,9 +672,16 @@ export type RoutineRunSource = (typeof ROUTINE_RUN_SOURCES)[number];
 
 // "import" marks agents parked by a company import (safety default) so the UI
 // can explain the pause and offer a scoped bulk-resume; "system" remains the
-// reason for platform-managed pauses (plugins, built-ins).
-export const PAUSE_REASONS = ["manual", "budget", "system", "company_archived", "import"] as const;
+// reason for platform-managed pauses (plugins, built-ins). "master" marks an
+// organization stopped by the instance-wide switch, which is what lets
+// "Resume everything" put those back and leave a hand-paused one alone.
+export const PAUSE_REASONS = ["manual", "budget", "system", "company_archived", "import", "master"] as const;
 export type PauseReason = (typeof PAUSE_REASONS)[number];
+
+/** A person pressed Pause on this organization. */
+export const COMPANY_PAUSE_REASON_MANUAL = "manual" satisfies PauseReason;
+/** The instance-wide switch stopped this organization, and can put it back. */
+export const COMPANY_PAUSE_REASON_MASTER = "master" satisfies PauseReason;
 
 export const PROJECT_COLORS = [
   "#6366f1", // indigo
