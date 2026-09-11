@@ -453,7 +453,7 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
   });
 
   it("labels the goal and prefills the composer when asking for changes", async () => {
-    const plan = { goal: "Seat neighbors.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "" }] };
+    const plan = { goal: "Seat neighbors.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "", after: "" }] };
     await render(fixture({ plan, planApprovable: true }));
     expect(container.querySelector(".work-item-plan-goal")!.textContent).toContain("Goal");
     await act(async () => {
@@ -474,7 +474,7 @@ describe("bolt and the next-project card", () => {
     await render(fixture());
     expect(container.querySelector('[data-testid="work-item-bolt"]')!.textContent).toBe(BOLT_VALUE);
 
-    const plan = { goal: "Ship it.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "" }] };
+    const plan = { goal: "Ship it.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "", after: "" }] };
     await render(
       fixture({
         plan,
