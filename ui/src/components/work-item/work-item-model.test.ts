@@ -6,8 +6,10 @@ import {
   agentSummaryRow,
   taskRowLabel,
   blockedChipLabel,
+  boltTooltip,
   buildTrail,
   commitWorkItemStatus,
+  computeWorkItemBolt,
   displayPriority,
   displayStatus,
   formatTokenCost,
@@ -167,5 +169,53 @@ describe("review and plan markers", () => {
     expect(taskRowLabel({ status: "todo", queued: true })).toBe("Queued");
     expect(taskRowLabel({ status: "done", queued: true })).toBe("Done");
     expect(taskRowLabel({ status: "todo", queued: false })).toBe("To do");
+  });
+});
+
+describe("computeWorkItemBolt", () => {
+  it("returns null before a plan exists", () => {
+    expect(computeWorkItemBolt({ hasPlan: false, planRevisionNumber: null, tasks: [], parentStatus: "todo" })).toBeNull();
+  });
+
+  it("passes gates as the plan is approved, worked, and shipped", () => {
+    const noTasks = computeWorkItemBolt({ hasPlan: true, planRevisionNumber: 1, tasks: [], parentStatus: "in_progress" });
+    expect(noTasks?.gatesPassed).toBe(0);
+    expect(noTasks?.label).toBe("Bolt 1 · 0 of 3 gates");
+
+    const running = computeWorkItemBolt({
+      hasPlan: true,
+      planRevisionNumber: 2,
+      tasks: [{ status: "done" }, { status: "todo" }],
+      parentStatus: "in_progress",
+    });
+    expect(running?.gatesPassed).toBe(1);
+    expect(running?.label).toBe("Bolt 2 · 1 of 3 gates");
+
+    const evaluated = computeWorkItemBolt({
+      hasPlan: true,
+      planRevisionNumber: 2,
+      tasks: [{ status: "done" }, { status: "cancelled" }],
+      parentStatus: "in_progress",
+    });
+    expect(evaluated?.gatesPassed).toBe(2);
+
+    const shipped = computeWorkItemBolt({
+      hasPlan: true,
+      planRevisionNumber: 2,
+      tasks: [{ status: "done" }, { status: "cancelled" }],
+      parentStatus: "done",
+    });
+    expect(shipped?.gatesPassed).toBe(3);
+    expect(shipped?.label).toBe("Bolt 2 · 3 of 3 gates");
+  });
+
+  it("renders the gate checklist as a tooltip", () => {
+    const bolt = computeWorkItemBolt({
+      hasPlan: true,
+      planRevisionNumber: 1,
+      tasks: [{ status: "done" }],
+      parentStatus: "done",
+    })!;
+    expect(boltTooltip(bolt)).toBe("✓ Plan approved\n✓ Evaluation\n✓ Shipped");
   });
 });

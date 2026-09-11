@@ -147,6 +147,9 @@ export function allPlanChildrenClosed(children: PlanChildSummary[]): boolean {
   return children.length > 0 && children.every((child) => child.status === "done" || child.status === "cancelled");
 }
 
+/** The issue document a follow-on project idea from the wrap-up lives in. */
+export const NEXT_PROJECT_DOCUMENT_KEY = "next";
+
 /**
  * The extra turn a plan parent gets when its last task closes: the agent
  * writes the wrap-up for the person and closes the conversation itself.
@@ -157,6 +160,28 @@ export function buildPlanSummaryTurnInstruction(children: PlanChildSummary[]): s
     "Every task in your plan is now closed:",
     ...lines,
     "",
-    "Write the wrap-up for the person: in plain words, what was delivered for each feature, what they should look at first, and the one or two things you would do next if they want to keep going. Do not propose a new plan block. End with `STATUS: done`.",
+    "Write the wrap-up for the person: in plain words, what was delivered for each feature, what they should look at first, and the one or two things you would do next if they want to keep going. Do not propose a new plan block.",
+    "If you can see one clear next project worth doing after this one, end that wrap-up with one line that starts with `Next:` naming it in a few words — the idea, not a plan. Leave that line out if nothing obvious comes to mind.",
+    "Then end with `STATUS: done`.",
   ].join("\n");
+}
+
+const NEXT_LINE_RE = /^\s*next\s*:\s*(.+?)\s*$/i;
+
+/**
+ * The last `Next:` line in a wrap-up reply, if the model included one. Scans
+ * from the end since that is where `buildPlanSummaryTurnInstruction` asks for
+ * it; an earlier, unrelated use of the word "next" in the body should not
+ * match.
+ */
+export function parseNextProjectLine(text: string): string | null {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const match = lines[i]!.match(NEXT_LINE_RE);
+    if (match) {
+      const value = match[1]!.trim();
+      return value ? value : null;
+    }
+  }
+  return null;
 }

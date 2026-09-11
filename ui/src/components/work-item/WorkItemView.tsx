@@ -20,7 +20,9 @@ import {
   WORK_ITEM_STATUS_LABELS,
   WORK_ITEM_STATUSES,
   blockedChipLabel,
+  boltTooltip,
   commitWorkItemStatus,
+  computeWorkItemBolt,
   displayPriority,
   highlightMentions,
   statusFreezesAssignee,
@@ -55,6 +57,10 @@ export type WorkItemViewProps = {
   planApprovable?: boolean;
   /** Child tasks created from the plan, oldest first. */
   tasks?: WorkItemTaskRow[];
+  /** The plan document's revision number — one bolt per proposed plan. */
+  planRevisionNumber?: number | null;
+  /** A `Next:` project the agent named in its wrap-up; not offered again once started. */
+  nextProjectSuggestion?: string | null;
   /** The agent handed in its output; show Accept / Send back. */
   reviewPending?: boolean;
   /** The agent proposed a plan and is waiting for a yes. */
@@ -88,6 +94,7 @@ export type WorkItemViewProps = {
   onBodySave?: (body: string) => void;
   onPlanApprove?: (keep: string[]) => void;
   onPlanChanges?: () => void;
+  onStartProject?: (name: string) => void;
   onAccept?: () => void;
   onSendBack?: (note: string) => void;
   onStatusChange?: (status: WorkItemStatus) => void;
@@ -134,6 +141,8 @@ export function WorkItemView(props: WorkItemViewProps) {
     plan = null,
     planApprovable = false,
     tasks = [],
+    planRevisionNumber = null,
+    nextProjectSuggestion = null,
     reviewPending = false,
     planPending = false,
     blockerCount = 1,
@@ -163,6 +172,7 @@ export function WorkItemView(props: WorkItemViewProps) {
     onBodySave,
     onPlanApprove,
     onPlanChanges,
+    onStartProject,
     onAccept,
     onSendBack,
     onStatusChange,
@@ -192,6 +202,16 @@ export function WorkItemView(props: WorkItemViewProps) {
   useEffect(() => {
     setDroppedPlanTasks(new Set());
   }, [planKey]);
+  const bolt = useMemo(
+    () =>
+      computeWorkItemBolt({
+        hasPlan: Boolean(plan),
+        planRevisionNumber,
+        tasks,
+        parentStatus: status,
+      }),
+    [plan, planRevisionNumber, tasks, status],
+  );
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [sendBackNote, setSendBackNote] = useState("");
@@ -644,7 +664,13 @@ export function WorkItemView(props: WorkItemViewProps) {
             )}
 
             <Fact label="Bolt">
-              <span className="work-item-bolt" data-testid="work-item-bolt">{BOLT_VALUE}</span>
+              {bolt ? (
+                <span className="work-item-bolt" data-testid="work-item-bolt" title={boltTooltip(bolt)}>
+                  {bolt.label}
+                </span>
+              ) : (
+                <span className="work-item-bolt" data-testid="work-item-bolt">{BOLT_VALUE}</span>
+              )}
             </Fact>
           </aside>
         </div>
@@ -837,6 +863,21 @@ export function WorkItemView(props: WorkItemViewProps) {
           <p className="work-item-working" data-testid="work-item-working">
             {assigneeLabel ?? "The agent"} is writing a reply. The first one after a pause can take a minute while the model loads.
           </p>
+        )}
+
+        {status === "done" && nextProjectSuggestion && (
+          <section className="work-item-next-card" data-testid="work-item-next-card">
+            <span className="work-item-next-card-label">Next</span>
+            <p className="work-item-next-line">{nextProjectSuggestion}</p>
+            <button
+              type="button"
+              className="work-item-next-start"
+              data-testid="work-item-next-start"
+              onClick={() => onStartProject?.(nextProjectSuggestion)}
+            >
+              Start a project
+            </button>
+          </section>
         )}
 
         <form className="work-item-composer" data-testid="work-item-composer" onSubmit={submitComment}>
