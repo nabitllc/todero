@@ -24,6 +24,27 @@ import { companySkillService } from "../services/company-skills.js";
 import { folderService } from "../services/folders.js";
 import { readShippedPackSkills } from "../todero/skill-pack-source.js";
 
+// Three cases below create real symlinks. Windows refuses them without
+// Developer Mode or an elevated shell, so decide at runtime rather than by
+// platform: the cases run wherever a symlink can be made and say why not
+// elsewhere. CI on Linux always runs them.
+const symlinksAvailable = await (async () => {
+  const probeDir = await fs.mkdtemp(path.join(os.tmpdir(), "todero-symlink-probe-"));
+  try {
+    await fs.writeFile(path.join(probeDir, "target"), "probe", "utf8");
+    await fs.symlink(path.join(probeDir, "target"), path.join(probeDir, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await fs.rm(probeDir, { recursive: true, force: true });
+  }
+})();
+const itWithSymlinks = symlinksAvailable ? it : it.skip;
+if (!symlinksAvailable) {
+  console.warn("Skipping the symlink cases in company-skills-service.test.ts: this host cannot create symlinks.");
+}
+
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
@@ -2282,7 +2303,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     expect(versions).toHaveLength(2);
   });
 
-  it("browses project folders and imports a selected non-standard skill", async () => {
+  itWithSymlinks("browses project folders and imports a selected non-standard skill", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
@@ -2578,7 +2599,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     ]);
   });
 
-  it("imports only selections rediscovered inside project workspaces", async () => {
+  itWithSymlinks("imports only selections rediscovered inside project workspaces", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
@@ -2749,7 +2770,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     ]));
   });
 
-  it("skips a selected project skill whose SKILL.md is a symlink outside the workspace", async () => {
+  itWithSymlinks("skips a selected project skill whose SKILL.md is a symlink outside the workspace", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
     const workspaceId = randomUUID();
