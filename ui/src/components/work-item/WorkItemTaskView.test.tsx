@@ -5,9 +5,8 @@
  * functions: which tab opens, what the conversation shows where a hand-in was,
  * whose voice the verdict card is in, and which chips the composer offers.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { ReactNode } from "react";
 import { StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -431,9 +430,13 @@ describe("step 10 — phone", () => {
   // it is stylesheet work, so the test holds both ends of the contract: the
   // rules exist under the phone width, and the screen really does render the
   // classes those rules select.
-  // Resolved from this file, not the working directory: CI runs the suite
-  // from the repo root, the local gates run it from ui/.
-  const css = readFileSync(resolve(fileURLToPath(new URL(".", import.meta.url)), "work-item.css"), "utf8");
+  // CI runs the suite from the repo root, the local gates run it from ui/;
+  // take whichever of the two holds the stylesheet.
+  const cssPath = ["src/components/work-item/work-item.css", "ui/src/components/work-item/work-item.css"]
+    .map((candidate) => resolve(process.cwd(), candidate))
+    .find((candidate) => existsSync(candidate));
+  if (!cssPath) throw new Error("work-item.css not found from the working directory");
+  const css = readFileSync(cssPath, "utf8");
 
   /** Everything the stylesheet says under the phone width, as one string. */
   function phoneRules(source: string): string {
