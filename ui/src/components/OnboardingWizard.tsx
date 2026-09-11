@@ -111,6 +111,22 @@ import {
 } from "lucide-react";
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+type LocalLlmTestState =
+  | { status: "idle" }
+  | { status: "testing"; key: string }
+  | { status: "ok"; key: string; reply: string; latencyMs: number }
+  | { status: "fail"; key: string; error: string };
+
+function localLlmSelectionKeyFor(selection: LocalLlmSelection | null): string | null {
+  return selection ? `${selection.runtimeId}::${selection.modelId}` : null;
+}
+
+export function formatLocalLlmLatency(latencyMs: number): string {
+  if (!Number.isFinite(latencyMs) || latencyMs < 0) return "a moment";
+  if (latencyMs < 1000) return `${Math.round(latencyMs)} ms`;
+  return `${(latencyMs / 1000).toFixed(latencyMs < 10_000 ? 1 : 0)} s`;
+}
 // Plugin/external adapters use arbitrary type ids, so this mirrors the master
 // wizard's registry-driven approach rather than a fixed union.
 type AdapterType = string;
@@ -471,6 +487,9 @@ function OnboardingWizardInner({
       : null,
   );
   const [localLlmLiveRuntimes, setLocalLlmLiveRuntimes] = useState<LocalLlmRuntime[] | null>(null);
+  // Detection proves a model is listed; only a real reply proves it answers.
+  // Keyed by runtime+model so changing the pick invalidates an old verdict.
+  const [localLlmTest, setLocalLlmTest] = useState<LocalLlmTestState>({ status: "idle" });
   const [llmConnected, setLlmConnected] = useState(Boolean(saved?.llmConnected));
   const [cwd, setCwd] = useState((saved?.cwd as string) ?? "");
   const [model, setModel] = useState((saved?.model as string) ?? "");
@@ -1474,6 +1493,10 @@ function OnboardingWizardInner({
           setError("You must connect a model before you can start. No reachable local LLM is selected.");
           return;
         }
+        if (!localLlmVerified) {
+          setError("Test the connection before you can start.");
+          return;
+        }
         setLlmConnected(true);
         if (createdAgentId) {
           setStep(5);
@@ -1721,7 +1744,7 @@ function OnboardingWizardInner({
       }
       else if (step === 2 && companyName.trim() && companyGoal.trim()) handleConfirmMission();
       else if (step === 3 && agentName.trim()) setStep(4);
-      else if (step === 4 && agentName.trim() && !hireBlockedForMission && (connectKind !== "local_llm" || localLlmPickIsLive))
+      else if (step === 4 && agentName.trim() && !hireBlockedForMission && (connectKind !== "local_llm" || localLlmVerified))
         handleGiveHeartbeat();
       else if (step === 6 && llmConnected) handleLaunchToDashboard();
     }
@@ -1753,6 +1776,35 @@ function OnboardingWizardInner({
     runtimeId: localLlmSelection?.runtimeId,
     modelId: localLlmSelection?.modelId,
   });
+  const localLlmSelectionKey = localLlmSelectionKeyFor(localLlmSelection);
+  const localLlmVerified =
+    localLlmPickIsLive &&
+    localLlmTest.status === "ok" &&
+    localLlmTest.key === localLlmSelectionKey;
+  const localLlmTesting = localLlmTest.status === "testing" && localLlmTest.key === localLlmSelectionKey;
+
+  async function handleTestLocalLlm() {
+    if (!localLlmSelection || !localLlmSelectionKey || localLlmTesting) return;
+    const key = localLlmSelectionKey;
+    setLocalLlmTest({ status: "testing", key });
+    try {
+      const result = await toderoLocalLlmApi.test({
+        baseUrl: localLlmSelection.baseUrl,
+        modelId: localLlmSelection.modelId,
+      });
+      setLocalLlmTest(
+        result.ok
+          ? { status: "ok", key, reply: result.reply, latencyMs: result.latencyMs }
+          : { status: "fail", key, error: result.error },
+      );
+    } catch (err) {
+      setLocalLlmTest({
+        status: "fail",
+        key,
+        error: err instanceof Error ? err.message : "The connection test could not run.",
+      });
+    }
+  }
 
   const isAgentArcStep = agentArcStepFor(step) !== null;
   const showsAgentArcStepper = isAgentArcStep && entryStep >= 3;
@@ -2425,9 +2477,62 @@ function OnboardingWizardInner({
                       onChange={(next) => {
                         setLocalLlmSelection(next);
                         setLlmConnected(false);
+                        setLocalLlmTest({ status: "idle" });
                       }}
                       onRuntimesDetected={setLocalLlmLiveRuntimes}
                     />
+                  )}
+
+                  {/* A listed model is not a working one. Connect stays off
+                      until this test gets a real reply from the picked model,
+                      and any change to the pick throws the verdict away. */}
+                  {connectKind === "local_llm" && localLlmPickIsLive && localLlmSelection && (
+                    <div
+                      className="space-y-2 rounded-md border border-border p-3"
+                      data-testid="local-llm-connection-test"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm">
+                          <div className="font-medium">Test the connection</div>
+                          <div className="text-xs text-muted-foreground">
+                            Todero sends one short message to {localLlmSelection.modelId} and waits for the answer.
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={localLlmVerified ? "outline" : "default"}
+                          disabled={localLlmTesting}
+                          onClick={handleTestLocalLlm}
+                          data-testid="local-llm-test-button"
+                        >
+                          {localLlmTesting ? (
+                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          ) : null}
+                          {localLlmTesting
+                            ? "Testing..."
+                            : localLlmVerified
+                              ? "Test again"
+                              : "Test connection"}
+                        </Button>
+                      </div>
+                      {localLlmTesting && (
+                        <p className="text-xs text-muted-foreground" data-testid="local-llm-test-status">
+                          Waiting for the model. The first answer can take a minute while it loads.
+                        </p>
+                      )}
+                      {localLlmVerified && localLlmTest.status === "ok" && (
+                        <p className="text-xs text-foreground" data-testid="local-llm-test-status">
+                          Connected. {localLlmSelection.modelId} answered in{" "}
+                          {formatLocalLlmLatency(localLlmTest.latencyMs)}.
+                        </p>
+                      )}
+                      {localLlmTest.status === "fail" && localLlmTest.key === localLlmSelectionKey && (
+                        <p className="text-xs text-destructive" data-testid="local-llm-test-status">
+                          No answer. {localLlmTest.error}
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   {connectKind !== "local_llm" && showAdapterLoginPanel && createdCompanyId && resolvedLoginEnvironmentId && (
@@ -2631,7 +2736,9 @@ function OnboardingWizardInner({
               )}
               {!llmConnected && (step === 4 || step === 6) && (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  You must connect a model before you can start.
+                  {step === 4 && connectKind === "local_llm" && localLlmPickIsLive && !localLlmVerified
+                    ? "Test the connection before you can start."
+                    : "You must connect a model before you can start."}
                 </p>
               )}
               {step === 4 && hireBlockedForMission && !missionPresentForHire && (
@@ -2658,7 +2765,7 @@ function OnboardingWizardInner({
                     step === 3
                       ? !agentName.trim()
                       : step === 4
-                        ? loading || adapterEnvLoading || hireBlockedForMission || (connectKind === "local_llm" && !localLlmPickIsLive)
+                        ? loading || adapterEnvLoading || hireBlockedForMission || (connectKind === "local_llm" && !localLlmVerified)
                         : loading || launchStateIncomplete || !llmConnected
                   }
                   onPrimary={() => {
@@ -2733,7 +2840,7 @@ function OnboardingWizardInner({
                         loading ||
                         adapterEnvLoading ||
                         hireBlockedForMission ||
-                        (connectKind === "local_llm" && !localLlmPickIsLive)
+                        (connectKind === "local_llm" && !localLlmVerified)
                       }
                       onClick={handleGiveHeartbeat}
                     >
