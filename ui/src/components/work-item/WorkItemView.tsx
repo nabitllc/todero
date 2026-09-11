@@ -688,6 +688,7 @@ export function WorkItemView(props: WorkItemViewProps) {
                 <textarea
                   className="work-item-composer-input work-item-sendback-input"
                   data-testid="work-item-sendback-note"
+                  aria-label="What should change?"
                   placeholder="What should change?"
                   value={sendBackNote}
                   onChange={(event) => setSendBackNote(event.target.value)}
@@ -763,6 +764,7 @@ export function WorkItemView(props: WorkItemViewProps) {
             ref={composerRef}
             className="work-item-composer-input"
             data-testid="work-item-composer-input"
+            aria-label={COMPOSER_PLACEHOLDER}
             placeholder={COMPOSER_PLACEHOLDER}
             value={comment}
             onChange={(event) => {

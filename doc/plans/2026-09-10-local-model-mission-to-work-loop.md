@@ -565,3 +565,134 @@ drift, not absence — so it fails closed on both platforms and the regression t
 **Open.**
 - Live verification (restart against the real database, a throwaway organization through
   plan → approve → chained tasks → judge → accept on Ollama) has not been run.
+
+### Wave K: Polish
+
+No new behavior — this wave only changes what the screens say and how they read. Two builders
+(`polish-ui`, `polish-server-copy`) were landed on one branch, plus the integration fixes below.
+
+**The task page (`IssueDetail`).** On a phone the task's details were reachable only from the "…"
+menu. There is now an "i" button in the title bar that opens the same details drawer in one tap.
+
+**The task page — the work item card.** The card had been built against its own private dark palette
+and pulled a font off the internet, so it stayed dark while the rest of the app was light and it
+looked like a different product. It now uses the app's own colors and fonts and follows the theme.
+The stamp and the approve button had ended up with near-black text on a saturated blue; text on a
+solid status color is now a near-white partner token, so those read in both themes.
+
+**The task page — the "this task needs a decision" notice.** The notice used to say "Todero needs a
+disposition before this issue can continue." It now says "Todero needs you to choose what happens
+next before this task can continue," titled "Needs next step". The escalation notice says Todero
+could not decide on its own, that nothing has changed, and that it needs your decision.
+
+The details inside that notice were the densest jargon in the product, and they were what the person
+read when deciding. Every label is now plain: "Required action" → "What to do", "Run evidence" →
+"What happened", "Source issue" → "Task", "Assignee" → "Assigned to", "Missing disposition" →
+"What's missing" (and the value is words, "a clear next step", not the stored key `clear_next_step`),
+"Valid dispositions" → "Your options", spelled out as the choices a person actually has. On the
+escalation notice: "Recovery" → "What Todero tried", "Recovery owner" → "Picked up by", "Source run"
+→ "The turn", "Corrective handoff run" → "Todero's retry", "Latest issue status" → "Task is now".
+
+**The task thread — recovery comments.** When Todero gives up retrying, its comment used to say it
+"cannot safely continue automatic recovery because the original assignee is not invokable." The two
+reasons Todero gives up are different things to do something about, so they read differently: it
+either "couldn't reach the agent assigned to this task" or the task "hit its spending limit before
+finishing". Both then say nothing was reassigned, and name the choices.
+
+**Attention queue.** A decision whose task link is missing said "Missing issue reference for this
+decision"; it now says "This decision is missing a link to its task."
+
+**Cancel confirmation (decision card).** The confirmation said it would cancel an "issue tree" and
+counted "issues". It now says task, sub-task and task tree, matching the rest of the product.
+
+**Paused organization card.** The button next to a queued task said "Skip". It permanently cancels
+the task, so it now says "Cancel" and names what it does.
+
+**Recent activity.** Marking a task read or unread produced a row with no label, so the feed fell
+back to the raw event name. Those two rows now read "marked as read" / "marked as unread".
+
+**Properties panel.** Both close buttons were icon-only with no accessible name; a screen reader
+announced "button". Both now say "Close properties panel".
+
+**Integration fixes — what the builders left broken.**
+- The rewritten notice text is matched as literal text in three places neither builder updated. The
+  "post this notice once" guard in `heartbeat.ts` matches saved comment bodies in SQL, and the UI
+  mirrors both strings in `ui/src/lib/successful-run-handoff.ts` to avoid printing the notice twice
+  in a thread. Changing the wording without those would have put a second, duplicate notice on every
+  task that already carried one. Both now match the new wording and keep matching the old, which is
+  what existing organizations have saved.
+- `successful-run-handoff.test.ts` asserted the old notice title and would have failed on `main`;
+  the UI builder never ran the server suite.
+- The two builders rewrote the same two strings differently. The plainer pair was kept.
+- `"Recovery action"` looks like a label but is a lookup key — `noticeMetadataReferencesRecoveryAction`
+  matches on it against metadata already saved. It was deliberately left alone and is commented so.
+
+### Wave K, review pass
+
+A review of the branch found the wave had stopped halfway on several screens: a rewritten dialog
+whose confirm button still carried the old word, two different failures collapsed into one identical
+sentence, a raw `successful_run_missing_state` printed to the owner, and a set of chosen findings
+that were never implemented at all. This pass closes them.
+
+**Cancel confirmation (decision card) — finished.** Only the dialog copy had been changed; the
+button the owner actually clicks still said "Cancel 3 issues", and the preview line above it and the
+history line afterwards both still counted "issues". The whole cancel-tree path — preview, confirm
+button, result — now says task. So does the rest of the card: "Create task", "a referenced task no
+longer exists", "A target task was cancelled", "Dismissed — nothing was changed", "view turn".
+
+**The task thread — why Todero stopped.** The rewrite had given the unreachable-agent case and the
+over-budget case the same sentence, so the thread no longer said which had happened. They are two
+sentences again (above).
+
+**The notice details — "Cause".** The row still printed the stored key,
+`Cause: successful_run_missing_state`. It now reads "the turn finished, but never said what happens
+next", the same way "What's missing" already renders words instead of `clear_next_step`. The stored
+key is unchanged everywhere it is actually used as a key.
+
+**The recovery card (task page).** The badge beside "RECOVERY NEEDED" literally said "Missing
+Disposition"; the others were "Workspace Validation", "Active Watchdog". They now say "Needs next
+step", "Files not ready", "Watching for a stall", "Waiting on nothing", "Stuck with its owner",
+"Setup incomplete". The rows below say "The turn" and "Todero's retry" rather than "Source run" and
+"Corrective run", "Picked up by" rather than "Recovery owner", and a turn chip reads `turn 7accd7a4`.
+
+**Dashboard — the agent cards.** The section was headed "AGENTS" and showed four cards that are
+often one agent taking four turns at the same task, which contradicted "Agents Enabled: 1" two rows
+above. It is now headed "Latest agent turns", and when the same task appears on more than one card
+each says "Turn 2 of 4 on this task".
+
+**Dashboard — charts and activity.** "Run Activity" is now "Agent Activity". Each chart carries a
+spoken summary for a screen reader ("Tasks by status, last 14 days: 6 In Progress, 2 Done"), and the
+"Last 14 days" subtitle was too faint to read — it now uses the normal muted colour. Recent Activity
+dropped the tier-3 bookkeeping rows (read/unread, archive, cost) that the activity feed already
+hides, so ten rows are ten things worth seeing.
+
+**Sidebar — "Pause everything".** The two buttons sat side by side and did not fit: "Resume
+everything" clipped to "Resu" at the sidebar's real width. They are stacked.
+
+**Goals.** The tier beside a goal printed the raw value "company"; it says "Organization", matching
+Settings. On a phone the title no longer truncates behind it — the tier sits on its own line above.
+
+**Inbox and the blocked notice.** "Failed run" is "A turn failed" (and the group and filter say
+"Failed turns"); "A correction run is in progress" is "Todero is fixing this now"; a linked turn
+reads `turn 87654321`.
+
+**Accessibility.** Every property picker on the task page names itself from its field label, so a
+screen reader hears "Status, Todo" instead of "Todo", and the phone's inline picker reports whether
+it is open. In Settings, the organization name, description and logo fields are properly tied to
+their labels, text inputs show a focus ring when tabbed to, each "?" button says what it explains,
+and every toggle announces the setting it switches. The reply box and the "what should change?" box
+on a task have names.
+
+**Open.**
+- `stranded-notice.ts` builds a parallel notice with the same jargon ("Recovery owner", "Board
+  decision required"). Out of scope here; it still reads like internals.
+- `ui/src/fixtures/systemNoticeFixtures.ts` and `SystemNoticeUxLab.tsx` still carry the old wording.
+  They only feed the internal notice-preview page, so nothing a customer sees.
+- The `nextAction` text the server stores on a recovery action ("Choose and record a valid issue
+  disposition.") is still shown verbatim on the recovery card. It is stored data, not a label, so
+  changing it is a data-migration question rather than a copy change.
+- No test asserts that a comment carrying the *old* notice wording is still deduped. The guarantee
+  rests on `LEGACY_SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY` being in both the SQL guard and the
+  UI matcher. Worth a regression test before merge.
+- Not run on this machine: e2e, storybook visual, and the full server suite (`session_gates.md`
+  documents why). The required and touched suites were run.

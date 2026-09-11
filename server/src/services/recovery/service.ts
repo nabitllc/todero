@@ -3606,8 +3606,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
             previousStatus: issue.status as StrandedPreviousStatus,
             latestRun,
             comment:
-              "Todero cannot safely continue automatic recovery because the original assignee is not invokable. " +
-              "The source assignment is unchanged and the board must choose the next action.",
+              "Todero couldn't reach the agent assigned to this task, so it stopped instead of guessing. Nothing was reassigned — open it and choose what happens next (try again, mark it done, or send it for review).",
           });
           if (updated) {
             result.escalated += 1;
@@ -3664,8 +3663,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
               ? EXECUTION_REVIEW_PARTICIPANT_RECOVERY_REASON
               : undefined,
             comment:
-              "Todero cannot safely continue automatic recovery because the original recovery target is over budget. " +
-              "The source assignment is unchanged and the board must choose the next action.",
+              "This task hit its spending limit before finishing, so Todero stopped instead of guessing. Nothing was reassigned — raise the limit, or open it and choose what happens next (try again, mark it done, or send it for review).",
           });
           if (updated) {
             result.escalated += 1;

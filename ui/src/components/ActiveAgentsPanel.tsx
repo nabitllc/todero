@@ -67,13 +67,13 @@ interface ActiveAgentsPanelProps {
 
 export function ActiveAgentsPanel({
   companyId,
-  title = "Agents",
+  title = "Latest agent turns",
   minRunCount = MIN_DASHBOARD_RUNS,
   fetchLimit,
   cardLimit = DASHBOARD_RUN_CARD_LIMIT,
   gridClassName,
   cardClassName,
-  emptyMessage = "No recent agent runs.",
+  emptyMessage = "No recent agent turns.",
   queryScope = "dashboard",
   showMoreLink = true,
 }: ActiveAgentsPanelProps) {
@@ -118,6 +118,30 @@ export function ActiveAgentsPanel({
     return map;
   }, [issueQueries]);
 
+  // Four cards can all belong to one agent working the same task over and over.
+  // Without this the panel reads as four agents; number the cards so it reads as
+  // one task, several turns.
+  const turnSequenceByRun = useMemo(() => {
+    const byIssue = new Map<string, LiveRunForIssue[]>();
+    for (const run of visibleRuns) {
+      if (!run.issueId) continue;
+      const bucket = byIssue.get(run.issueId);
+      if (bucket) bucket.push(run);
+      else byIssue.set(run.issueId, [run]);
+    }
+    const sequence = new Map<string, { index: number; total: number }>();
+    for (const bucket of byIssue.values()) {
+      if (bucket.length < 2) continue;
+      const oldestFirst = [...bucket].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      oldestFirst.forEach((run, index) =>
+        sequence.set(run.id, { index: index + 1, total: oldestFirst.length }),
+      );
+    }
+    return sequence;
+  }, [visibleRuns]);
+
   const { transcriptByRun, hasOutputForRun } = useLiveRunTranscripts({
     runs: visibleRuns,
     companyId,
@@ -147,6 +171,7 @@ export function ActiveAgentsPanel({
               transcript={transcriptByRun.get(run.id) ?? EMPTY_TRANSCRIPT}
               hasOutput={hasOutputForRun(run.id)}
               isActive={isRunActive(run)}
+              turnSequence={turnSequenceByRun.get(run.id)}
               className={cardClassName}
             />
           ))}
@@ -155,7 +180,7 @@ export function ActiveAgentsPanel({
       {showMoreLink && hiddenRunCount > 0 && (
         <div className="mt-3 flex justify-end text-xs text-muted-foreground">
           <Link to="/dashboard/live" className="hover:text-foreground hover:underline">
-            {hiddenRunCount} more active/recent run{hiddenRunCount === 1 ? "" : "s"}
+            {hiddenRunCount} more active or recent turn{hiddenRunCount === 1 ? "" : "s"}
           </Link>
         </div>
       )}
@@ -170,6 +195,7 @@ const AgentRunCard = memo(function AgentRunCard({
   transcript,
   hasOutput,
   isActive,
+  turnSequence,
   className,
 }: {
   companyId: string;
@@ -178,6 +204,8 @@ const AgentRunCard = memo(function AgentRunCard({
   transcript: TranscriptEntry[];
   hasOutput: boolean;
   isActive: boolean;
+  /** Set only when this task appears on more than one card. */
+  turnSequence?: { index: number; total: number };
   className?: string;
 }) {
   return (
@@ -228,6 +256,14 @@ const AgentRunCard = memo(function AgentRunCard({
               {issue?.identifier ?? run.issueId.slice(0, 8)}
               {issue?.title ? ` - ${issue.title}` : ""}
             </Link>
+            {turnSequence ? (
+              <div
+                className="mt-1 text-(length:--text-nano) text-muted-foreground"
+                data-testid="active-agent-turn-sequence"
+              >
+                Turn {turnSequence.index} of {turnSequence.total} on this task
+              </div>
+            ) : null}
             {issue?.activeRecoveryAction ? (
               <div className="mt-1.5">
                 <RunCardRecoveryChip action={issue.activeRecoveryAction} />

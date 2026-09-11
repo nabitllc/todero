@@ -128,28 +128,28 @@ export interface IssueRecoveryActionCardProps {
 }
 
 const KIND_LABEL: Record<IssueRecoveryActionKind, string> = {
-  missing_disposition: "Missing Disposition",
-  deliberate_wait_without_target: "Wait Without A Target",
-  stranded_assigned_issue: "Stranded Task",
-  workspace_validation: "Workspace Validation",
-  configuration_validation: "Configuration Validation",
-  active_run_watchdog: "Active Watchdog",
-  issue_graph_liveness: "Task Needs Next Step",
+  missing_disposition: "Needs next step",
+  deliberate_wait_without_target: "Waiting on nothing",
+  stranded_assigned_issue: "Stuck with its owner",
+  workspace_validation: "Files not ready",
+  configuration_validation: "Setup incomplete",
+  active_run_watchdog: "Watching for a stall",
+  issue_graph_liveness: "Needs next step",
 };
 
 const KIND_HEADLINE: Record<IssueRecoveryActionKind, string> = {
   missing_disposition:
-    "This task's run finished, but no next step was chosen. Choose what happens next — try the task again, mark it done, or send it for review.",
+    "This task's turn finished, but no next step was chosen. Choose what happens next — try the task again, mark it done, or send it for review.",
   deliberate_wait_without_target:
-    "This task's last run stopped to wait, but there is no reviewer, blocker, monitor, or approval to wait for. Todero is repairing the next step; the task stays with its owner.",
+    "This task's last turn stopped to wait, but there is no reviewer, blocker, monitor, or approval to wait for. Todero is repairing the next step; the task stays with its owner.",
   stranded_assigned_issue:
-    "Todero retried this task's last run, but there is still no queued run, reviewer, blocker, or other next owner. To get it moving, choose what happens next — try the task again, mark it done, or send it for review.",
+    "Todero tried this task again, but there is still nothing queued and no reviewer, blocker, or other next owner. To get it moving, choose what happens next — try the task again, mark it done, or send it for review.",
   workspace_validation:
-    "Todero stopped this run because the task's git workspace could not be validated.",
+    "Todero stopped this turn because the task's git workspace could not be validated.",
   configuration_validation:
-    "Todero stopped before dispatching this run because required secret/env bindings are missing.",
+    "Todero stopped before starting this turn because required secret/env bindings are missing.",
   active_run_watchdog:
-    "The active run has been silent. Recovery is observing without interrupting it.",
+    "The turn in progress has been silent. Todero is watching it without interrupting.",
   issue_graph_liveness:
     "Todero could not find a clear next step for this open task. Choose whether to continue work, send it for review, mark it done, or record what is blocking it.",
 };
@@ -188,7 +188,7 @@ const STATE_TONE: Record<RecoveryCardCardState, {
     divider: "border-sky-300/60 dark:border-sky-500/30",
   },
   observe_only: {
-    label: "OBSERVING ACTIVE RUN",
+    label: "WATCHING THIS TURN",
     containerClass:
       "border-border bg-muted/40 text-foreground dark:bg-muted/20",
     iconWrapClass: "bg-muted text-foreground/70",
@@ -863,7 +863,7 @@ function RunChip({
   const inner = (
     <>
       <code className="rounded bg-background/80 px-1.5 py-0.5 font-mono text-(length:--text-micro) text-foreground/80">
-        run {short}
+        turn {short}
       </code>
       {status ? (
         <span className="font-sans text-(length:--text-micro) text-muted-foreground">{status}</span>
@@ -908,8 +908,8 @@ function lineageHeadline(lineage: RecoveryRetryLineage): string {
   }
   if (lineage.lane === "source_owner") {
     return lineage.exhausted
-      ? "This task's last run stopped to wait, but nothing was waiting for it. The original owner has used every automatic repair attempt, so the next step needs a decision. The task stays with its owner."
-      : "This task's last run stopped to wait, but nothing was waiting for it. Todero is retrying the original owner to record a real next step. The task stays with its owner, and no action is needed yet.";
+      ? "This task's last turn stopped to wait, but nothing was waiting for it. The original owner has used every automatic repair attempt, so the next step needs a decision. The task stays with its owner."
+      : "This task's last turn stopped to wait, but nothing was waiting for it. Todero is retrying the original owner to record a real next step. The task stays with its owner, and no action is needed yet.";
   }
   if (lineage.lane === "recovery_owner") {
     return "The original owner could not record a next step within its retry budget. A recovery owner is now repairing the path only — the task itself still belongs to its original owner.";
@@ -1158,7 +1158,7 @@ export function IssueRecoveryActionCard({
                 <span className="text-muted-foreground">keeps this task</span>
               </span>
             </MetadataRow>
-            <MetadataRow label="Recovery owner">
+            <MetadataRow label="Picked up by">
               <span
                 className="inline-flex flex-wrap items-center gap-1.5"
                 data-testid="recovery-recovery-owner"
@@ -1261,11 +1261,11 @@ export function IssueRecoveryActionCard({
           </span>
         </MetadataRow>
         )}
-        <MetadataRow label="Source run">
+        <MetadataRow label="The turn">
           <RunChip runId={sourceRunId} agentId={action.previousOwnerAgentId} />
         </MetadataRow>
         {correctiveRunId ? (
-          <MetadataRow label="Corrective run">
+          <MetadataRow label="Todero's retry">
             <RunChip runId={correctiveRunId} agentId={action.previousOwnerAgentId} />
           </MetadataRow>
         ) : null}

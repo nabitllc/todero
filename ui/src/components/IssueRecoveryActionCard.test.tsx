@@ -146,9 +146,10 @@ describe("IssueRecoveryActionCard", () => {
     expect(section?.getAttribute("data-recovery-state")).toBe("needed");
     expect(section?.getAttribute("data-recovery-kind")).toBe("missing_disposition");
     expect(node.textContent).toContain("RECOVERY NEEDED");
-    expect(node.textContent).toContain("Missing Disposition");
+    expect(node.textContent).toContain("Needs next step");
+    expect(node.textContent).not.toContain("Disposition");
     expect(node.textContent).toContain(
-      "This task's run finished, but no next step was chosen. Choose what happens next — try the task again, mark it done, or send it for review.",
+      "This task's turn finished, but no next step was chosen. Choose what happens next — try the task again, mark it done, or send it for review.",
     );
     expect(node.textContent).toContain("An agent will be asked to choose the next step");
     expect(node.textContent).toContain("ClaudeCoder");
@@ -162,9 +163,9 @@ describe("IssueRecoveryActionCard", () => {
     );
     const section = node.querySelector("section[aria-label]");
     expect(section?.getAttribute("data-recovery-state")).toBe("observe_only");
-    expect(node.textContent).toContain("OBSERVING ACTIVE RUN");
+    expect(node.textContent).toContain("WATCHING THIS TURN");
     expect(node.textContent).toContain(
-      "The active run has been silent. Recovery is observing without interrupting it.",
+      "The turn in progress has been silent. Todero is watching it without interrupting.",
     );
   });
 
@@ -174,7 +175,7 @@ describe("IssueRecoveryActionCard", () => {
         action={buildAction({ kind: "issue_graph_liveness", cause: "issue_graph_liveness" })}
       />,
     );
-    expect(node.textContent).toContain("Task Needs Next Step");
+    expect(node.textContent).toContain("Needs next step");
     expect(node.textContent).toContain(
       "Todero could not find a clear next step for this open task. Choose whether to continue work, send it for review, mark it done, or record what is blocking it.",
     );
@@ -203,9 +204,9 @@ describe("IssueRecoveryActionCard", () => {
     );
     const section = node.querySelector("section[aria-label]");
     expect(section?.getAttribute("data-recovery-kind")).toBe("workspace_validation");
-    expect(node.textContent).toContain("Workspace Validation");
+    expect(node.textContent).toContain("Files not ready");
     expect(node.textContent).toContain(
-      "Todero stopped this run because the task's git workspace could not be validated.",
+      "Todero stopped this turn because the task's git workspace could not be validated.",
     );
     expect(node.textContent).toContain("Repair the source issue workspace link");
   });
@@ -826,7 +827,7 @@ describe("IssueRecoveryActionCard owner-sticky retry lineage", () => {
     expect(section?.getAttribute("data-recovery-lane")).toBe("source_owner");
     expect(node.textContent).toContain("RECOVERY IN PROGRESS");
     expect(node.textContent).not.toContain("RECOVERY NEEDED");
-    expect(node.textContent).toContain("Wait Without A Target");
+    expect(node.textContent).toContain("Waiting on nothing");
     expect(node.textContent).toContain("The task stays with its owner, and no action is needed yet.");
     expect(node.textContent).toContain("Todero is retrying the original owner");
   });

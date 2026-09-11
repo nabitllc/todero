@@ -28,7 +28,7 @@ const runSegmentColors = {
 
 // Compact per-day tooltip that also attributes failures to their error class.
 function runDayTooltip(entry: DashboardRunActivityDay): string {
-  const lines = [`${entry.date}: ${entry.total} run${entry.total === 1 ? "" : "s"}`];
+  const lines = [`${entry.date}: ${entry.total} turn${entry.total === 1 ? "" : "s"}`];
   if (entry.succeeded > 0) lines.push(`  succeeded: ${entry.succeeded}`);
   if (entry.recovered > 0) lines.push(`  recovered: ${entry.recovered} (retry succeeded)`);
   if (entry.failed > 0) {
@@ -38,6 +38,18 @@ function runDayTooltip(entry: DashboardRunActivityDay): string {
   }
   if (entry.other > 0) lines.push(`  other: ${entry.other}`);
   return lines.join("\n");
+}
+
+/**
+ * A bar chart is a picture to a sighted reader and silence to a screen reader.
+ * Every chart names itself and reads out its totals through this one helper.
+ */
+function chartSummary(title: string, parts: { label: string; count: number }[]): string {
+  const spoken = parts
+    .filter((part) => part.count > 0)
+    .map((part) => `${part.count} ${part.label}`);
+  if (spoken.length === 0) return `${title}, last 14 days: nothing yet.`;
+  return `${title}, last 14 days: ${spoken.join(", ")}.`;
 }
 
 /* ---- Sub-components ---- */
@@ -74,7 +86,7 @@ export function ChartCard({ title, subtitle, children }: { title: string; subtit
     <div className="border border-border rounded-lg p-4 space-y-3">
       <div>
         <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
-        {subtitle && <span className="text-(length:--text-nano) text-muted-foreground/60">{subtitle}</span>}
+        {subtitle && <span className="text-(length:--text-nano) text-muted-foreground">{subtitle}</span>}
       </div>
       {children}
     </div>
@@ -127,7 +139,7 @@ export function RunActivityChart(props: RunChartProps) {
   const hasData = activity.some(v => v.total > 0);
   const hasRecovered = activity.some(v => v.recovered > 0);
 
-  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
+  if (!hasData) return <p className="text-xs text-muted-foreground">No turns yet</p>;
 
   const legendItems = [
     { color: runSegmentColors.succeeded, label: "Succeeded" },
@@ -136,9 +148,16 @@ export function RunActivityChart(props: RunChartProps) {
     { color: runSegmentColors.other, label: "Other" },
   ];
 
+  const summary = chartSummary("Agent activity", [
+    { label: "succeeded", count: activity.reduce((sum, day) => sum + day.succeeded, 0) },
+    { label: "recovered after a retry", count: activity.reduce((sum, day) => sum + day.recovered, 0) },
+    { label: "failed", count: activity.reduce((sum, day) => sum + day.failed, 0) },
+    { label: "other", count: activity.reduce((sum, day) => sum + day.other, 0) },
+  ]);
+
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="flex items-end gap-(--sz-3px) h-20" role="img" aria-label={summary}>
         {days.map(day => {
           const entry = grouped.get(day) ?? emptyRunDay(day);
           const total = entry.total;
@@ -190,15 +209,23 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
 
+  const summary = chartSummary(
+    "Tasks by priority",
+    priorityOrder.map((priority) => ({
+      label: priority,
+      count: Array.from(grouped.values()).reduce((sum, entry) => sum + (entry[priority] ?? 0), 0),
+    })),
+  );
+
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="flex items-end gap-(--sz-3px) h-20" role="img" aria-label={summary}>
         {days.map(day => {
           const entry = grouped.get(day)!;
           const total = Object.values(entry).reduce((a, b) => a + b, 0);
           const heightPct = (total / maxValue) * 100;
           return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
+            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} tasks`}>
               {total > 0 ? (
                 <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {priorityOrder.map(p => entry[p] > 0 ? (
@@ -264,15 +291,23 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
 
+  const summary = chartSummary(
+    "Tasks by status",
+    statusOrder.map((status) => ({
+      label: statusLabels[status] ?? status,
+      count: Array.from(grouped.values()).reduce((sum, entry) => sum + (entry[status] ?? 0), 0),
+    })),
+  );
+
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="flex items-end gap-(--sz-3px) h-20" role="img" aria-label={summary}>
         {days.map(day => {
           const entry = grouped.get(day)!;
           const total = Object.values(entry).reduce((a, b) => a + b, 0);
           const heightPct = (total / maxValue) * 100;
           return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
+            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} tasks`}>
               {total > 0 ? (
                 <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {statusOrder.map(s => (entry[s] ?? 0) > 0 ? (
@@ -298,11 +333,17 @@ export function SuccessRateChart(props: RunChartProps) {
   const grouped = new Map(activity.map((day) => [day.date, day]));
 
   const hasData = activity.some(v => v.total > 0);
-  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
+  if (!hasData) return <p className="text-xs text-muted-foreground">No turns yet</p>;
+
+  const totalTurns = activity.reduce((sum, day) => sum + day.total, 0);
+  const totalOk = activity.reduce((sum, day) => sum + day.succeeded + day.recovered, 0);
+  const summary = `Success rate, last 14 days: ${
+    totalTurns > 0 ? Math.round((totalOk / totalTurns) * 100) : 0
+  }% — ${totalOk} of ${totalTurns} turns finished cleanly.`;
 
   return (
     <div>
-      <div className="flex items-end gap-(--sz-3px) h-20">
+      <div className="flex items-end gap-(--sz-3px) h-20" role="img" aria-label={summary}>
         {days.map(day => {
           const entry = grouped.get(day) ?? emptyRunDay(day);
           // Recovered runs ultimately succeeded, so they count toward the rate

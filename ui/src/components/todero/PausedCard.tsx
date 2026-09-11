@@ -231,7 +231,7 @@ export function PausedCard({
                     onClick={() => skip.mutate(row.id)}
                     data-testid="paused-queued-skip"
                   >
-                    Skip
+                    Cancel
                   </Button>
                   {row.blockers.length > 0 ? (
                     <Button

@@ -96,7 +96,7 @@ const ACTION_TIER: Record<string, EventTier> = {
   "cost.recorded": 3,
 };
 
-function getEventTier(event: ActivityEvent): EventTier {
+export function getEventTier(event: ActivityEvent): EventTier {
   // Special case: issue.updated with status → in_review is tier 1
   if (event.action === "issue.updated" && event.details) {
     const details = event.details as Record<string, unknown>;

@@ -117,6 +117,7 @@ import {
   SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY,
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   SUCCESSFUL_RUN_MISSING_STATE_REASON,
+  describeMissingStateCause,
   noticeMetadataReferencesRecoveryAction,
 } from "../services/recovery/index.ts";
 import { collectDispositionRepairSourceState } from "../services/recovery/disposition-repair.ts";
@@ -3705,16 +3706,16 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       version: 1,
       sections: expect.arrayContaining([
         expect.objectContaining({
-          title: "Required action",
+          title: "What to do",
           rows: expect.arrayContaining([
-            expect.objectContaining({ type: "key_value", label: "Missing disposition", value: "clear_next_step" }),
+            expect.objectContaining({ type: "key_value", label: "What's missing", value: "a clear next step" }),
           ]),
         }),
         expect.objectContaining({
-          title: "Run evidence",
+          title: "What happened",
           rows: expect.arrayContaining([
             expect.objectContaining({ type: "run_link", runId }),
-            expect.objectContaining({ type: "key_value", label: "Normalized cause", value: SUCCESSFUL_RUN_MISSING_STATE_REASON }),
+            expect.objectContaining({ type: "key_value", label: "Cause", value: describeMissingStateCause(SUCCESSFUL_RUN_MISSING_STATE_REASON) }),
           ]),
         }),
       ]),
@@ -4028,17 +4029,17 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       version: 1,
       sections: expect.arrayContaining([
         expect.objectContaining({
-          title: "Recovery",
+          title: "What Todero tried",
           rows: expect.arrayContaining([
             expect.objectContaining({ type: "key_value", label: "Recovery action", value: recoveryAction.id }),
-            expect.objectContaining({ type: "key_value", label: "Recovery owner", value: "Board decision required" }),
+            expect.objectContaining({ type: "key_value", label: "Picked up by", value: "Nobody yet — this one is yours to decide" }),
           ]),
         }),
         expect.objectContaining({
-          title: "Run evidence",
+          title: "What happened",
           rows: expect.arrayContaining([
-            expect.objectContaining({ type: "key_value", label: "Normalized cause", value: SUCCESSFUL_RUN_MISSING_STATE_REASON }),
-            expect.objectContaining({ type: "key_value", label: "Missing disposition", value: "clear_next_step" }),
+            expect.objectContaining({ type: "key_value", label: "Cause", value: describeMissingStateCause(SUCCESSFUL_RUN_MISSING_STATE_REASON) }),
+            expect.objectContaining({ type: "key_value", label: "What's missing", value: "a clear next step" }),
           ]),
         }),
       ]),

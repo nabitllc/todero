@@ -197,9 +197,14 @@ export function CompanySettings() {
           General
         </div>
         <div className="space-y-3">
-          <Field label="Organization name" hint="The display name for your organization.">
+          <Field
+            label="Organization name"
+            hint="The display name for your organization."
+            htmlFor="company-name"
+          >
             <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              id="company-name"
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
               type="text"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
@@ -214,9 +219,11 @@ export function CompanySettings() {
           <Field
             label="Description"
             hint="Optional description shown in the organization profile."
+            htmlFor="company-description"
           >
             <input
-              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              id="company-description"
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
               type="text"
               value={description}
               placeholder="Optional organization description"
@@ -244,13 +251,15 @@ export function CompanySettings() {
               <Field
                 label="Logo"
                 hint="Upload a PNG, JPEG, WEBP, GIF, or SVG logo image."
+                htmlFor="company-logo"
               >
                 <div className="space-y-2">
                   <input
+                    id="company-logo"
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
                     onChange={handleLogoFileChange}
-                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs"
+                    className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-2.5 file:py-1 file:text-xs focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50"
                   />
                   {logoUrl && (
                     <div className="flex items-center gap-2">

@@ -106,13 +106,19 @@ export function PauseEverythingControl({ className }: { className?: string }) {
   const busy = pauseAll.isPending || resumeAll.isPending;
 
   return (
-    <div className={cn("flex items-center gap-2 px-3 py-2", className)} data-testid="pause-everything">
+    // Stacked, not side by side: at the sidebar's real width the two labels
+    // collided and "Resume everything" rendered as "Resu".
+    <div
+      className={cn("flex flex-col items-stretch gap-1 px-3 py-2", className)}
+      data-testid="pause-everything"
+    >
       <Button
         size="sm"
         variant="ghost"
         disabled={busy}
         onClick={() => pauseAll.mutate()}
         data-testid="pause-everything-pause"
+        className="justify-start"
       >
         <Pause className="h-3.5 w-3.5" />
         Pause everything
@@ -123,6 +129,7 @@ export function PauseEverythingControl({ className }: { className?: string }) {
         disabled={busy}
         onClick={() => resumeAll.mutate()}
         data-testid="pause-everything-resume"
+        className="justify-start"
       >
         <Play className="h-3.5 w-3.5" />
         Resume everything

@@ -15,10 +15,17 @@ export const FINISH_SUCCESSFUL_RUN_HANDOFF_REASON = "finish_successful_run_hando
 export const SUCCESSFUL_RUN_MISSING_STATE_REASON = "successful_run_missing_state";
 export const DEFAULT_MAX_SUCCESSFUL_RUN_HANDOFF_ATTEMPTS = 1;
 export const SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY =
-  "Todero needs a disposition before this issue can continue.";
+  "Todero needs you to choose what happens next before this task can continue.";
 export const SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY =
-  "Todero could not resolve this issue's missing disposition automatically. The source assignment is unchanged and a board decision is required.";
+  "Todero couldn't automatically decide what happens next on this task. Nothing has changed — it needs your decision.";
+// Wording used before the plain-language rewrite. Tasks that already carry a
+// notice were saved with this exact text, so the "post this notice once" guard
+// and the body matcher must keep recognizing it — otherwise every one of those
+// tasks gets a second, duplicate notice in its thread.
+export const LEGACY_SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY =
+  "Todero needs a disposition before this issue can continue.";
 export const LEGACY_SUCCESSFUL_RUN_HANDOFF_NOTICE_PREFIXES = [
+  LEGACY_SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   "## This issue still needs a next step",
   "## Successful run missing issue disposition",
 ] as const;
@@ -94,6 +101,29 @@ export type SuccessfulRunHandoffNotice = {
   metadata: IssueCommentMetadata;
 };
 
+/**
+ * The stored value is a snake_case key ("clear_next_step"). The board reads
+ * this row, so render it as words instead of showing the raw key.
+ */
+export function describeMissingDisposition(value: string) {
+  const trimmed = value.trim();
+  if (trimmed === "clear_next_step") return "a clear next step";
+  return trimmed.replace(/_/g, " ");
+}
+
+/**
+ * The stored reason is a snake_case key ("successful_run_missing_state"). The
+ * board reads this row too, so render it as words instead of the raw key — the
+ * key itself stays the stored value everywhere else.
+ */
+export function describeMissingStateCause(reason: string) {
+  const trimmed = reason.trim();
+  if (trimmed === SUCCESSFUL_RUN_MISSING_STATE_REASON) {
+    return "the turn finished, but never said what happens next";
+  }
+  return trimmed.replace(/_/g, " ");
+}
+
 export function noticeMetadataReferencesRecoveryAction(
   metadata: IssueCommentMetadata | null | undefined,
   recoveryActionId: string,
@@ -157,32 +187,32 @@ export function buildSuccessfulRunHandoffRequiredNotice(input: {
     body: SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
     presentation: systemNoticePresentation({
       tone: "warning",
-      title: "Missing issue disposition",
+      title: "Needs next step",
     }),
     metadata: {
       version: 1,
       sourceRunId: input.run.id,
       sections: [
         {
-          title: "Required action",
+          title: "What to do",
           rows: [
-            issueLinkRow("Source issue", input.issue),
-            agentLinkRow("Assignee", input.agent),
-            keyValueRow("Missing disposition", "clear_next_step"),
+            issueLinkRow("Task", input.issue),
+            agentLinkRow("Assigned to", input.agent),
+            keyValueRow("What's missing", "a clear next step"),
             keyValueRow(
-              "Valid dispositions",
-              "done, cancelled, in_review with an owner, blocked with blockers, delegated follow-up, or explicit continuation",
+              "Your options",
+              "mark it done, cancel it, send it for review with an owner, mark it blocked and say what it waits on, hand it to another agent, or tell it to keep going",
             ),
           ],
         },
         {
-          title: "Run evidence",
+          title: "What happened",
           rows: [
-            runLinkRow("Successful run", input.run),
-            keyValueRow("Run status", input.run.status),
-            keyValueRow("Normalized cause", SUCCESSFUL_RUN_MISSING_STATE_REASON),
-            keyValueRow("Detected progress", input.detectedProgressSummary),
-            keyValueRow("Automatic retry", "one corrective handoff wake queued"),
+            runLinkRow("Turn", input.run),
+            keyValueRow("Result", input.run.status),
+            keyValueRow("Cause", describeMissingStateCause(SUCCESSFUL_RUN_MISSING_STATE_REASON)),
+            keyValueRow("Progress so far", input.detectedProgressSummary),
+            keyValueRow("Already retried", "Todero tried once on its own before asking you"),
           ],
         },
       ],
@@ -206,35 +236,38 @@ export function buildSuccessfulRunHandoffExhaustedNotice(input: {
     body: SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY,
     presentation: systemNoticePresentation({
       tone: "danger",
-      title: "Missing disposition recovery blocked",
+      title: "Cannot decide next step",
     }),
     metadata: {
       version: 1,
       sourceRunId: input.sourceRun?.id ?? null,
       sections: [
         {
-          title: "Recovery",
+          title: "What Todero tried",
           rows: [
-            issueLinkRow("Source issue", input.issue),
+            issueLinkRow("Task", input.issue),
+            // "Recovery action" is a lookup key, not just a label:
+            // noticeMetadataReferencesRecoveryAction() matches on it against
+            // metadata already saved on existing tasks. Do not rename it.
             input.recoveryActionId
               ? keyValueRow("Recovery action", input.recoveryActionId)
-              : issueLinkRow("Recovery issue", input.recoveryIssue),
+              : issueLinkRow("Follow-up task", input.recoveryIssue),
             input.recoveryOwner
-              ? agentLinkRow("Recovery owner", input.recoveryOwner)
-              : keyValueRow("Recovery owner", "Board decision required"),
-            agentLinkRow("Source assignee", input.sourceAssignee),
-            keyValueRow("Suggested action", "inspect the evidence, then retry the original owner, explicitly reassign, or record a valid issue disposition"),
+              ? agentLinkRow("Picked up by", input.recoveryOwner)
+              : keyValueRow("Picked up by", "Nobody yet — this one is yours to decide"),
+            agentLinkRow("Was assigned to", input.sourceAssignee),
+            keyValueRow("What you can do", "look at what happened below, then try the same agent again, hand it to someone else, or say what happens next"),
           ],
         },
         {
-          title: "Run evidence",
+          title: "What happened",
           rows: [
-            runLinkRow("Source run", input.sourceRun),
-            runLinkRow("Corrective handoff run", input.correctiveRun),
-            keyValueRow("Latest issue status", input.latestIssueStatus),
-            keyValueRow("Latest handoff run status", input.latestHandoffRunStatus),
-            keyValueRow("Normalized cause", SUCCESSFUL_RUN_MISSING_STATE_REASON),
-            keyValueRow("Missing disposition", input.missingDisposition),
+            runLinkRow("The turn", input.sourceRun),
+            runLinkRow("Todero's retry", input.correctiveRun),
+            keyValueRow("Task is now", input.latestIssueStatus),
+            keyValueRow("The retry ended", input.latestHandoffRunStatus),
+            keyValueRow("Cause", describeMissingStateCause(SUCCESSFUL_RUN_MISSING_STATE_REASON)),
+            keyValueRow("What's missing", describeMissingDisposition(input.missingDisposition)),
           ],
         },
       ],

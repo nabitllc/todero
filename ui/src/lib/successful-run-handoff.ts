@@ -4,9 +4,19 @@ export const SUCCESSFUL_RUN_HANDOFF_REQUIRED_ACTION = "issue.successful_run_hand
 export const SUCCESSFUL_RUN_HANDOFF_RESOLVED_ACTION = "issue.successful_run_handoff_resolved";
 export const SUCCESSFUL_RUN_HANDOFF_ESCALATED_ACTION = "issue.successful_run_handoff_escalated";
 export const SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY =
-  "Todero needs a disposition before this issue can continue.";
+  "Todero needs you to choose what happens next before this task can continue.";
 export const SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY =
-  "Todero could not resolve this issue's missing disposition automatically. The source assignment is unchanged and a board decision is required.";
+  "Todero couldn't automatically decide what happens next on this task. Nothing has changed — it needs your decision.";
+
+// Organizations created before the plain-language rewrite still have the old
+// wording saved on their comments. Keep matching it so those threads stay
+// de-duplicated instead of showing the notice body twice.
+const LEGACY_REQUIRED_NOTICE_BODIES = [
+  "Todero needs a disposition before this issue can continue.",
+] as const;
+const LEGACY_EXHAUSTED_NOTICE_BODIES = [
+  "Todero could not resolve this issue's missing disposition automatically. The source assignment is unchanged and a board decision is required.",
+] as const;
 
 export function isSuccessfulRunHandoffActivity(action: string) {
   return action === SUCCESSFUL_RUN_HANDOFF_REQUIRED_ACTION
@@ -70,6 +80,7 @@ export function successfulRunHandoffFromActivity(event: ActivityEvent): Successf
 export function isSuccessfulRunHandoffComment(text: string) {
   const trimmed = text.trim();
   return trimmed === SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY
+    || LEGACY_REQUIRED_NOTICE_BODIES.some((body) => trimmed === body)
     || /^##\s+(This issue still needs a next step|Run finished without a next step|Successful run missing issue disposition)/i.test(trimmed)
     || isSuccessfulRunHandoffEscalationComment(trimmed);
 }
@@ -77,6 +88,7 @@ export function isSuccessfulRunHandoffComment(text: string) {
 export function isSuccessfulRunHandoffEscalationComment(text: string) {
   const trimmed = text.trim();
   return trimmed === SUCCESSFUL_RUN_HANDOFF_EXHAUSTED_NOTICE_BODY
+    || LEGACY_EXHAUSTED_NOTICE_BODIES.some((body) => trimmed === body)
     || /^Todero exhausted the bounded successful-run handoff correction\b/i.test(trimmed);
 }
 

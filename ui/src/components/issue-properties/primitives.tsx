@@ -34,10 +34,13 @@ export function PropertySection({
 
 export function PropertyRow({
   label,
+  labelId,
   children,
   wrap,
 }: {
   label: ReactNode;
+  /** Set when a control in this row names itself from the label (aria-labelledby). */
+  labelId?: string;
   children: ReactNode;
   /** Opt-in wrapping for chip-collection rows only (§5). Default rows stay one line. */
   wrap?: boolean;
@@ -51,6 +54,7 @@ export function PropertyRow({
       data-property-row="true"
     >
       <span
+        id={labelId}
         className={cn(
           "text-xs text-muted-foreground shrink-0 w-24 truncate",
           wrap && "mt-0.5",

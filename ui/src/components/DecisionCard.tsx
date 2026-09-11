@@ -71,7 +71,7 @@ function humanStatus(status: string | null | undefined): string {
 function issueLabel(ref: DecisionIssueRef | null, fallbackId: string): string {
   if (ref?.identifier) return ref.identifier;
   if (ref?.title) return ref.title;
-  return `issue ${fallbackId.slice(0, 8)}`;
+  return `task ${fallbackId.slice(0, 8)}`;
 }
 
 function pluralize(count: number, singular: string): string {
@@ -102,7 +102,7 @@ function effectSummary(
       const parent = effect.draft.parentId
         ? issueLabel(resolve(effect.draft.parentId), effect.draft.parentId)
         : target;
-      return `Create issue “${effect.draft.title}” under ${parent}`;
+      return `Create task “${effect.draft.title}” under ${parent}`;
     }
     case "update_issue_status":
       return `Set ${target} to ${humanStatus(effect.status)}`;
@@ -113,7 +113,7 @@ function effectSummary(
     case "cancel_issue_tree": {
       const snapshot = snapshots[effect.targetIssueId];
       const descendantCount = snapshot?.descendantCount ?? snapshot?.descendantIds?.length ?? snapshot?.childCount ?? 0;
-      return `Cancel ${target} and its sub-tree (${pluralize(descendantCount + 1, "issue")})`;
+      return `Cancel ${target} and its sub-tree (${pluralize(descendantCount + 1, "task")})`;
     }
     default:
       return "Apply effect";
@@ -122,7 +122,7 @@ function effectSummary(
 
 const FAILURE_CAUSE: Record<string, string> = {
   deny_decision_intersection: "blocked by the permission boundary (fail-closed)",
-  invalid_effect_reference: "a referenced issue no longer exists",
+  invalid_effect_reference: "a referenced task no longer exists",
   target_changed: "the target changed since this was proposed",
   effect_execution_failed: "the effect errored while running",
 };
@@ -161,7 +161,7 @@ function executionRow(
       return {
         key: execution.id,
         status: "executed",
-        summary: `Created ${created ? issueLabel(created, createdId!) : "a new issue"}`,
+        summary: `Created ${created ? issueLabel(created, createdId!) : "a new task"}`,
         link: created ?? targetRef,
       };
     }
@@ -175,7 +175,7 @@ function executionRow(
     }
     case "cancel_issue_tree": {
       const cancelled = Array.isArray(result.cancelledIssueIds) ? result.cancelledIssueIds.length : 0;
-      return { key: execution.id, status: "executed", summary: `Cancelled ${pluralize(cancelled, "issue")} under ${target}`, link: targetRef };
+      return { key: execution.id, status: "executed", summary: `Cancelled ${pluralize(cancelled, "task")} under ${target}`, link: targetRef };
     }
     default:
       return { key: execution.id, status: "executed", summary: `Applied effect on ${target}`, link: targetRef };
@@ -347,7 +347,7 @@ export function DecisionCard({
         Proposed by <span className="font-medium text-foreground">{originAgentName ?? "an agent"}</span>
         {originIssue && (
           <>
-            {" "}while running{" "}
+            {" "}while working on{" "}
             <a href={originIssue.href} className="font-medium text-primary underline-offset-2 hover:underline">
               {issueLabel(originIssue, originIssue.id)}
             </a>
@@ -373,7 +373,7 @@ export function DecisionCard({
         {runHref && (
           <>
             {" · "}
-            <a href={runHref} className="hover:underline">view run</a>
+            <a href={runHref} className="hover:underline">view turn</a>
           </>
         )}
       </p>
@@ -496,12 +496,12 @@ export function DecisionCard({
                 {confirming && cancelTree && (
                   <div className="rounded-lg border border-rose-500/50 bg-rose-500/5 p-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-rose-700 dark:text-rose-300">
-                      <Ban className="h-4 w-4" aria-hidden /> This cancels an entire issue tree
+                      <Ban className="h-4 w-4" aria-hidden /> This cancels an entire task tree
                     </div>
                     {previewRows && previewRows.length > 0 ? (
                       <>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          {pluralize(previewRows.length, "issue")} will be cancelled:
+                          {pluralize(previewRows.length, "task")} will be cancelled:
                         </p>
                         <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto text-xs">
                           {previewRows.map((row) => (
@@ -517,7 +517,7 @@ export function DecisionCard({
                       </>
                     ) : (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        This issue and every sub-issue beneath it will be cancelled.
+                        This task and every sub-task beneath it will be cancelled.
                       </p>
                     )}
                     <p className="mt-2 text-xs text-muted-foreground">
@@ -527,7 +527,7 @@ export function DecisionCard({
                       value={confirmText}
                       onChange={(event) => setConfirmText(event.target.value)}
                       placeholder={confirmToken}
-                      aria-label="Type the issue identifier to confirm"
+                      aria-label="Type the task identifier to confirm"
                       autoFocus
                       className="mt-1"
                     />
@@ -549,7 +549,7 @@ export function DecisionCard({
                         onClick={() => onDecide?.(option.id, inputValues)}
                       >
                         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        {previewRows ? `Cancel ${pluralize(previewRows.length, "issue")}` : "Cancel tree"}
+                        {previewRows ? `Cancel ${pluralize(previewRows.length, "task")}` : "Cancel tree"}
                       </Button>
                     </div>
                   </div>
@@ -581,9 +581,9 @@ export function DecisionCard({
               </div>
               <p className="mt-1">
                 {expiredReason === "target_gone"
-                  ? "A target issue was cancelled before this was decided."
+                  ? "A target task was cancelled before this was decided."
                   : expiredReason === "target_completed"
-                    ? "All target issues were completed before this was decided."
+                    ? "All target tasks were completed before this was decided."
                     : "No response before the expiry deadline."}
                 {decision.continuationPolicy === "wake_origin_agent" && " The proposer was re-woken."}
               </p>
@@ -596,7 +596,7 @@ export function DecisionCard({
           )}
           {decision.status === "decided" && dismissed && (
             <p className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Dismissed — no effects were run.
+              Dismissed — nothing was changed.
             </p>
           )}
           {decision.status === "decided" && !dismissed && (executions ?? []).length > 0 && (

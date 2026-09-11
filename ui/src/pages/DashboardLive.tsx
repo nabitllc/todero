@@ -39,9 +39,9 @@ export function DashboardLive() {
             <ArrowLeft className="h-3.5 w-3.5" />
             Dashboard
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-normal text-foreground">Live agent runs</h1>
+          <h1 className="mt-2 text-2xl font-semibold tracking-normal text-foreground">Live agent turns</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Active runs first, followed by the most recent completed runs.
+            Turns happening now first, then the ones that finished most recently.
           </p>
         </div>
         <div className="text-sm text-muted-foreground">Showing up to {DASHBOARD_LIVE_RUN_LIMIT}</div>
@@ -55,7 +55,7 @@ export function DashboardLive() {
         cardLimit={DASHBOARD_LIVE_RUN_LIMIT}
         gridClassName="gap-3 md:grid-cols-2 2xl:grid-cols-3"
         cardClassName="h-(--sz-420px)"
-        emptyMessage="No active or recent agent runs."
+        emptyMessage="No active or recent agent turns."
         queryScope="dashboard-live"
         showMoreLink={false}
       />
