@@ -2,6 +2,12 @@ import express from "express";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Every case rebuilds the app with vi.resetModules() and a fresh import of the
+// whole route module graph. On a loaded machine (the gauntlet's live loop, the
+// CI runner) that alone can take seconds, and vitest's 5-second default then
+// fails a case that did nothing wrong (item 5). Give the file the room it needs.
+vi.setConfig({ testTimeout: 30_000 });
+
 const mockInstanceSettingsService = vi.hoisted(() => ({
   get: vi.fn(),
   getGeneral: vi.fn(),
@@ -761,7 +767,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "any" });
 
-      expect(res.status).toBe(403);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
       expect(res.body.details).toMatchObject({ code: "execution_mode_platform_managed" });
       expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();
     });
@@ -773,7 +779,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "kubernetes" });
 
-      expect(res.status).toBe(403);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
       expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();
     });
 
@@ -790,7 +796,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "kubernetes", keyboardShortcuts: true });
 
-      expect(res.status).toBe(200);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({
         executionMode: "kubernetes",
         keyboardShortcuts: true,
@@ -804,7 +810,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ keyboardShortcuts: true });
 
-      expect(res.status).toBe(200);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(mockInstanceSettingsService.getGeneral).not.toHaveBeenCalled();
       expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({ keyboardShortcuts: true });
     });
@@ -822,7 +828,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "kubernetes" });
 
-      expect(res.status).toBe(200);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({ executionMode: "kubernetes" });
     });
   });
@@ -972,11 +978,15 @@ describe("instance settings routes", () => {
 
     afterEach(() => {
       // A drain the mock left active must not carry over into an unrelated
-      // test, so every test starts from the idle status again.
+      // test, so every test starts from the idle status again. The same goes
+      // for a publish that was made to throw: clearAllMocks keeps
+      // implementations, so without this every later case logged
+      // "live event bus unavailable" on purpose-less noise.
       mockHeartbeatService.getTaskDrainStatus.mockReset();
       mockHeartbeatService.computeTaskDrain.mockReset();
       mockHeartbeatService.applyTaskDrain.mockReset();
       mockHeartbeatService.stopTaskDrain.mockReset();
+      mockPublishActivity.mockReset();
     });
 
     it("returns the idle status", async () => {
@@ -1258,8 +1268,12 @@ describe("instance settings routes", () => {
       postPromise.then(() => {}, () => {});
       const deletePromise = request(app).delete("/api/instance/task-drain");
       deletePromise.then(() => {}, () => {});
-      // Give both requests time to reach as far as they can go before the
-      // POST's transaction is released.
+      // Wait for the POST to reach its (blocked) transaction, however long a
+      // busy machine takes to get it there, then give the DELETE the same
+      // chance to overtake it. A fixed 30 ms wait here was the flake the
+      // gauntlet kept catching under load (item 5): on a loaded runner the
+      // POST had not even started its transaction when the assertion ran.
+      await expect.poll(() => transactionCalls.length, { timeout: 10_000, interval: 5 }).toBeGreaterThanOrEqual(1);
       await new Promise((resolve) => setTimeout(resolve, 30));
       expect(transactionCalls).toEqual(["post-start"]);
       expect(mockHeartbeatService.applyTaskDrain).not.toHaveBeenCalled();
