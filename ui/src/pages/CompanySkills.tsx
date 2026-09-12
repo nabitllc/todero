@@ -2876,6 +2876,7 @@ export function SkillDetailPage({
   updateStatusLoading,
   onCheckUpdates,
   checkUpdatesPending,
+  onPackReset,
   onInstallUpdate,
   installUpdatePending,
   onToggleStar,
@@ -2918,6 +2919,8 @@ export function SkillDetailPage({
   updateStatusLoading: boolean;
   onCheckUpdates: () => void;
   checkUpdatesPending: boolean;
+  /** After "Reset to the original": refresh what the page shows. */
+  onPackReset?: () => void;
   onInstallUpdate: () => void;
   installUpdatePending: boolean;
   onToggleStar: () => void;
@@ -2931,7 +2934,6 @@ export function SkillDetailPage({
   deletePending: boolean;
   studioHref?: string;
 }) {
-  const queryClient = useQueryClient();
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSharingScope, setSettingsSharingScope] = useState<Exclude<CompanySkillSharingScope, "public_link">>("company");
@@ -3328,7 +3330,7 @@ export function SkillDetailPage({
                   <SkillPackRowMeta
                     item={detail}
                     companyId={detail.companyId}
-                    onReset={() => void queryClient.invalidateQueries({ queryKey: ["company-skills", detail.companyId] })}
+                    onReset={onPackReset}
                   />
                 </div>
                 {subtitleText ? (
@@ -5552,6 +5554,9 @@ export function CompanySkills() {
           updateStatusLoading={updateStatusQuery.isLoading}
           onCheckUpdates={() => {
             void updateStatusQuery.refetch();
+          }}
+          onPackReset={() => {
+            void queryClient.invalidateQueries({ queryKey: ["company-skills", selectedCompanyId] });
           }}
           checkUpdatesPending={updateStatusQuery.isFetching}
           onInstallUpdate={() => installUpdate.mutate()}
