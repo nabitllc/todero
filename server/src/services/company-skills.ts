@@ -2854,6 +2854,7 @@ function toCompanySkillListItem(skill: CompanySkillListRow, attachedAgentCount: 
     originHash,
     packageName,
     packageVersion,
+    metadata: skill.metadata ?? null,
   };
 }
 

@@ -4,13 +4,13 @@
  */
 
 import { useState } from "react";
-import type { CompanySkillListItem } from "@todero/shared";
 import { companySkillsApi } from "../../api/companySkills";
 import { packRowFacts } from "../../lib/skill-pack-row";
 import { Button } from "@/components/ui/button";
 
 export interface SkillPackRowMetaProps {
-  item: CompanySkillListItem;
+  /** Any skill row: the id to reset and the metadata the facts are read from. */
+  item: { id: string; metadata: Record<string, unknown> | null };
   companyId: string;
   onReset?: () => void;
 }

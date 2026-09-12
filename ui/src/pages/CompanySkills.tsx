@@ -88,6 +88,7 @@ import {
 } from "../lib/skill-create";
 import { SkillCardIcon } from "../components/SkillCardIcon";
 import { SkillPackRowMeta } from "../components/skills/SkillPackRowMeta";
+import { packRowFacts } from "../lib/skill-pack-row";
 import { ImportSkillsFromProjectDialog } from "./skills/ImportSkillsFromProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -631,7 +632,10 @@ export { SkillCardIcon } from "../components/SkillCardIcon";
 function discoveryVersionLabel(skill: {
   packageVersion: string | null;
   sourceRef: string | null;
+  metadata?: Record<string, unknown> | null;
 }, required: boolean): string | null {
+  const pack = packRowFacts({ metadata: skill.metadata ?? null });
+  if (pack.version) return `v${pack.version}`;
   if (skill.packageVersion) return `v${skill.packageVersion}`;
   if (required) return "core";
   if (skill.sourceRef) return shortRef(skill.sourceRef);
@@ -2524,9 +2528,6 @@ function SkillList({
                 {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
             </div>
-            <div className="px-3 pb-1.5">
-              <SkillPackRowMeta item={skill} companyId={company.id} onReset={() => skillsQuery.refetch()} />
-            </div>
             <div
               aria-hidden={!expanded}
               className={cn(
@@ -3757,6 +3758,7 @@ function SkillPane({
     ? "Detach this skill from all agents before removing it."
     : null;
 
+  const queryClient = useQueryClient();
   return (
     <div className="min-w-0">
       <div className="border-b border-border px-5 py-4">
@@ -3769,6 +3771,13 @@ function SkillPane({
             {detail.description && (
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{detail.description}</p>
             )}
+            <div className="mt-2">
+              <SkillPackRowMeta
+                item={detail}
+                companyId={detail.companyId}
+                onReset={() => void queryClient.invalidateQueries({ queryKey: ["company-skills", detail.companyId] })}
+              />
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="outline" size="sm" asChild>
