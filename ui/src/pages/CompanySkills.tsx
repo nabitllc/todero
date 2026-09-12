@@ -2931,6 +2931,7 @@ export function SkillDetailPage({
   deletePending: boolean;
   studioHref?: string;
 }) {
+  const queryClient = useQueryClient();
   const [diffOpen, setDiffOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSharingScope, setSettingsSharingScope] = useState<Exclude<CompanySkillSharingScope, "public_link">>("company");
@@ -3323,6 +3324,13 @@ export function SkillDetailPage({
                     by <span className="text-foreground">{detail.authorName}</span>
                   </p>
                 ) : null}
+                <div className="mt-1">
+                  <SkillPackRowMeta
+                    item={detail}
+                    companyId={detail.companyId}
+                    onReset={() => void queryClient.invalidateQueries({ queryKey: ["company-skills", detail.companyId] })}
+                  />
+                </div>
                 {subtitleText ? (
                   <div className="mt-1 max-w-2xl">
                     <p
@@ -3758,7 +3766,6 @@ function SkillPane({
     ? "Detach this skill from all agents before removing it."
     : null;
 
-  const queryClient = useQueryClient();
   return (
     <div className="min-w-0">
       <div className="border-b border-border px-5 py-4">
@@ -3771,13 +3778,6 @@ function SkillPane({
             {detail.description && (
               <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{detail.description}</p>
             )}
-            <div className="mt-2">
-              <SkillPackRowMeta
-                item={detail}
-                companyId={detail.companyId}
-                onReset={() => void queryClient.invalidateQueries({ queryKey: ["company-skills", detail.companyId] })}
-              />
-            </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button variant="outline" size="sm" asChild>
