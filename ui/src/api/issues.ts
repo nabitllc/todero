@@ -166,6 +166,9 @@ export const issuesApi = {
     api.post<Issue>(`/companies/${companyId}/issues`, data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<IssueUpdateResponse>(`/issues/${id}`, data),
+  /** A person's send-back as one call: To do, the note, then the agent's wake, in that order. */
+  sendBack: (id: string, note: string) =>
+    api.post<{ issueId: string; status: "todo"; commentId: string }>(`/issues/${id}/send-back`, { note }),
   decideStalledReview: (id: string, data: StalledReviewDecision) =>
     api.post<StalledReviewDecisionResponse>(`/issues/${id}/stalled-review-decision`, data),
   resolveRecoveryAction: (

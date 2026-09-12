@@ -48,6 +48,7 @@ const apiPrefixes: Record<string, string> = {
   "local-llm-routes.ts": "/api",
   "todero-plan-routes.ts": "/api",
   "todero-pause-routes.ts": "/api",
+  "todero-send-back-routes.ts": "/api",
   "onboarding-seed.ts": "/api",
   "openapi.ts": "/api",
   "plugin-ui-static.ts": "/api",

@@ -8134,6 +8134,22 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/issues/{id}/send-back",
+  tags: ["todero"],
+  summary: "Send a handed-in task back to the agent in one call: To do, the note, then the agent's wake, in that order",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: jsonBody(
+      z.object({
+        note: z.string().min(1).describe("What should change. Posted on the task before the agent is woken."),
+      }),
+    ),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/companies/{companyId}/pause",
   tags: ["todero"],
   summary: "Pause an organization: work already started finishes, nothing new starts, queued work stays queued",
