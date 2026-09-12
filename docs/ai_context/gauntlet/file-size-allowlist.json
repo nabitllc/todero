@@ -88,7 +88,7 @@
   "server/src/services/external-objects.ts": 1090,
   "server/src/services/feedback.ts": 2122,
   "server/src/services/folders.ts": 619,
-  "server/src/services/heartbeat.ts": 21027,
+  "server/src/services/heartbeat.ts": 21028,
   "server/src/services/hot-restart.ts": 631,
   "server/src/services/issue-execution-policy.ts": 1226,
   "server/src/services/issue-thread-interactions.ts": 3685,
