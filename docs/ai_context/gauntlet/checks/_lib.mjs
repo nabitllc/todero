@@ -30,3 +30,20 @@ export function vitestBin() {
 export function tscBin() {
   return path.join(REPO_ROOT, "node_modules", "typescript", "bin", "tsc");
 }
+
+/**
+ * Like run(), but the output is also kept, so a wrapper can end with a short
+ * recap the runner's 600-character tail will still show (the failing test
+ * names, say — a dot reporter buries them under the stack traces).
+ */
+export function runCaptured(cmd, args, cwdRel = ".") {
+  const cwd = path.join(REPO_ROOT, cwdRel);
+  const result = spawnSync(cmd, args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) {
+    console.error(`[gauntlet] ${cmd} failed to start: ${result.error.message}`);
+    return { status: 127, output: "" };
+  }
+  process.stdout.write(result.stdout ?? "");
+  process.stderr.write(result.stderr ?? "");
+  return { status: result.status ?? 1, output: `${result.stdout ?? ""}\n${result.stderr ?? ""}` };
+}

@@ -56,3 +56,22 @@ export async function markConversationDispositionApplied(
     .where(eq(heartbeatRuns.id, runId));
   return true;
 }
+
+/**
+ * The same mark, with the log line the finalize path wants around it. Kept out
+ * of heartbeat.ts so the two call sites there are one line each.
+ */
+export async function recordConversationDispositionApplied(
+  db: Db,
+  runId: string,
+  onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<unknown> | unknown,
+): Promise<void> {
+  try {
+    await markConversationDispositionApplied(db, runId);
+  } catch (err) {
+    await onLog(
+      "stderr",
+      `[todero] Could not record that the reply already chose what happens next: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  }
+}

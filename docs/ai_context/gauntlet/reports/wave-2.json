@@ -1,0 +1,176 @@
+{
+  "wave": 2,
+  "label": "item 0: a slow local model does not derail the loop",
+  "started": "2026-09-11T20:52:52+00:00",
+  "wall_seconds": 513.4,
+  "checks": [
+    {
+      "id": "smoke",
+      "cmd": "node checks/pnpm-run.mjs check:node-version check:no-git-push",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "tokens",
+      "cmd": "node checks/pnpm-run.mjs check:tokens check:token-gates",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1.9,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "typecheck",
+      "cmd": "node checks/tsc.mjs packages/shared server ui",
+      "ok": true,
+      "exit": 0,
+      "seconds": 10.2,
+      "tail": "[gauntlet] tsc --noEmit in packages/shared\n[gauntlet] tsc --noEmit in server\n[gauntlet] tsc --noEmit in ui"
+    },
+    {
+      "id": "unit_shared",
+      "cmd": "node checks/vitest.mjs packages/shared",
+      "ok": true,
+      "exit": 0,
+      "seconds": 11.3,
+      "tail": "retry a terminal 400\n[telemetry] dropping batch 340765de44ca63eca6d4806f383a717c on terminal response (HTTP 400); 1 event(s) lost\n\nstderr | src/telemetry/client-contract.test.ts > telemetry client wire contract \u00e2\u20ac\u201d retry semantics > does not retry a terminal 400 or 413\n[telemetry] dropping batch 85f1d4f158b755c5a0d2557c9fb2f88a on terminal response (HTTP 413); 1 event(s) lost\n\nstderr | src/telemetry/client.test.ts > TelemetryClient batched retry + backoff > does not retry a terminal 413\n[telemetry] dropping batch 4e427115dc97575cb0e1b200e53e4f9a on terminal response (HTTP 413); 1 event(s) lost"
+    },
+    {
+      "id": "unit_ui",
+      "cmd": "node checks/vitest.mjs ui",
+      "ok": false,
+      "exit": 1,
+      "seconds": 111.1,
+      "tail": "\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  2 failed | 542 passed (544)\n      Tests  4 failed | 5366 passed (5370)\n   Start at  15:53:18\n   Duration  110.21s (transform 146.41s, setup 12.59s, import 1190.67s, tests 341.50s, environment 652.54s)"
+    },
+    {
+      "id": "unit_server_core",
+      "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 122.0,
+      "tail": "stderr | src/__tests__/company-skills-service.test.ts\nSkipping the symlink cases in company-skills-service.test.ts: this host cannot create symlinks."
+    },
+    {
+      "id": "file_size_caps",
+      "cmd": "node checks/file-size-caps.mjs",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.3,
+      "tail": "[file-size] 1818 files checked, 298 standing outliers, 0 failure(s)"
+    },
+    {
+      "id": "live_loop_ollama",
+      "cmd": "python checks/live-loop.py",
+      "ok": false,
+      "exit": 1,
+      "seconds": 179.3,
+      "tail": "15:57:11 organization Zz Gauntlet 0911-155711 8f055ffe-ef70-4633-a06e-3fb7c8c52d33\n15:57:49 round 1: status=blocked markers={'waiting': True, 'review': False, 'plan': False}\n15:59:04 round 2: status=blocked markers={'waiting': True, 'review': False, 'plan': False}\n16:00:10 round 3: status=blocked markers={'waiting': True, 'review': False, 'plan': False}\n16:00:10 FAIL plan proposed within two rounds (round None)\n16:00:10 archived Zz Gauntlet 0911-155711"
+    },
+    {
+      "id": "item0_local_model_timeout",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/local-model-timeout.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  16:00:11\n   Duration  1.65s (transform 876ms, setup 169ms, import 1.31s, tests 2ms, environment 0ms)"
+    },
+    {
+      "id": "item0_recovery_copy",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: src/services/recovery/recovery-copy.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  16:00:13\n   Duration  310ms (transform 31ms, setup 115ms, import 23ms, tests 19ms, environment 0ms)"
+    },
+    {
+      "id": "item1_skill_rows",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx",
+      "ok": false,
+      "exit": 1,
+      "seconds": 0.7,
+      "tail": "[gauntlet] vitest in ui: src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx\n\n RUN  v4.1.10 C:/Development/Todero/ui\n\n\n\n Test Files  2 failed (2)\n      Tests  no tests\n   Start at  16:00:14\n   Duration  248ms (transform 64ms, setup 31ms, import 0ms, tests 0ms, environment 0ms)"
+    },
+    {
+      "id": "item2_wizard_window",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 0.7,
+      "tail": "[gauntlet] vitest in ui: src/lib/local-llm-window.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/ui\n\n\n\n Test Files  1 failed (1)\n      Tests  no tests\n   Start at  16:00:14\n   Duration  199ms (transform 25ms, setup 20ms, import 0ms, tests 0ms, environment 0ms)"
+    },
+    {
+      "id": "item3_board_reorder",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 1.6,
+      "tail": "[gauntlet] vitest in ui: src/lib/board-reorder.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/ui\n\nxxxx\n\n Test Files  1 failed (1)\n      Tests  4 failed (4)\n   Start at  16:00:15\n   Duration  1.19s (transform 700ms, setup 20ms, import 1.01s, tests 6ms, environment 0ms)"
+    },
+    {
+      "id": "item4_send_back_one_call",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 2.0,
+      "tail": "[gauntlet] vitest in server: src/__tests__/send-back-route.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\n\n Test Files  1 failed (1)\n      Tests  no tests\n   Start at  16:00:17\n   Duration  1.58s (transform 740ms, setup 117ms, import 0ms, tests 0ms, environment 0ms)"
+    },
+    {
+      "id": "item5_task_drain_stable",
+      "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 63.7,
+      "tail": "     at Mock (file:///C:/Development/Todero/node_modules/.pnpm/@vitest+spy@4.1.10/node_modules/@vitest/spy/dist/index.js:332:34)\n              at publishActivitiesBestEffort (C:/Development/Todero/server/src/routes/instance-settings.ts:74:7)\n              at C:/Development/Todero/server/src/routes/instance-settings.ts:398:9\n              at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    }\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  50 passed (50)\n   Start at  16:01:10\n   Duration  12.10s (transform 2.00s, setup 118ms, import 135ms, tests 11.69s, environment 0ms)"
+    },
+    {
+      "id": "repro_slow_local_model_turn",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  16:01:22\n   Duration  2.57s (transform 822ms, setup 116ms, import 1.18s, tests 1.11s, environment 0ms)"
+    }
+  ],
+  "delta": {
+    "fixed": [
+      "unit_server_core",
+      "file_size_caps"
+    ],
+    "regressed": [
+      "unit_ui"
+    ],
+    "still_failing": [
+      "live_loop_ollama",
+      "item1_skill_rows",
+      "item2_wizard_window",
+      "item3_board_reorder",
+      "item4_send_back_one_call"
+    ],
+    "new": [
+      "item0_local_model_timeout",
+      "item0_recovery_copy",
+      "repro_slow_local_model_turn"
+    ]
+  },
+  "prev_score": 6,
+  "spend": {
+    "main|claude-fable-5-1": {
+      "input": 128,
+      "output": 3467,
+      "cacheRead": 1173028,
+      "cacheCreation": 35659,
+      "usd": 1.1810669999999999
+    },
+    "auxiliary|claude-fable-5-1": {
+      "input": 3799,
+      "output": 8733,
+      "cacheRead": 1045688,
+      "cacheCreation": 1830,
+      "usd": 0.7633770000000001
+    }
+  },
+  "local": {},
+  "judge": "# Wave 2 verdict\n\nWritten by the session from the stored runs and two reruns, not by a separate judge: both\nfailures had a deterministic cause that could be read off the evidence.\n\n## 1. Which failures share a root cause\n\n**None of them. Two separate things, and one of them is not a failure of the product.**\n\n**The live loop stalled on its second turn because the parser threw the plan away.** The model\nanswered the person's brief with a plan block that named the goal and four features and stopped\nbefore the tasks, twice in a row, each time ending \"Do you approve this plan?\". The stored result\nof both turns carries the reply and `toderoDisposition: waiting` but no `toderoPlanBlock`: the\nshared parser returns null for a block with no tasks, so the reply posted as plain prose, no Plan\ndocument was written, no approval card appeared, and the task sat \"waiting on you\" with nothing\nto approve. The instructions do ask for four to twelve tasks; a 14B model does not always obey.\nThis is not what item 0 set out to fix (the ten-minute floor held: every turn came back inside\n75 seconds) but it is the same family, a healthy loop taken off the rails by ordinary variation in\nwhat a local model writes. Fixed on this branch: a plan with features and no tasks becomes one\ntask per feature, handing in what the feature's `done_when` asks for. The reply from the loop,\nword for word, is now `repros/plan-without-tasks.gauntlet.ts` (fails on main, passes here).\n\n**The unit_ui \"regression\" did not reproduce.** Two full reruns of the UI suite on the same tree\npassed 5370 of 5370, and the branch touches one UI file (the wizard's default timeout constant),\nwhose own tests pass. The wave lost the names of the four tests because the wrapper's dot\nreporter prints them under the stack traces and the runner keeps only the last 600 characters.\nThe wrapper now ends every run with the `FAIL` lines, so the next flake is named. Treat it as\na flake under load until wave 3 says otherwise.\n\n## 2. What wave 3 should add, and stop\n\n**Add** `repro_plan_without_tasks` (done). Nothing else: the item 0 checks and the slow-turn repro\nall passed, and the live loop is the check that matters for this item.\n\n**Stop** nothing yet. The task-drain repeat stays one more wave as a control, as wave 1 decided.\n"
+}

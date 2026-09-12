@@ -154,44 +154,49 @@ def main() -> int:
         reviewer = next((a["id"] for a in (call("GET", f"/companies/{C}/agents")[1] or []) if a.get("role") == "reviewer"), None)
         expect(reviewer is not None, "a reviewer was hired on approval")
 
-        # 3) each child: hand-in, reviewer verdict, accept; answer a question at most twice
-        for _ in range(len(children)):
+        # 3) each child: hand-in, reviewer verdict, accept; answer a question at most twice.
+        # Turns run one at a time on this machine and every first task of the
+        # plan is queued at approval, so waiting on one child for a fixed time
+        # counts the others' turns against it (wave 4). Instead: let the queue
+        # settle, act on every child that is ready, and repeat until none is open.
+        answers = {}
+        children_deadline = time.time() + 1500
+        while time.time() < children_deadline:
             open_children = [i for i in issues_of(C) if i.get("parentId") == root["id"] and i["status"] not in ("done", "cancelled")]
             if not open_children:
                 break
-            child = open_children[0]
-            cid, ident = child["id"], child["identifier"]
-            answers = 0
-            for _attempt in range(6):
-                def child_state():
-                    # Read the task only once its turn has finished, so the
-                    # markers the turn writes after its comment are in place.
-                    if any(r["status"] in ("queued", "running") for r in runs_of(C)):
-                        return None
-                    r = call("GET", f"/issues/{cid}")[1] or {"status": "?"}
-                    m = markers(r.get("description"))
-                    return r if (r["status"] in ("done", "cancelled") or m["review"] or m["waiting"]) else None
-                got = wait_for(child_state, 300, every=5)
-                if not got:
-                    expect(False, f"{ident}: no hand-in or question within 5 minutes")
-                    break
-                m = markers(got.get("description"))
-                if got["status"] in ("done", "cancelled"):
-                    break
-                if m["review"]:
+            # Four serial turns on a busy machine can take ten minutes by
+            # themselves (wave 5), so the queue gets the whole remaining budget.
+            settled = wait_for(lambda: None if any(r["status"] in ("queued", "running") for r in runs_of(C)) else True, max(30, children_deadline - time.time()), every=5)
+            if not settled:
+                expect(False, "turns still running at the 25-minute mark")
+                break
+            acted = False
+            for child in open_children:
+                cid, ident = child["id"], child["identifier"]
+                r = call("GET", f"/issues/{cid}")[1] or {"status": "?"}
+                m = markers(r.get("description"))
+                if r["status"] in ("done", "cancelled"):
+                    acted = True
+                elif m["review"]:
                     verdict = wait_for(lambda: [c for c in comments(cid) if c.get("authorAgentId") == reviewer] or None, 300) if reviewer else None
                     expect(bool(verdict), f"{ident}: the reviewer gave a verdict")
                     call("PATCH", f"/issues/{cid}", {"status": "done"})
                     log(f"{ident}: handed in, reviewed, accepted")
-                    break
-                if m["waiting"]:
-                    answers += 1
-                    if answers > 2:
+                    acted = True
+                elif m["waiting"]:
+                    answers[cid] = answers.get(cid, 0) + 1
+                    if answers[cid] > 2:
                         expect(False, f"{ident}: still asking after two answers")
                         call("PATCH", f"/issues/{cid}", {"status": "done"})
-                        break
-                    call("POST", f"/issues/{cid}/comments", {"body": CHILD_ANSWER})
-                    time.sleep(15)
+                    else:
+                        call("POST", f"/issues/{cid}/comments", {"body": CHILD_ANSWER})
+                        log(f"{ident}: answered a question")
+                    acted = True
+            if not acted:
+                time.sleep(10)
+        else:
+            expect(False, "the plan's tasks did not all close within 25 minutes")
 
         # 4) wrap-up: parent done, project completed, feature goals achieved
         done = wait_for(lambda: (lambda r: r if r.get("status") == "done" else None)(call("GET", f"/issues/{root['id']}")[1] or {}), 300)

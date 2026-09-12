@@ -5,6 +5,10 @@ import { isConversationalHttpAgent } from "./conversation-thread.js";
 import { isJudgeAgentMetadataFor } from "./judge-agent.js";
 import { TIMER_CONFIGURED_STAMP_KEY } from "./timer-backfill-stamp.js";
 import { pickManagerFromRoster } from "./manager-mode.js";
+import {
+  runLocalModelTimeoutBackfill,
+  type LocalModelTimeoutBackfillResult,
+} from "./local-model-timeout-backfill.js";
 
 /**
  * Organizations a startup backfill never writes to. Archived ones are gone,
@@ -42,6 +46,7 @@ export type StartupBackfillsResult = {
     agentsRetagged: number;
     perCompany: Array<{ companyId: string; agentsRetagged: number }>;
   };
+  localModelTimeoutBackfill: LocalModelTimeoutBackfillResult;
 };
 
 /**
@@ -328,10 +333,12 @@ export async function runStartupBackfills(db: Db): Promise<StartupBackfillsResul
   const timerBackfill = await runTimerBackfill(db);
   const backlogBackfill = await runBacklogBackfill(db);
   const roleBackfill = await runRoleBackfill(db);
+  const localModelTimeoutBackfill = await runLocalModelTimeoutBackfill(db, await selectBackfillableCompanies(db));
 
   return {
     timerBackfill,
     backlogBackfill,
     roleBackfill,
+    localModelTimeoutBackfill,
   };
 }

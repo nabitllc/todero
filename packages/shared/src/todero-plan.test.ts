@@ -80,11 +80,38 @@ tasks:
     expect(result?.plan.tasks[0]?.title).toBe("Do the thing");
   });
 
-  it("returns null when there is no block, no goal, or no tasks", () => {
+  it("returns null when there is no block, no goal, or nothing to do", () => {
     expect(parseToderoPlanBlock("Just prose. STATUS: waiting")).toBeNull();
     expect(parseToderoPlanBlock("```todero-plan\nfeatures:\n  - name: X\n```")).toBeNull();
     expect(parseToderoPlanBlock("```todero-plan\ngoal: X\ntasks:\n```")).toBeNull();
     expect(parseToderoPlanBlock("```json\n{\"goal\": 1}\n```")).toBeNull();
+  });
+
+  it("makes one task per feature when the model wrote the features and stopped", () => {
+    const result = parseToderoPlanBlock(
+      [
+        "Here is the plan.",
+        "```todero-plan",
+        "goal: Fill a table of five strangers for dinner in Tampa every Wednesday.",
+        "features:",
+        "  - name: One-page concept",
+        "    why: A clear vision.",
+        "    done_when: The one-page concept document is written and approved.",
+        "  - name: Shortlist of ten restaurants",
+        "    why: Somewhere to eat.",
+        "    done_when: The shortlist is compiled with contact details.",
+        "```",
+        "Do you approve this plan?",
+      ].join("\n"),
+    );
+    expect(result?.plan.tasks.map((task) => task.title)).toEqual(["One-page concept", "Shortlist of ten restaurants"]);
+    expect(result?.plan.tasks[0]).toMatchObject({
+      id: "t1",
+      feature: "One-page concept",
+      output: "The one-page concept document is written and approved.",
+      after: "",
+    });
+    expect(result?.body).toBe("Here is the plan.\nDo you approve this plan?");
   });
 
   it("round-trips through the canonical block", () => {

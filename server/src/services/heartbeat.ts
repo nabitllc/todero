@@ -128,6 +128,8 @@ import {
   loadConversationThread,
   readConversationDisposition,
 } from "../todero/conversation-thread.js";
+import { isSlowLocalTurnAgent, SLOW_LOCAL_TURN_ERROR_CODE } from "../todero/slow-local-turn.js";
+import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js";
 import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
@@ -140,7 +142,7 @@ import {
   planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
 import {
-  markConversationDispositionApplied,
+  recordConversationDispositionApplied,
   withConversationDispositionApplied,
 } from "../todero/conversation-disposition-applied.js";
 import { resolveAvailableModelIdsForRun, resolveContextLengthForRun } from "../todero/available-models.js";
@@ -10427,22 +10429,28 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     });
   }
 
+  /** What the slow-local-turn policy borrows from here to do its one quiet try. */
+  const slowLocalTurnDeps = () => ({ db, issues: issuesSvc, appendRunEvent, nextRunEventSeq, scheduleRetry: scheduleBoundedRetryForRun });
+
+  /** Three of this policy's exits have nothing to ask an agent for: stamp the row once, then stop. */
+  async function issueCommentNotApplicable(run: typeof heartbeatRuns.$inferSelect) {
+    if (run.issueCommentStatus !== "not_applicable") {
+      await patchRunIssueCommentStatus(run.id, {
+        issueCommentStatus: "not_applicable",
+        issueCommentSatisfiedByCommentId: null,
+        issueCommentRetryQueuedAt: null,
+      });
+    }
+    return { outcome: "not_applicable" as const, queuedRun: null };
+  }
+
   async function finalizeIssueCommentPolicy(
     run: typeof heartbeatRuns.$inferSelect,
     agent: typeof agents.$inferSelect,
   ) {
     const contextSnapshot = parseObject(run.contextSnapshot);
     const issueId = readNonEmptyString(contextSnapshot.issueId);
-    if (!issueId) {
-      if (run.issueCommentStatus !== "not_applicable") {
-        await patchRunIssueCommentStatus(run.id, {
-          issueCommentStatus: "not_applicable",
-          issueCommentSatisfiedByCommentId: null,
-          issueCommentRetryQueuedAt: null,
-        });
-      }
-      return { outcome: "not_applicable" as const, queuedRun: null };
-    }
+    if (!issueId) return issueCommentNotApplicable(run);
 
     // A pre-dispatch setup failure means the adapter process never started (for
     // example an unresolved workspace base ref). No agent could run, so no agent
@@ -10450,14 +10458,13 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     // loop the identical pre-adapter failure, so mark the policy not_applicable
     // and queue nothing.
     if (run.errorCode != null && PRE_ADAPTER_SETUP_FAILURE_CODES.has(run.errorCode)) {
-      if (run.issueCommentStatus !== "not_applicable") {
-        await patchRunIssueCommentStatus(run.id, {
-          issueCommentStatus: "not_applicable",
-          issueCommentSatisfiedByCommentId: null,
-          issueCommentRetryQueuedAt: null,
-        });
-      }
-      return { outcome: "not_applicable" as const, queuedRun: null };
+      return issueCommentNotApplicable(run);
+    }
+
+    // The model on this machine never answered, so asking for the reply it never
+    // wrote can only start the same wait again; the one quiet try owns this turn.
+    if (run.errorCode === SLOW_LOCAL_TURN_ERROR_CODE && isSlowLocalTurnAgent(agent)) {
+      return issueCommentNotApplicable(run);
     }
 
     const postedComment = await findRunIssueComment(run.id, run.companyId, issueId);
@@ -10484,16 +10491,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       return { outcome: "retry_exhausted" as const, queuedRun: null };
     }
 
-    if (!shouldRequireIssueCommentForWake(contextSnapshot)) {
-      if (run.issueCommentStatus !== "not_applicable") {
-        await patchRunIssueCommentStatus(run.id, {
-          issueCommentStatus: "not_applicable",
-          issueCommentSatisfiedByCommentId: null,
-          issueCommentRetryQueuedAt: null,
-        });
-      }
-      return { outcome: "not_applicable" as const, queuedRun: null };
-    }
+    if (!shouldRequireIssueCommentForWake(contextSnapshot)) return issueCommentNotApplicable(run);
 
     if (await hasDeferredIssueCommentWake(run.companyId, issueId, run.agentId)) {
       await patchRunIssueCommentStatus(run.id, {
@@ -17514,7 +17512,19 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             // stands exactly where Wave C put it.
             let plan = handIn;
             let acceptedByReviewer = false;
+            // Written before the reviewer is asked, so the task already reads
+            // "in review" while a reviewer on a slow local model thinks. This
+            // turn is stamped finished by now; left `in_progress`, the recovery
+            // sweep read it as a turn that ended without a next step and
+            // started a continuation on every task of the wave-3 loop.
+            let handInWritten = false;
             if (currentIssue && handIn?.outcome === "review") {
+              await issuesSvc.update(issueId, {
+                status: handIn.status,
+                description: handIn.description,
+                actorAgentId: agent.id,
+              });
+              handInWritten = true;
               try {
                 const [companyRow] = await db
                   .select({
@@ -17635,20 +17645,17 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               }
             }
             if (plan) {
-              await issuesSvc.update(issueId, {
-                status: plan.status,
-                description: plan.description,
-                actorAgentId: agent.id,
-              });
-              conversationDispositionApplied = true;
-              try {
-                await markConversationDispositionApplied(db, livenessRun.id);
-              } catch (markErr) {
-                await onLog(
-                  "stderr",
-                  `[todero] Failed to record that the reply's disposition was applied: ${markErr instanceof Error ? markErr.message : String(markErr)}\n`,
-                );
+              // The hand-in itself is already on the task; only a change of
+              // mind (the reviewer's accept) needs a second write.
+              if (!(handInWritten && plan === handIn)) {
+                await issuesSvc.update(issueId, {
+                  status: plan.status,
+                  description: plan.description,
+                  actorAgentId: agent.id,
+                });
               }
+              conversationDispositionApplied = true;
+              await recordConversationDispositionApplied(db, livenessRun.id, onLog);
               await onLog(
                 "stdout",
                 plan.outcome === "done"
@@ -17769,6 +17776,11 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           }
         } else if (outcome === "failed" && readTransientRecoveryContractFromRun(livenessRun)) {
           await scheduleBoundedRetryForRun(livenessRun, agent);
+        } else {
+          // The model on this machine ran out of time: one quiet try, then one
+          // plain sentence and the task waits for the person — instead of the
+          // several recovery paths that all fired at once on the wave-1 loop.
+          await applySlowLocalTurnRecovery({ outcome, run: livenessRun, agent, issueId, deps: slowLocalTurnDeps() });
         }
         const issueCommentPolicyResult = await finalizeIssueCommentPolicy(livenessRun, agent);
         await releaseIssueExecutionAndPromote(livenessRun);
@@ -17781,6 +17793,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               issueCommentStatus: issueCommentPolicyResult.outcome,
             }
             : livenessRun;
+        // A later sweep reads the stored row, not this function's variables, so
+        // the row has to carry the mark too — the manager's own turns included.
+        if (conversationDispositionApplied) await recordConversationDispositionApplied(db, livenessRun.id, onLog);
         await handleSuccessfulRunHandoff(
           conversationDispositionApplied
             ? withConversationDispositionApplied(runForHandoff)
