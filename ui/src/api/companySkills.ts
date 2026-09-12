@@ -255,4 +255,9 @@ export const companySkillsApi = {
       `/companies/${encodeURIComponent(companyId)}/skills/install-catalog`,
       payload,
     ),
+  resetToOriginal: (companyId: string, skillId: string) =>
+    api.post<CompanySkill>(
+      `/companies/${encodeURIComponent(companyId)}/skills/${encodeURIComponent(skillId)}/reset-to-original`,
+      {},
+    ),
 };

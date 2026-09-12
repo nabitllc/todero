@@ -87,6 +87,7 @@ import {
   type SkillCreateDraft,
 } from "../lib/skill-create";
 import { SkillCardIcon } from "../components/SkillCardIcon";
+import { SkillPackRowMeta } from "../components/skills/SkillPackRowMeta";
 import { ImportSkillsFromProjectDialog } from "./skills/ImportSkillsFromProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -2522,6 +2523,9 @@ function SkillList({
               >
                 {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
+            </div>
+            <div className="px-3 pb-1.5">
+              <SkillPackRowMeta item={skill} companyId={company.id} onReset={() => skillsQuery.refetch()} />
             </div>
             <div
               aria-hidden={!expanded}

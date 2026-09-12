@@ -268,6 +268,11 @@ export {
   type MarkdownDoc,
 } from "./frontmatter.js";
 export {
+  SKILL_PACK_KINDS_KEY,
+  parseSkillPackKinds,
+  isSkillPackSkill,
+} from "./skill-pack-utils.js";
+export {
   TRUST_PRESETS,
   DEFAULT_TRUST_PRESET,
   LOW_TRUST_REVIEW_PRESET,
