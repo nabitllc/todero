@@ -1,0 +1,203 @@
+{
+  "wave": 10,
+  "label": "item 2 on the merged tree",
+  "started": "2026-09-12T02:15:34+00:00",
+  "wall_seconds": 1225.3,
+  "checks": [
+    {
+      "id": "smoke",
+      "cmd": "node checks/pnpm-run.mjs check:node-version check:no-git-push",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.6,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "tokens",
+      "cmd": "node checks/pnpm-run.mjs check:tokens check:token-gates",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.1,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "typecheck",
+      "cmd": "node checks/tsc.mjs packages/shared server ui",
+      "ok": true,
+      "exit": 0,
+      "seconds": 10.2,
+      "tail": "[gauntlet] tsc --noEmit in packages/shared\n[gauntlet] tsc --noEmit in server\n[gauntlet] tsc --noEmit in ui"
+    },
+    {
+      "id": "unit_shared",
+      "cmd": "node checks/vitest.mjs packages/shared",
+      "ok": true,
+      "exit": 0,
+      "seconds": 11.1,
+      "tail": "emantics > does not retry a terminal 400 or 413\n[telemetry] dropping batch 6842d3500e5756697c2fd8c8f26be735 on terminal response (HTTP 413); 1 event(s) lost\n\nstderr | src/telemetry/client.test.ts > TelemetryClient batched retry + backoff > does not retry a terminal 400\n[telemetry] dropping batch 0f6c6f6177eebbfdedb646f8ca8631ae on terminal response (HTTP 400); 1 event(s) lost\n\nstderr | src/telemetry/client.test.ts > TelemetryClient batched retry + backoff > does not retry a terminal 413\n[telemetry] dropping batch 4237feed9dcfe80a36527b62553983c8 on terminal response (HTTP 413); 1 event(s) lost"
+    },
+    {
+      "id": "unit_ui",
+      "cmd": "node checks/vitest.mjs ui",
+      "ok": false,
+      "exit": 1,
+      "seconds": 110.5,
+      "tail": "\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 failed | 546 passed (547)\n      Tests  1 failed | 5382 passed (5383)\n   Start at  21:16:00\n   Duration  109.43s (transform 157.84s, setup 13.33s, import 1193.51s, tests 334.26s, environment 646.59s)\n\n[gauntlet] 1 failed:\n  FAIL  src/pages/AgentToolsTab.test.tsx > AgentToolsTab > preserves checkbox changes made after the last saved install state"
+    },
+    {
+      "id": "unit_server_core",
+      "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 127.8,
+      "tail": "stderr | src/__tests__/company-skills-service.test.ts\nSkipping the symlink cases in company-skills-service.test.ts: this host cannot create symlinks."
+    },
+    {
+      "id": "file_size_caps",
+      "cmd": "node checks/file-size-caps.mjs",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.3,
+      "tail": "[file-size] 1824 files checked, 298 standing outliers, 0 failure(s)"
+    },
+    {
+      "id": "live_loop_ollama",
+      "cmd": "python checks/live-loop.py",
+      "ok": true,
+      "exit": 0,
+      "seconds": 844.9,
+      "tail": "51874e-63b7-435c-8a3a-38b03f6fd2a2\n21:20:40 round 1: status=blocked markers={'waiting': True, 'review': False, 'plan': False}\n21:22:06 round 2: status=blocked markers={'waiting': True, 'review': False, 'plan': True}\n21:30:49 ZZGAAAAAAAAAAA-2: answered a question\n21:30:49 ZZGAAAAAAAAAAA-3: handed in, reviewed, accepted\n21:30:49 ZZGAAAAAAAAAAA-4: handed in, reviewed, accepted\n21:30:49 ZZGAAAAAAAAAAA-5: handed in, reviewed, accepted\n21:31:55 ZZGAAAAAAAAAAA-2: handed in, reviewed, accepted\n21:34:03 runs by status: {'succeeded': 9}\n21:34:03 archived Zz Gauntlet 0911-211959\n21:34:03 live loop passed"
+    },
+    {
+      "id": "item0_local_model_timeout",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/local-model-timeout.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  21:34:04\n   Duration  1.57s (transform 843ms, setup 151ms, import 1.25s, tests 2ms, environment 0ms)"
+    },
+    {
+      "id": "item0_recovery_copy",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: src/services/recovery/recovery-copy.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  21:34:06\n   Duration  309ms (transform 29ms, setup 112ms, import 22ms, tests 18ms, environment 0ms)"
+    },
+    {
+      "id": "item1_skill_rows",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.3,
+      "tail": "sets through the API\nThe current testing environment is not configured to support act(...)\nThe current testing environment is not configured to support act(...)\n\nstderr | src/components/skills/SkillPackRowMeta.gauntlet.tsx > SkillPackRowMeta > shows the version and the because-line, and resets through the API\nThe current testing environment is not configured to support act(...)\n\nstderr | src/components/skills/SkillPackRowMeta.gauntlet.tsx > SkillPackRowMeta > shows the version and the because-line, and resets through the API\nThe current testing environment is not configured to support act(...)"
+    },
+    {
+      "id": "item2_wizard_window",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "\u001b[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - `__dirname` (vitest.config.ts:7:25). Use `import.meta.dirname` instead\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\u001b[39m"
+    },
+    {
+      "id": "item2_cut_off_reply",
+      "cmd": "node checks/vitest.mjs server src/adapters/http/cut-off-reply.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1.9,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/cut-off-reply.test.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  21:34:12\n   Duration  1.42s (transform 783ms, setup 110ms, import 1.13s, tests 30ms, environment 0ms)"
+    },
+    {
+      "id": "item3_board_reorder",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 2.3,
+      "tail": "failed (4)\n   Start at  21:34:14\n   Duration  1.84s (transform 693ms, setup 24ms, import 971ms, tests 7ms, environment 673ms)\n\n[gauntlet] 4 failed:\n  FAIL  src/lib/board-reorder.gauntlet.ts > reorderFor > takes the priority of the card it lands above\n  FAIL  src/lib/board-reorder.gauntlet.ts > reorderFor > takes the lowest neighbour's priority when it lands at the bottom\n  FAIL  src/lib/board-reorder.gauntlet.ts > reorderFor > changes nothing when the card lands where it already is\n  FAIL  src/lib/board-reorder.gauntlet.ts > a drop inside one column > is a reorder that carries the new priority"
+    },
+    {
+      "id": "item4_send_back_one_call",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 2.0,
+      "tail": "[gauntlet] vitest in server: src/__tests__/send-back-route.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\n\n Test Files  1 failed (1)\n      Tests  no tests\n   Start at  21:34:16\n   Duration  1.54s (transform 738ms, setup 110ms, import 0ms, tests 0ms, environment 0ms)\n\n[gauntlet] 1 failed:\n  FAIL  src/__tests__/send-back-route.gauntlet.ts [ src/__tests__/send-back-route.gauntlet.ts ]"
+    },
+    {
+      "id": "item5_task_drain_stable",
+      "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 71.2,
+      "tail": "k (file:///C:/Development/Todero/node_modules/.pnpm/@vitest+spy@4.1.10/node_modules/@vitest/spy/dist/index.js:332:34)\n              at publishActivitiesBestEffort (C:/Development/Todero/server/src/routes/instance-settings.ts:74:7)\n              at C:/Development/Todero/server/src/routes/instance-settings.ts:398:9\n              at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    }\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 failed (1)\n      Tests  1 failed | 49 passed (50)\n   Start at  21:35:09\n   Duration  20.17s (transform 7.64s, setup 110ms, import 131ms, tests 19.77s, environment 0ms)"
+    },
+    {
+      "id": "repro_slow_local_model_turn",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  21:35:30\n   Duration  2.51s (transform 784ms, setup 116ms, import 1.13s, tests 1.11s, environment 0ms)"
+    },
+    {
+      "id": "repro_plan_without_tasks",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  21:35:33\n   Duration  296ms (transform 36ms, setup 110ms, import 30ms, tests 3ms, environment 0ms)"
+    },
+    {
+      "id": "repro_review_window",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-window.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 16.7,
+      "tail": "736a667b8290\",\"runId\":\"728d52e5-0e6b-43bd-be43-b11f88d064a2\"}\u001b[39m\n[21:35:48] \u001b[32mINFO\u001b[39m: \u001b[36mwrote the agent's copy of the hand-in\u001b[39m \u001b[90m{\"agentId\":\"774ccf5f-34d5-4fb0-a739-736a667b8290\",\"issueId\":\"22c083bc-4890-4da3-8b3e-2346f56564d8\",\"path\":\"C:\\Users\\msaen\\.todero\\instances\\default\\companies\\b7599b51-632d-4318-8709-69a6decbe85f\\agents\\774ccf5f-34d5-4fb0-a739-736a667b8290\\documents\\2026-09-12-tb7599b-2.md\"}\u001b[39m\n\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  21:35:33\n   Duration  16.22s (transform 5.66s, setup 110ms, import 10.15s, tests 5.81s, environment 0ms)"
+    },
+    {
+      "id": "repro_second_hand_in",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 9.5,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  21:35:50\n   Duration  8.97s (transform 1.34s, setup 111ms, import 3.91s, tests 4.77s, environment 0ms)"
+    }
+  ],
+  "delta": {
+    "fixed": [
+      "live_loop_ollama"
+    ],
+    "regressed": [
+      "unit_ui",
+      "item5_task_drain_stable"
+    ],
+    "still_failing": [
+      "item3_board_reorder",
+      "item4_send_back_one_call"
+    ],
+    "new": [
+      "repro_second_hand_in"
+    ]
+  },
+  "prev_score": 16,
+  "spend": {
+    "main|claude-fable-5-1": {
+      "input": 224,
+      "output": 3760,
+      "cacheRead": 3763744,
+      "cacheCreation": 8327,
+      "usd": 1.2977159999999999
+    },
+    "auxiliary|claude-fable-5-1": {
+      "input": 506,
+      "output": 9,
+      "cacheRead": 541997,
+      "cacheCreation": 236,
+      "usd": 0.14572924999999998
+    }
+  },
+  "local": {},
+  "judge": "# Wave 10 verdict\n\nWritten by the session from the report and two reruns.\n\n## 1. Which failures share a root cause\n\n**Item 2 is done.** Both item 2 checks pass, and with PR 96 merged into the branch the live loop\non Ollama passed again: plan, four tasks, reviews, wrap-up, no handoff wake, inside the budget.\n`repro_second_hand_in` joined the list and passes.\n\n**The two regressions are the two known flakes, and both pass alone.** `AgentToolsTab >\npreserves checkbox changes made after the last saved install state` is the same UI test that\nfailed in wave 3; rerun alone it passes (4/4). `item5_task_drain_stable` failed one run in five,\nas in wave 8, right after the live loop had kept the machine busy; rerun alone it passes (50/50).\nBoth are load-sensitive tests, which is item 5's subject; neither touches item 2's files.\n\n**Items 3 and 4** are red by design.\n\n## 2. What wave 11 should add, and stop\n\n**Add** nothing for item 2. Item 3 is next (a drop inside a Board column sets the task's\npriority). Item 5 now has three local sightings (waves 8 and 10 here, and CI on PRs 95 and 96):\nits wave should start from the `publishActivitiesBestEffort` line in the failure, not from CI.\n\n**Stop** nothing.\n"
+}
