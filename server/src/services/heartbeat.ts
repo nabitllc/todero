@@ -130,6 +130,7 @@ import {
 } from "../todero/conversation-thread.js";
 import { isSlowLocalTurnAgent, SLOW_LOCAL_TURN_ERROR_CODE } from "../todero/slow-local-turn.js";
 import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js";
+import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
 import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
@@ -17334,7 +17335,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         const conversationPlanBlock = readNonEmptyString(parseObject(persistedResultJson).toderoPlanBlock);
         if (issueId && outcome === "succeeded" && conversationPlanBlock) {
           try {
-            await documentService(db).upsertIssueDocument({
+            await writeIssueDocumentOnLatest(db, {
               issueId,
               key: CONVERSATION_PLAN_DOCUMENT_KEY,
               title: "Plan",
@@ -17387,7 +17388,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 },
               }).catch(() => null),
             saveDocument: ({ issueId: docIssueId, key, title, body }) =>
-              documentService(db).upsertIssueDocument({
+              writeIssueDocumentOnLatest(db, {
                 issueId: docIssueId,
                 key,
                 title,
@@ -17478,7 +17479,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             // can be opened, not only read back in the thread.
             const deliverable = readNonEmptyString(parseObject(persistedResultJson).summary) ?? "";
             if (handIn?.outcome === "review" && deliverable) {
-              await documentService(db).upsertIssueDocument({
+              await writeIssueDocumentOnLatest(db, {
                 issueId,
                 key: CONVERSATION_OUTPUT_DOCUMENT_KEY,
                 title: "Output",
@@ -17726,7 +17727,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                   const wrapUpSummary = readNonEmptyString(parseObject(persistedResultJson).summary);
                   const nextProject = wrapUpSummary ? parseNextProjectLine(wrapUpSummary) : null;
                   if (nextProject) {
-                    await documentService(db).upsertIssueDocument({
+                    await writeIssueDocumentOnLatest(db, {
                       issueId,
                       key: NEXT_PROJECT_DOCUMENT_KEY,
                       title: "Next",
