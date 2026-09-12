@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pause, Play } from "lucide-react";
 import type { Company } from "@todero/shared";
 import { companiesApi } from "@/api/companies";
@@ -40,44 +40,61 @@ export function pauseCaption(
   return time ? `Paused since ${time}` : "Paused";
 }
 
+/** What the sidebar's own switch reads: the instance, not one organization. */
+export type InstancePauseState = { paused: boolean; pausedAt: string | null };
+
+/** The sidebar's line: everything running, or everything paused since when. */
+export function instancePauseCaption(state: InstancePauseState | null | undefined): string {
+  if (!state?.paused) return "Agents are working";
+  const time = formatPausedSinceTime(state.pausedAt);
+  return time ? `Everything paused since ${time}` : "Everything paused";
+}
+
+export const INSTANCE_PAUSE_QUERY_KEY = ["instance", "pause"] as const;
+
 /**
- * Play / Pause for the organization you are looking at, right under its name.
+ * The one Play / Pause in the sidebar, for everything on this instance.
  *
- * Pressing Pause asks nothing: it stops the organization and opens the Inbox,
- * where the Paused card explains what was stopped and what is waiting. Pressing
- * Play puts it back and leaves you where you are.
+ * Pause means no organization talks to a model until Play: turns already
+ * under way finish, everything queued waits, routines skip their due firings
+ * and the clean-up sweeps leave every task alone. Pressing Pause opens the
+ * Inbox, where the Paused card explains what was stopped and what is waiting.
+ * Play puts it all back and leaves you where you are.
  */
 export function PauseControl({ className }: { className?: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { selectedCompany: company } = useCompany();
-  const paused = isCompanyPaused(company);
+  const state = useQuery({
+    queryKey: INSTANCE_PAUSE_QUERY_KEY,
+    queryFn: () => instanceSettingsApi.pauseState(),
+    refetchInterval: 15_000,
+  });
+  const paused = state.data?.paused === true;
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: INSTANCE_PAUSE_QUERY_KEY }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all }),
+    ]);
+  };
 
   const toggle = useMutation({
-    mutationFn: async () => {
-      if (!company) return null;
-      return paused ? companiesApi.resume(company.id) : companiesApi.pause(company.id);
-    },
-    onSuccess: () => {
-      void refresh();
-      // Pause opens the Inbox: that is where the Paused card lives, and the
-      // first thing a person wants after stopping everything is to see what
-      // was stopped.
+    mutationFn: async () => (paused ? instanceSettingsApi.resumeAll() : instanceSettingsApi.pauseAll()),
+    onSuccess: async () => {
+      await refresh();
       if (!paused) navigate("/inbox");
     },
   });
 
-  if (!company) return null;
-  const label = pauseButtonLabel(company);
+  const label = paused ? "Play" : "Pause";
 
   return (
     <div className={cn("flex items-center gap-2 px-3 pb-2", className)} data-testid="pause-control">
       <Button
         size="sm"
         variant={paused ? "default" : "outline"}
-        disabled={toggle.isPending}
+        disabled={toggle.isPending || state.isLoading}
         onClick={() => toggle.mutate()}
         data-testid="pause-control-button"
         aria-label={label}
@@ -86,54 +103,55 @@ export function PauseControl({ className }: { className?: string }) {
         {label}
       </Button>
       <span className="truncate text-xs text-muted-foreground" data-testid="pause-control-caption">
-        {pauseCaption(company)}
+        {!state.data?.paused && isCompanyPaused(company)
+          ? "This organization is paused on its own; Play is in Settings."
+          : instancePauseCaption(state.data)}
       </span>
     </div>
   );
 }
 
 /**
- * The instance-wide switch, in the sidebar footer. "Pause everything" stops
- * every organization that is running; "Resume everything" puts back only the
- * ones this switch stopped, so an organization paused by hand stays paused.
+ * Play / Pause for one organization, on its Settings page. The sidebar's
+ * switch covers everything; this is for the rare case of holding one
+ * organization while the others keep working. An organization paused here
+ * stays paused when the sidebar's Play is pressed.
  */
-export function PauseEverythingControl({ className }: { className?: string }) {
+export function OrganizationPauseControl({ className }: { className?: string }) {
   const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+  const { selectedCompany: company } = useCompany();
+  const paused = isCompanyPaused(company);
 
-  const pauseAll = useMutation({ mutationFn: () => instanceSettingsApi.pauseAll(), onSuccess: refresh });
-  const resumeAll = useMutation({ mutationFn: () => instanceSettingsApi.resumeAll(), onSuccess: refresh });
-  const busy = pauseAll.isPending || resumeAll.isPending;
+  const toggle = useMutation({
+    mutationFn: async () => {
+      if (!company) return null;
+      return paused ? companiesApi.resume(company.id) : companiesApi.pause(company.id);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      void queryClient.invalidateQueries({ queryKey: INSTANCE_PAUSE_QUERY_KEY });
+    },
+  });
+
+  if (!company) return null;
+  const label = pauseButtonLabel(company);
 
   return (
-    // Stacked, not side by side: at the sidebar's real width the two labels
-    // collided and "Resume everything" rendered as "Resu".
-    <div
-      className={cn("flex flex-col items-stretch gap-1 px-3 py-2", className)}
-      data-testid="pause-everything"
-    >
+    <div className={cn("flex items-center gap-2", className)} data-testid="organization-pause-control">
       <Button
         size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={() => pauseAll.mutate()}
-        data-testid="pause-everything-pause"
-        className="justify-start"
+        variant={paused ? "default" : "outline"}
+        disabled={toggle.isPending}
+        onClick={() => toggle.mutate()}
+        data-testid="organization-pause-control-button"
+        aria-label={label}
       >
-        <Pause className="h-3.5 w-3.5" />
-        Pause everything
+        {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+        {label}
       </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={busy}
-        onClick={() => resumeAll.mutate()}
-        data-testid="pause-everything-resume"
-        className="justify-start"
-      >
-        <Play className="h-3.5 w-3.5" />
-        Resume everything
-      </Button>
+      <span className="truncate text-xs text-muted-foreground" data-testid="organization-pause-control-caption">
+        {pauseCaption(company)}
+      </span>
     </div>
   );
 }

@@ -47,7 +47,7 @@ import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
-import { PauseControl, PauseEverythingControl } from "./todero/PauseControl";
+import { PauseControl } from "./todero/PauseControl";
 
 export function Sidebar() {
   const { openNewIssue } = useDialogActions();
@@ -301,7 +301,6 @@ export function Sidebar() {
           accident on the way to a nav item. */}
       {!rail ? (
         <div className="shrink-0 border-t border-border">
-          <PauseEverythingControl />
         </div>
       ) : null}
     </aside>

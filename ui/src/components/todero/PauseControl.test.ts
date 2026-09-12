@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPausedSinceTime, pauseButtonLabel, pauseCaption } from "./PauseControl";
+import { formatPausedSinceTime, instancePauseCaption, pauseButtonLabel, pauseCaption } from "./PauseControl";
 
 describe("pauseButtonLabel", () => {
   it("reads Pause while the organization is working and Play while it is paused", () => {
@@ -37,5 +37,14 @@ describe("formatPausedSinceTime", () => {
     expect(formatted).toMatch(/42/);
     expect(formatPausedSinceTime(null)).toBeNull();
     expect(formatPausedSinceTime("nonsense")).toBeNull();
+  });
+});
+
+describe("instancePauseCaption", () => {
+  it("says everything is paused, and since when, only while the sidebar's Pause is on", () => {
+    expect(instancePauseCaption(null)).toBe("Agents are working");
+    expect(instancePauseCaption({ paused: false, pausedAt: null })).toBe("Agents are working");
+    expect(instancePauseCaption({ paused: true, pausedAt: null })).toBe("Everything paused");
+    expect(instancePauseCaption({ paused: true, pausedAt: "2026-09-10T10:42:00Z" })).toMatch(/^Everything paused since /);
   });
 });

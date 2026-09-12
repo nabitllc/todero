@@ -189,7 +189,7 @@ function BoardContent({ companyId, paused }: { companyId: string; paused: boolea
 
       {paused ? (
         <p className="text-(length:--text-compact) text-muted-foreground" data-testid="board-paused-note">
-          This organization is paused, so nothing new starts. Work already under way finishes.
+          This organization is paused, so nothing talks to a model until you press Play. Work already under way finishes.
         </p>
       ) : null}
 

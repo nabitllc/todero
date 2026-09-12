@@ -8149,6 +8149,14 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/instance/pause",
+  tags: ["todero"],
+  summary: "Master Pause: whether the sidebar's Pause is on (organizations paused by it and not yet resumed), and since when",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/pause",
   tags: ["todero"],

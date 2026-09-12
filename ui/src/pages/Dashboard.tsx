@@ -355,7 +355,7 @@ export function Dashboard() {
             </Button>
           }
         >
-          Work already under way finishes on its own; nothing new starts until you press Play.
+          Nothing talks to a model until you press Play. Work already under way finishes on its own; routines and clean-ups wait too.
         </InlineBanner>
       ) : null}
 

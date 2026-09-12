@@ -243,11 +243,10 @@ describe("CompanyEnvironments", () => {
     await act(async () => {
       root.render(renderCompanyEnvironments(queryClient));
     });
-    await flushReact();
-    await flushReact();
-
+    // Wait for the page itself, not a fixed number of ticks: under a busy
+    // suite the capabilities query resolves later than two ticks.
+    await waitForAssertion(() => expect(container.querySelector('[aria-label="Add environment"]')).toBeTruthy());
     const addEnvironmentButton = container.querySelector('[aria-label="Add environment"]');
-    expect(addEnvironmentButton).toBeTruthy();
 
     await act(async () => {
       click(addEnvironmentButton);
@@ -294,11 +293,8 @@ describe("CompanyEnvironments", () => {
     await act(async () => {
       root.render(renderCompanyEnvironments(queryClient));
     });
-    await flushReact();
-    await flushReact();
-
+    await waitForAssertion(() => expect(findAction(container, "Edit")).toBeTruthy());
     const editButton = findAction(container, "Edit");
-    expect(editButton).toBeTruthy();
 
     await act(async () => {
       click(editButton);
@@ -368,13 +364,9 @@ describe("CompanyEnvironments", () => {
     await act(async () => {
       root.render(renderCompanyEnvironments(queryClient));
     });
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).toContain("Secure Sandbox");
-
+    await waitForAssertion(() => expect(container.textContent).toContain("Secure Sandbox"));
+    await waitForAssertion(() => expect(findAction(container, "Edit")).toBeTruthy());
     const editButton = findAction(container, "Edit");
-    expect(editButton).toBeTruthy();
 
     await act(async () => {
       click(editButton);

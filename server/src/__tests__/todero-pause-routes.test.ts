@@ -85,6 +85,24 @@ describeEmbeddedPostgres("Play / Pause routes", () => {
       .then((rows) => rows);
   }
 
+  it("reads the sidebar's Pause state: on only while this switch's pauses stand", async () => {
+    const app = createApp();
+    const running = await insertCompany("Running");
+    const byHand = await insertCompany("By hand", "paused", "manual");
+    expect((await request(app).get("/api/instance/pause")).body).toMatchObject({ paused: false, companyIds: [] });
+
+    await request(app).post("/api/instance/pause-all").expect(200);
+    const on = await request(app).get("/api/instance/pause").expect(200);
+    expect(on.body.paused).toBe(true);
+    expect(on.body.companyIds).toEqual([running]);
+    expect(typeof on.body.pausedAt).toBe("string");
+
+    await request(app).post("/api/instance/resume-all").expect(200);
+    expect((await request(app).get("/api/instance/pause")).body).toMatchObject({ paused: false, companyIds: [] });
+    // The organization paused by hand is untouched throughout.
+    expect((await readCompany(byHand))?.status).toBe("paused");
+  });
+
   it("pause flips the three columns and writes one activity line", async () => {
     const companyId = await insertCompany("Pause Co");
     const app = createApp();

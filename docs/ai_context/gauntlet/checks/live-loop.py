@@ -154,6 +154,30 @@ def main() -> int:
         reviewer = next((a["id"] for a in (call("GET", f"/companies/{C}/agents")[1] or []) if a.get("role") == "reviewer"), None)
         expect(reviewer is not None, "a reviewer was hired on approval")
 
+        # 2b) Master Pause: with the plan's tasks queued, press the sidebar's Pause.
+        # For ninety seconds nothing may start, no task may change state, and
+        # nothing may be posted on any task; Play then lets the work continue.
+        status, _ = call("POST", "/instance/pause-all", {})
+        expect(status == 200, f"pause everything ({status})")
+        paused_state = call("GET", "/instance/pause")[1] or {}
+        expect(paused_state.get("paused") is True, "the sidebar's Pause reads as on")
+        # A turn already under way finishes on its own; that is the rule. So let
+        # anything running finish first, then hold the line for ninety seconds.
+        wait_for(lambda: None if any(r["status"] == "running" for r in runs_of(C)) else True, 600, every=5)
+        before = {i["id"]: (i["status"], i.get("description")) for i in issues_of(C)}
+        runs_before = {r["id"]: r["status"] for r in runs_of(C)}
+        comments_before = sum(len(comments(i["id"])) for i in issues_of(C))
+        time.sleep(90)
+        after = {i["id"]: (i["status"], i.get("description")) for i in issues_of(C)}
+        runs_after = {r["id"]: r["status"] for r in runs_of(C)}
+        started = [rid for rid, st in runs_after.items() if st in ("running", "succeeded", "failed", "timed_out") and runs_before.get(rid) not in ("running", "succeeded", "failed", "timed_out")]
+        expect(after == before, "paused: no task changed state or text")
+        expect(not started, f"paused: no turn started ({len(started)})")
+        expect(sum(len(comments(i["id"])) for i in issues_of(C)) == comments_before, "paused: nothing was posted on any task")
+        status, _ = call("POST", "/instance/resume-all", {})
+        expect(status == 200, f"resume everything ({status})")
+        log("paused for ninety seconds; nothing moved; resumed")
+
         # 3) each child: hand-in, reviewer verdict, accept; answer a question at most twice.
         # Turns run one at a time on this machine and every first task of the
         # plan is queued at approval, so waiting on one child for a fixed time

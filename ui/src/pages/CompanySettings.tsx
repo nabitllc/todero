@@ -11,6 +11,7 @@ import { companiesApi } from "../api/companies";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
+import { OrganizationPauseControl } from "@/components/todero/PauseControl";
 import { SlidersHorizontal } from "lucide-react";
 import {
   InteractionGovernancePanel,
@@ -189,6 +190,18 @@ export function CompanySettings() {
       <div className="flex items-center gap-2">
         <SlidersHorizontal className="h-5 w-5 text-muted-foreground" />
         <h1 className="text-lg font-semibold">General</h1>
+      </div>
+
+      {/* Play / Pause for this organization only. The sidebar's switch covers everything. */}
+      <div className="max-w-2xl space-y-3">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Play / Pause this organization
+        </div>
+        <p className="text-sm text-muted-foreground">
+          The Pause in the sidebar stops everything. This one holds only this organization while the
+          others keep working; it stays paused when the sidebar's Play is pressed.
+        </p>
+        <OrganizationPauseControl />
       </div>
 
       {/* General */}

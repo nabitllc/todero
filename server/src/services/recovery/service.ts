@@ -1174,6 +1174,18 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     return Boolean(budgetBlock);
   }
 
+  /**
+   * The organizations a person has paused (by hand, or every one of them with
+   * the sidebar's Pause). While paused, nothing here escalates, requeues or
+   * clears a task of theirs: the sweep read a task that could not start as
+   * stranded, and on the Tampa organization it moved nine waiting tasks to
+   * Blocked overnight.
+   */
+  async function pausedCompanyIds(): Promise<Set<string>> {
+    const rows = await db.select({ id: companies.id }).from(companies).where(eq(companies.status, "paused"));
+    return new Set(rows.map((row) => row.id));
+  }
+
   async function reconcileUnassignedBlockingIssues() {
     const candidates = await db
       .select({
@@ -1207,7 +1219,10 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     const issueIds: string[] = [];
     const seen = new Set<string>();
 
+    // Master Pause: a paused organization's tasks are left exactly as they are.
+    const pausedCompanies = await pausedCompanyIds();
     for (const candidate of candidates) {
+      if (pausedCompanies.has(candidate.companyId)) continue;
       if (seen.has(candidate.id)) continue;
       seen.add(candidate.id);
 
@@ -3564,7 +3579,10 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       issueIds: [] as string[],
     };
 
+    // Master Pause: a paused organization's tasks are left exactly as they are.
+    const pausedCompanies = await pausedCompanyIds();
     for (const issue of candidates) {
+      if (pausedCompanies.has(issue.companyId)) continue;
       const executionState = issue.status === "in_review"
         ? parseIssueExecutionState(issue.executionState)
         : null;
@@ -5247,8 +5265,11 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       );
     }
 
+    // Master Pause: a paused organization's tasks are left exactly as they are.
+    const pausedCompanies = await pausedCompanyIds();
     const candidatesByCompany = new Map<string, typeof candidates>();
     for (const candidate of candidates) {
+      if (pausedCompanies.has(candidate.companyId)) continue;
       const companyCandidates = candidatesByCompany.get(candidate.companyId) ?? [];
       companyCandidates.push(candidate);
       candidatesByCompany.set(candidate.companyId, companyCandidates);
@@ -5767,7 +5788,10 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       return TERMINAL_HEARTBEAT_RUN_STATUSES.has(status);
     };
 
+    // Master Pause: a paused organization's tasks are left exactly as they are.
+    const pausedCompaniesForLocks = await pausedCompanyIds();
     for (const issue of candidates) {
+      if (pausedCompaniesForLocks.has(issue.companyId)) continue;
       if (!isCleanable(issue.checkoutRunId) || !isCleanable(issue.executionRunId)) {
         continue;
       }

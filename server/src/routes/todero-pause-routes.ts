@@ -161,6 +161,24 @@ export function toderoPauseRoutes(db: Db, deps?: ToderoPauseRouteDeps) {
   });
 
   /**
+   * Master Pause, as the sidebar reads it: on when this switch has paused
+   * organizations that Resume everything has not yet put back. Since when is
+   * the earliest of their pause times.
+   */
+  router.get("/instance/pause", async (req, res) => {
+    assertBoard(req);
+    const rows = await db
+      .select({ id: companies.id, pausedAt: companies.pausedAt })
+      .from(companies)
+      .where(and(eq(companies.status, "paused"), eq(companies.pauseReason, COMPANY_PAUSE_REASON_MASTER)));
+    const pausedAt = rows
+      .map((row) => row.pausedAt)
+      .filter((value): value is Date => value instanceof Date)
+      .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
+    res.json({ paused: rows.length > 0, pausedAt: pausedAt ? pausedAt.toISOString() : null, companyIds: rows.map((row) => row.id) });
+  });
+
+  /**
    * Pause everything. Only organizations that are active right now are
    * touched, and each is tagged `master` so Resume everything can tell them
    * apart from one the person paused by hand.
