@@ -8,6 +8,9 @@ import {
   isChatCompletionsUrl,
   parseChatCompletionsReply,
   parseChatCompletionsText,
+  parseChatCompletionsFinishReason,
+  chatCompletionsReplyWasCutOff,
+  CHAT_COMPLETIONS_CUT_OFF_NOTE,
   type ChatCompletionsMessage,
 } from "./chat-completions.js";
 import { resolveHttpAdapterTimeoutMs } from "./local-model-timeout.js";
@@ -68,6 +71,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // success with nothing on the ticket.
     const raw = await res.text();
     let completion = parseChatCompletionsText(raw);
+    let finishReason = parseChatCompletionsFinishReason(raw);
     if (!completion) {
       throw new Error("HTTP chat completions returned empty assistant text");
     }
@@ -94,13 +98,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         ...(timer ? { signal: controller.signal } : {}),
       });
       if (retry.ok) {
-        const retried = parseChatCompletionsText(await retry.text());
+        const retriedRaw = await retry.text();
+        const retried = parseChatCompletionsText(retriedRaw);
         if (retried) {
           await ctx.onLog("stdout", `[todero] Empty reply; asked once more.\n${retried}\n`);
           completion = retried;
           reply = parseChatCompletionsReply(retried);
+          finishReason = parseChatCompletionsFinishReason(retriedRaw);
         }
       }
+    }
+    // A reply the model could not finish has no status line and no end. Say
+    // so under it and hand the turn to the person, instead of reading the
+    // half as a question the person has to guess at.
+    const cutOff = chatCompletionsReplyWasCutOff(finishReason);
+    if (cutOff) {
+      reply = { body: `${reply.body}\n\n${CHAT_COMPLETIONS_CUT_OFF_NOTE}`.trim(), disposition: "waiting" };
+      await ctx.onLog("stderr", "[todero] The model ran out of room before it finished; the task waits for the person.\n");
     }
     // A plan block is for Todero too: it becomes the task's Plan document and
     // the approval card, and the person reads the words around it.
@@ -120,6 +134,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         summary,
         toderoDisposition: reply.disposition,
         ...(chosenModel ? { toderoModel: chosenModel } : {}),
+        ...(cutOff ? { toderoCutOff: true } : {}),
         ...(planned ? { toderoPlanBlock: formatToderoPlanBlock(planned.plan) } : {}),
       },
     };

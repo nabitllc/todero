@@ -70,8 +70,8 @@ export function liveLocalLlmSelection<T extends { runtimeId: string; modelId: st
 export const LOCAL_LLM_TEST_PATH = "/todero/local-llm/test";
 
 export type LocalLlmTestResult =
-  | { ok: true; reply: string; latencyMs: number; availableModels?: string[] }
-  | { ok: false; error: string; latencyMs: number; availableModels?: string[] };
+  | { ok: true; reply: string; latencyMs: number; availableModels?: string[]; contextLength?: number | null }
+  | { ok: false; error: string; latencyMs: number; availableModels?: string[]; contextLength?: number | null };
 
 export const toderoLocalLlmApi = {
   detect: () => api.get<{ runtimes: LocalLlmRuntime[] }>(LOCAL_LLM_DETECT_PATH),

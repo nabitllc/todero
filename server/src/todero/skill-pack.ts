@@ -14,7 +14,13 @@
  */
 
 import type { CompanySkill } from "@todero/shared";
-import { parseFrontmatterMarkdown, parseSkillPackKinds, isSkillPackSkill } from "@todero/shared";
+import {
+  parseFrontmatterMarkdown,
+  parseSkillPackKinds,
+  isSkillPackSkill,
+  SKILL_PACK_TEXT_CEILING,
+  skillPackCeilingForContext,
+} from "@todero/shared";
 import { readToderoSkillSyncPreference } from "@todero/adapter-utils/server-utils";
 
 /** The turn kinds model routing labels a turn with, plus the reviewer's own. */
@@ -41,40 +47,15 @@ export const SKILL_PACK_PRIORITY_KEY = "todero-priority";
 export const SKILL_PACK_DEFAULT_PRIORITY = 99;
 
 /**
- * How much of the pack one turn may carry, in characters.
- *
- * Sized to hold the whole pack for the busiest kind (a planning turn reads six
- * of the ten) with room for an organization's own edits, and to bite before a
- * person who has written four long skills of their own hands a small model
- * more rubrics than it can follow. Over the ceiling, the lowest-priority skill
- * goes first and a line about it reaches the task's log.
+ * How much of the pack one turn may carry, and the window rule behind it, live
+ * in @todero/shared (skill-pack-utils.ts) so the wizard can say when a window
+ * is too small for the whole pack. Re-exported here for the server's callers.
  */
-export const SKILL_PACK_TEXT_CEILING = 20_000;
-
-/**
- * Ollama serves a model with a 4,096-token window unless the person raised it
- * (OLLAMA_CONTEXT_LENGTH or a Modelfile), and the OpenAI-compatible endpoint
- * cannot ask for more per request. When nothing was detected, size for that.
- */
-export const SKILL_PACK_DEFAULT_CONTEXT_LENGTH = 4096;
-
-/** The share of the window the skills may take; the rest is the task, the thread and the reply. */
-const SKILL_PACK_CONTEXT_SHARE = 0.35;
-
-/** A rough characters-per-token ratio for English prose and markdown. */
-const SKILL_PACK_CHARS_PER_TOKEN = 4;
-
-/**
- * The ceiling for a runtime with this many tokens of context: a share of the
- * window in characters, never above the fixed ceiling.
- */
-export function skillPackCeilingForContext(contextLength: number | null | undefined): number {
-  const tokens =
-    typeof contextLength === "number" && Number.isFinite(contextLength) && contextLength > 0
-      ? contextLength
-      : SKILL_PACK_DEFAULT_CONTEXT_LENGTH;
-  return Math.min(SKILL_PACK_TEXT_CEILING, Math.floor(tokens * SKILL_PACK_CONTEXT_SHARE * SKILL_PACK_CHARS_PER_TOKEN));
-}
+export {
+  SKILL_PACK_DEFAULT_CONTEXT_LENGTH,
+  SKILL_PACK_TEXT_CEILING,
+  skillPackCeilingForContext,
+} from "@todero/shared";
 
 /** The heading that opens the part of a skill written for the person, not the model. */
 const SKILL_PACK_NOTES_HEADING_RE = /^##\s+What Todero changed\s*$/im;
