@@ -231,3 +231,44 @@ describe("useBoardDrop", () => {
     expect(onRefuse).not.toHaveBeenCalled();
   });
 });
+
+describe("a drop inside one column", () => {
+  it("writes the priority the card landed on, the way the task page would", async () => {
+    await mount([issue(), issue({ id: "task-2", identifier: "TAM-5", priority: "critical" })]);
+    await act(async () => {
+      (handleDrop as unknown as (
+        taskId: string,
+        from: string,
+        to: string,
+        position: { column: { id: string; priority: string }[]; toIndex: number },
+      ) => void)?.("task-1", "working", "working", {
+        column: [
+          { id: "task-2", priority: "critical" },
+          { id: "task-1", priority: "medium" },
+        ],
+        toIndex: 0,
+      });
+      await Promise.resolve();
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(mockIssuesApi.update).toHaveBeenCalledWith("task-1", { priority: "critical" });
+    expect(onDone).toHaveBeenCalledWith("TAM-4 is now critical priority.");
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it("asks for nothing when the card lands where it already is", async () => {
+    await mount([issue()]);
+    await act(async () => {
+      (handleDrop as unknown as (
+        taskId: string,
+        from: string,
+        to: string,
+        position: { column: { id: string; priority: string }[]; toIndex: number },
+      ) => void)?.("task-1", "working", "working", { column: [{ id: "task-1", priority: "medium" }], toIndex: 0 });
+      await Promise.resolve();
+    });
+    expect(mockIssuesApi.update).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+  });
+});

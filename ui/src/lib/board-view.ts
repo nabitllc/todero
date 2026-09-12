@@ -1,4 +1,4 @@
-import type { Agent, Goal, Issue } from "@todero/shared";
+import type { Agent, Goal, Issue, IssuePriority } from "@todero/shared";
 import { parseWorkItemDescription, resolveBlockedBy } from "../components/work-item/work-item-model";
 import { displayStatus } from "../components/work-item/work-item-model";
 import {
@@ -33,6 +33,15 @@ export interface BoardCard {
   glyph: BoardCardGlyph;
   /** "3 h" — how long it has stood on this step. */
   timeText: string | null;
+  /** The task's priority; the order inside a lane, highest first. */
+  priority: IssuePriority;
+}
+
+const PRIORITY_RANK: Record<IssuePriority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+/** Where a priority sorts, highest first; anything unknown sorts with medium. */
+export function priorityRank(priority: string | null | undefined): number {
+  return PRIORITY_RANK[(priority ?? "medium") as IssuePriority] ?? PRIORITY_RANK.medium;
 }
 
 export interface BoardView {
@@ -181,11 +190,21 @@ export function boardViewFor(args: {
       assigneeName: view.assigneeName,
       glyph: glyphFor(view, column),
       timeText: timeInColumnText(issue.updatedAt, now),
+      priority: (issue.priority ?? "medium") as IssuePriority,
     };
 
     cards.get(rowId)?.[column].push(card);
     byId.set(card.id, card);
     totalByColumn[column] += 1;
+  }
+
+  // Inside a lane the order is the priority, highest first; at equal priority
+  // the tasks keep the order they arrived in, so a drop that sets a priority
+  // lands the card where the person put it.
+  for (const lanes of cards.values()) {
+    for (const lane of Object.values(lanes)) {
+      lane.sort((left, right) => priorityRank(left.priority) - priorityRank(right.priority));
+    }
   }
 
   const wip = wipFor({

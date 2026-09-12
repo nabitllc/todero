@@ -145,12 +145,20 @@ function BoardContent({ companyId, paused }: { companyId: string; paused: boolea
       if (!overId) return;
       const card = view.byId.get(String(event.active.id));
       if (!card) return;
-      const target = parseLaneDropId(String(overId)) ?? (() => {
-        const overCard = view.byId.get(String(overId));
-        return overCard ? { rowId: overCard.rowId, column: overCard.column } : null;
-      })();
+      const overCard = view.byId.get(String(overId));
+      const target = parseLaneDropId(String(overId)) ?? (overCard ? { rowId: overCard.rowId, column: overCard.column } : null);
       if (!target) return;
-      handleDrop(card.id, card.column, target.column);
+      // Inside one column the slot matters: the card it was dropped over, or
+      // the bottom of the lane when it was dropped on the lane itself.
+      const lane = view.cards.get(target.rowId)?.[target.column] ?? [];
+      const position =
+        card.column === target.column && card.rowId === target.rowId
+          ? {
+              column: lane.map((entry) => ({ id: entry.id, priority: entry.priority })),
+              toIndex: overCard ? lane.findIndex((entry) => entry.id === overCard.id) : lane.length - 1,
+            }
+          : undefined;
+      handleDrop(card.id, card.column, target.column, position);
     },
     [view.byId, handleDrop],
   );

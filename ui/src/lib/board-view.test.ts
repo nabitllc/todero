@@ -230,3 +230,25 @@ describe("boardViewFor", () => {
     expect(ownersForColumn("done", view, [agent()])).toEqual([]);
   });
 });
+
+describe("the order inside a lane", () => {
+  it("is the priority, highest first, and each card carries its own", () => {
+    const view = boardViewFor({
+      issues: [
+        issue({ id: "low", identifier: "T-1", status: "todo", assigneeAgentId: "agent-1", priority: "low" }),
+        issue({ id: "crit", identifier: "T-2", status: "todo", assigneeAgentId: "agent-1", priority: "critical" }),
+        issue({ id: "mid", identifier: "T-3", status: "todo", assigneeAgentId: "agent-1", priority: "medium" }),
+      ],
+      goals: [],
+      agents: [{ id: "agent-1", name: "Nova", status: "idle" } as unknown as Agent],
+      liveIssueIds: new Set<string>(),
+      groupBy: "feature",
+      agentFilter: null,
+      organizationPaused: false,
+    });
+    const lanes = [...view.cards.values()].flatMap((columns) => Object.values(columns)).filter((lane) => lane.length > 0);
+    const lane = lanes.find((cards) => cards.some((card) => card.id === "crit"));
+    expect(lane?.map((card) => card.id)).toEqual(["crit", "mid", "low"]);
+    expect(lane?.map((card) => card.priority)).toEqual(["critical", "medium", "low"]);
+  });
+});

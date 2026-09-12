@@ -239,7 +239,7 @@
   "ui/src/pages/CompanyExport.tsx": 1303,
   "ui/src/pages/CompanyImport.tsx": 2160,
   "ui/src/pages/CompanySettings.tsx": 424,
-  "ui/src/pages/CompanySkills.tsx": 5641,
+  "ui/src/pages/CompanySkills.tsx": 5646,
   "ui/src/pages/Costs.tsx": 1103,
   "ui/src/pages/Dashboard.tsx": 597,
   "ui/src/pages/DecisionQueuePage.tsx": 509,

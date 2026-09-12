@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { visibleCopyHasForbiddenWord } from "../components/work-item/work-item-model";
 import { BOARD_COLUMNS, type BoardColumn } from "./board-model";
-import { cardActionsFor, dropFor, isRefusal, type DropTask } from "./board-drop";
+import { cardActionsFor, dropFor, isRefusal, reorderFor, type DropTask, type ReorderCard } from "./board-drop";
 
 function task(overrides: Partial<DropTask> = {}): DropTask {
   return {
@@ -47,15 +47,31 @@ describe("what a drop does", () => {
     expect((result as { confirm: string }).confirm).toBe("Park TAM-4 and wait for you?");
   });
 
-  // The order inside a column is the task's priority, which this board does not
-  // write yet: a card dropped back on its own column asks nothing and saves
-  // nothing. The test says so plainly rather than reading like a shipped feature.
-  it("does nothing, and saves no new order, when a card lands in the column it came from", () => {
+  // The order inside a column is the task's priority. Without a position (a
+  // phone's buttons, an older caller) a card dropped back on its own column
+  // asks nothing and saves nothing.
+  it("does nothing, and saves no new order, when a card lands in its own column with no position", () => {
     for (const column of BOARD_COLUMNS) {
       const result = dropFor({ task: task(), from: column, to: column });
-      expect(result).toMatchObject({ action: "reorder", taskId: "task-1" });
-      expect((result as { confirm?: string }).confirm).toBeUndefined();
+      expect(result).toEqual({ action: "reorder", taskId: "task-1" });
     }
+  });
+
+  it("carries the new priority when a card lands at a new place in its own column", () => {
+    const lane: ReorderCard[] = [
+      { id: "top", priority: "critical" },
+      { id: "task-1", priority: "medium" },
+      { id: "last", priority: "low" },
+    ];
+    expect(dropFor({ task: task(), from: "working", to: "working", column: lane, toIndex: 0 })).toEqual({
+      action: "reorder",
+      taskId: "task-1",
+      priority: "critical",
+    });
+    expect(dropFor({ task: task(), from: "working", to: "working", column: lane, toIndex: 1 })).toEqual({
+      action: "reorder",
+      taskId: "task-1",
+    });
   });
 
   it("refuses to start a paused agent's work and names the button that would", () => {
@@ -187,5 +203,34 @@ describe("the buttons that replace the drag", () => {
         expect(isRefusal(dropFor({ task: task(), from: column, to: action.to }))).toBe(false);
       }
     }
+  });
+});
+
+describe("reorderFor", () => {
+  const lane: ReorderCard[] = [
+    { id: "a", priority: "critical" },
+    { id: "b", priority: "high" },
+    { id: "c", priority: "medium" },
+    { id: "d", priority: "low" },
+  ];
+
+  it("takes the priority of the card it lands on", () => {
+    expect(reorderFor({ column: lane, movedId: "c", toIndex: 0 })).toEqual({ id: "c", priority: "critical" });
+    expect(reorderFor({ column: lane, movedId: "a", toIndex: 3 })).toEqual({ id: "a", priority: "low" });
+  });
+
+  it("changes nothing when it lands where it was, or on a card of the same priority", () => {
+    expect(reorderFor({ column: lane, movedId: "b", toIndex: 1 })).toBeNull();
+    expect(reorderFor({ column: [...lane, { id: "e", priority: "low" }], movedId: "e", toIndex: 3 })).toBeNull();
+  });
+
+  it("keeps a slot past either end inside the lane", () => {
+    expect(reorderFor({ column: lane, movedId: "a", toIndex: 99 })).toEqual({ id: "a", priority: "low" });
+    expect(reorderFor({ column: lane, movedId: "d", toIndex: -5 })).toEqual({ id: "d", priority: "critical" });
+  });
+
+  it("knows nothing about a card that is not in the lane", () => {
+    expect(reorderFor({ column: lane, movedId: "zzz", toIndex: 0 })).toBeNull();
+    expect(reorderFor({ column: [], movedId: "a", toIndex: 0 })).toBeNull();
   });
 });
