@@ -8,7 +8,6 @@ import type { CompanySkillListItem } from "@todero/shared";
 import { companySkillsApi } from "../../api/companySkills";
 import { packRowFacts } from "../../lib/skill-pack-row";
 import { Button } from "@/components/ui/button";
-import { cn } from "../../lib/utils";
 
 export interface SkillPackRowMetaProps {
   item: CompanySkillListItem;
@@ -41,16 +40,16 @@ export function SkillPackRowMeta({ item, companyId, onReset }: SkillPackRowMetaP
   return (
     <div className="space-y-1">
       {facts.version && (
-        <div className="text-xs text-(color:--text-muted)">
+        <div className="text-xs text-muted-foreground">
           Version {facts.version}
         </div>
       )}
       {facts.lastChangedBecause && (
-        <div className="text-xs text-(color:--text-muted)">
+        <div className="text-xs text-muted-foreground">
           Last changed because: {facts.lastChangedBecause}
         </div>
       )}
-      <div className="flex items-center gap-2 pt-1">
+      <div className="flex flex-col items-start gap-2 pt-1">
         <Button
           type="button"
           size="sm"
@@ -62,7 +61,7 @@ export function SkillPackRowMeta({ item, companyId, onReset }: SkillPackRowMetaP
           {isResetting ? "Resetting..." : "Reset to the original"}
         </Button>
         {error && (
-          <span className="text-xs text-(color:--text-error)">
+          <span className="text-xs text-destructive">
             {error}
           </span>
         )}

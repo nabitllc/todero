@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { CompanySkill } from "@todero/shared";
+import { isSkillPackSkill, parseSkillPackKinds } from "@todero/shared";
 import {
   SKILL_PACK_DEFAULT_PRIORITY,
   SKILL_PACK_HEADING,
   buildSkillPackText,
-  isSkillPackSkill,
   loadAgentSkillText,
-  parseSkillPackKinds,
   readSkillPackFacts,
   skillBodyForModel,
   skillPackAppliesToKind,

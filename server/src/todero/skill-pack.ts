@@ -14,7 +14,7 @@
  */
 
 import type { CompanySkill } from "@todero/shared";
-import { parseFrontmatterMarkdown } from "@todero/shared";
+import { parseFrontmatterMarkdown, parseSkillPackKinds, isSkillPackSkill } from "@todero/shared";
 import { readToderoSkillSyncPreference } from "@todero/adapter-utils/server-utils";
 
 /** The turn kinds model routing labels a turn with, plus the reviewer's own. */
@@ -112,36 +112,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Read a `todero-task-kinds` value in any shape the frontmatter parser can
- * hand back: a real array, the flow-list string `"[a, b]"`, the plain string
- * `"a, b"`, a single kind `"a"`, or `"all"`.
- */
-export function parseSkillPackKinds(value: unknown): "all" | string[] | null {
-  const collected: string[] = [];
-
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      if (typeof entry !== "string") continue;
-      const trimmed = entry.trim().toLowerCase();
-      if (trimmed) collected.push(trimmed);
-    }
-  } else if (typeof value === "string") {
-    let text = value.trim();
-    if (text.startsWith("[") && text.endsWith("]")) text = text.slice(1, -1);
-    for (const entry of text.split(",")) {
-      const trimmed = entry.trim().replace(/^["']|["']$/g, "").toLowerCase();
-      if (trimmed) collected.push(trimmed);
-    }
-  } else {
-    return null;
-  }
-
-  if (collected.length === 0) return null;
-  if (collected.includes("all")) return "all";
-  return Array.from(new Set(collected));
-}
-
-/**
  * The pack facts on a skill's stored metadata, or null when the skill is not
  * part of the pack.
  */
@@ -158,11 +128,6 @@ export function readSkillPackFacts(metadata: unknown): SkillPackFacts | null {
       : SKILL_PACK_DEFAULT_PRIORITY;
 
   return { kinds, priority };
-}
-
-/** True when this skill belongs to the pack rather than the command-line set. */
-export function isSkillPackSkill(metadata: unknown): boolean {
-  return readSkillPackFacts(metadata) !== null;
 }
 
 /**

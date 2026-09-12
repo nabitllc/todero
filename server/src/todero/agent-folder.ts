@@ -11,9 +11,9 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import type { Agent, CompanySkill } from "@todero/shared";
+import { isSkillPackSkill } from "@todero/shared";
 import { readToderoSkillSyncPreference } from "@todero/adapter-utils/server-utils";
 import { resolveToderoInstanceRoot } from "../home-paths.js";
-import { isSkillPackSkill } from "./skill-pack.js";
 
 /** `{instance}/companies/{companyId}/agents/{agentId}` — the instructions bundle's parent. */
 export function resolveAgentFolderRoot(companyId: string, agentId: string): string {
