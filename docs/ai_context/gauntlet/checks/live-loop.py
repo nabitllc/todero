@@ -161,6 +161,9 @@ def main() -> int:
         expect(status == 200, f"pause everything ({status})")
         paused_state = call("GET", "/instance/pause")[1] or {}
         expect(paused_state.get("paused") is True, "the sidebar's Pause reads as on")
+        # A turn already under way finishes on its own; that is the rule. So let
+        # anything running finish first, then hold the line for ninety seconds.
+        wait_for(lambda: None if any(r["status"] == "running" for r in runs_of(C)) else True, 600, every=5)
         before = {i["id"]: (i["status"], i.get("description")) for i in issues_of(C)}
         runs_before = {r["id"]: r["status"] for r in runs_of(C)}
         comments_before = sum(len(comments(i["id"])) for i in issues_of(C))
