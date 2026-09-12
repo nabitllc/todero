@@ -46,7 +46,7 @@
   "server/src/routes/execution-workspaces.ts": 1375,
   "server/src/routes/file-resources.ts": 940,
   "server/src/routes/issues.ts": 13299,
-  "server/src/routes/openapi.ts": 8218,
+  "server/src/routes/openapi.ts": 8234,
   "server/src/routes/org-chart-svg.ts": 777,
   "server/src/routes/pipelines.ts": 2913,
   "server/src/routes/plugin-ui-static.ts": 510,
