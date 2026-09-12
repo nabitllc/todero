@@ -767,7 +767,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "any" });
 
-      expect(res.status).toBe(403);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
       expect(res.body.details).toMatchObject({ code: "execution_mode_platform_managed" });
       expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();
     });
@@ -779,7 +779,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "kubernetes" });
 
-      expect(res.status).toBe(403);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
       expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();
     });
 
@@ -796,7 +796,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "kubernetes", keyboardShortcuts: true });
 
-      expect(res.status).toBe(200);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({
         executionMode: "kubernetes",
         keyboardShortcuts: true,
@@ -810,7 +810,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ keyboardShortcuts: true });
 
-      expect(res.status).toBe(200);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(mockInstanceSettingsService.getGeneral).not.toHaveBeenCalled();
       expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({ keyboardShortcuts: true });
     });
@@ -828,7 +828,7 @@ describe("instance settings routes", () => {
         .patch("/api/instance/settings/general")
         .send({ executionMode: "kubernetes" });
 
-      expect(res.status).toBe(200);
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
       expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({ executionMode: "kubernetes" });
     });
   });
