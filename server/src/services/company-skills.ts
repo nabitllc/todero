@@ -101,9 +101,9 @@ import {
   parseFrontmatterMarkdown,
   splitFrontmatterBlock,
   stringifyFrontmatter,
+  isSkillPackSkill,
 } from "@todero/shared";
 import { resolveToderoInstanceRoot } from "../home-paths.js";
-import { isSkillPackSkill } from "../todero/skill-pack.js";
 import { readShippedPackSkills, type ShippedPackSkill } from "../todero/skill-pack-source.js";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
@@ -2854,6 +2854,7 @@ function toCompanySkillListItem(skill: CompanySkillListRow, attachedAgentCount: 
     originHash,
     packageName,
     packageVersion,
+    metadata: skill.metadata ?? null,
   };
 }
 

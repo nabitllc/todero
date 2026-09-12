@@ -87,6 +87,8 @@ import {
   type SkillCreateDraft,
 } from "../lib/skill-create";
 import { SkillCardIcon } from "../components/SkillCardIcon";
+import { SkillPackRowMeta } from "../components/skills/SkillPackRowMeta";
+import { packRowFacts } from "../lib/skill-pack-row";
 import { ImportSkillsFromProjectDialog } from "./skills/ImportSkillsFromProjectDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -630,7 +632,10 @@ export { SkillCardIcon } from "../components/SkillCardIcon";
 function discoveryVersionLabel(skill: {
   packageVersion: string | null;
   sourceRef: string | null;
+  metadata?: Record<string, unknown> | null;
 }, required: boolean): string | null {
+  const pack = packRowFacts({ metadata: skill.metadata ?? null });
+  if (pack.version) return `v${pack.version}`;
   if (skill.packageVersion) return `v${skill.packageVersion}`;
   if (required) return "core";
   if (skill.sourceRef) return shortRef(skill.sourceRef);
@@ -2871,6 +2876,7 @@ export function SkillDetailPage({
   updateStatusLoading,
   onCheckUpdates,
   checkUpdatesPending,
+  onPackReset,
   onInstallUpdate,
   installUpdatePending,
   onToggleStar,
@@ -2913,6 +2919,8 @@ export function SkillDetailPage({
   updateStatusLoading: boolean;
   onCheckUpdates: () => void;
   checkUpdatesPending: boolean;
+  /** After "Reset to the original": refresh what the page shows. */
+  onPackReset?: () => void;
   onInstallUpdate: () => void;
   installUpdatePending: boolean;
   onToggleStar: () => void;
@@ -3318,6 +3326,13 @@ export function SkillDetailPage({
                     by <span className="text-foreground">{detail.authorName}</span>
                   </p>
                 ) : null}
+                <div className="mt-1">
+                  <SkillPackRowMeta
+                    item={detail}
+                    companyId={detail.companyId}
+                    onReset={onPackReset}
+                  />
+                </div>
                 {subtitleText ? (
                   <div className="mt-1 max-w-2xl">
                     <p
@@ -5539,6 +5554,9 @@ export function CompanySkills() {
           updateStatusLoading={updateStatusQuery.isLoading}
           onCheckUpdates={() => {
             void updateStatusQuery.refetch();
+          }}
+          onPackReset={() => {
+            void queryClient.invalidateQueries({ queryKey: ["company-skills", selectedCompanyId] });
           }}
           checkUpdatesPending={updateStatusQuery.isFetching}
           onInstallUpdate={() => installUpdate.mutate()}

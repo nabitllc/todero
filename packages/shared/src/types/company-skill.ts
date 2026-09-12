@@ -107,6 +107,8 @@ export interface CompanySkillListItem {
   originHash: string | null;
   packageName: string | null;
   packageVersion: string | null;
+  /** The skill's frontmatter metadata; a pack skill's version and because-line live here. */
+  metadata?: Record<string, unknown> | null;
   lastEditor?: CompanySkillLastEditor | null;
 }
 

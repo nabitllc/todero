@@ -12,5 +12,6 @@ export default defineConfig({
     ...base.test,
     include: ["src/**/*.gauntlet.{ts,tsx}"],
     exclude: ["**/node_modules/**", "**/dist/**"],
+    environment: "jsdom",
   },
 });
