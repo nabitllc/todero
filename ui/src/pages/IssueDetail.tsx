@@ -1048,6 +1048,8 @@ type IssueDetailChatTabProps = {
     options?: { allowSharing?: boolean; reason?: string },
   ) => Promise<void>;
   onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void>;
+  /** Item 4: a send-back as one call. When absent, the two-call path is used. */
+  onSendBack?: (note: string) => void;
   onImageUpload: (file: File) => Promise<string>;
   onAttachImage: (file: File) => Promise<IssueAttachment | void>;
   onInterruptQueued: (runId: string) => Promise<void>;
@@ -1142,6 +1144,7 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   queuedCommentReason,
   onVote,
   onAdd,
+  onSendBack: onSendBackOneCall,
   onImageUpload,
   onAttachImage,
   onInterruptQueued,
@@ -1530,6 +1533,10 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
           onStartProject={(name) => { void handleStartProject(name); }}
           onAccept={() => onUpdate({ status: "done" })}
           onSendBack={(note) => {
+            if (onSendBackOneCall) {
+              onSendBackOneCall(note);
+              return;
+            }
             onUpdate({ status: "todo" });
             void onAdd(note);
           }}
@@ -2979,6 +2986,18 @@ export function IssueDetail() {
     },
   });
 
+  // Item 4: one call puts the task back to To do and stores the note, so the
+  // agent's wake comes after the note it is meant to read.
+  const sendBack = useMutation({
+    mutationFn: (note: string) => issuesApi.sendBack(issueId!, note),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) }),
+        ...(selectedCompanyId ? [queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) })] : []),
+      ]);
+    },
+  });
   const addComment = useMutation({
     mutationFn: ({ body, reopen, interrupt }: { body: string; reopen?: boolean; interrupt?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen, interrupt),
@@ -5627,6 +5646,7 @@ export function IssueDetail() {
               queuedCommentReason={queuedCommentReason}
               onVote={handleCommentVote}
               onAdd={handleChatAdd}
+              onSendBack={(note) => sendBack.mutate(note)}
               onImageUpload={handleCommentImageUpload}
               onAttachImage={handleCommentAttachImage}
               onInterruptQueued={handleInterruptQueuedRun}
