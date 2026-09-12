@@ -333,3 +333,39 @@ export function buildChatCompletionsBody(input: {
     messages: buildChatCompletionsMessages(input.context, { agentName: input.agentName }),
   };
 }
+
+/**
+ * The endpoint's finish reason for the first choice, or null when the body
+ * does not carry one. "length" means the model ran out of room before it
+ * finished: on Ollama's default 4,096-token window a one-page document does.
+ */
+export function parseChatCompletionsFinishReason(body: unknown): string | null {
+  if (typeof body === "string") {
+    const trimmed = body.trim();
+    if (!trimmed) return null;
+    try {
+      return parseChatCompletionsFinishReason(JSON.parse(trimmed) as unknown);
+    } catch {
+      return null;
+    }
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const choices = (body as Record<string, unknown>).choices;
+  const first = Array.isArray(choices) ? choices[0] : null;
+  if (!first || typeof first !== "object") return null;
+  const reason = (first as Record<string, unknown>).finish_reason;
+  return typeof reason === "string" && reason.trim() ? reason.trim().toLowerCase() : null;
+}
+
+/** True when the endpoint said the reply was cut off before the model finished. */
+export function chatCompletionsReplyWasCutOff(finishReason: string | null): boolean {
+  return finishReason === "length";
+}
+
+/**
+ * What the person reads under a reply the model could not finish. A cut-off
+ * reply carries no status line, so without this it read as the model waiting
+ * on the person, and the task stalled with nothing to answer (wave 6 loop).
+ */
+export const CHAT_COMPLETIONS_CUT_OFF_NOTE =
+  "The model ran out of room before it finished this reply. Give it a bigger window (set OLLAMA_CONTEXT_LENGTH=16384 before starting Ollama), then start this task again.";

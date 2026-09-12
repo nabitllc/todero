@@ -11,6 +11,7 @@ import type {
 } from "@todero/shared";
 import { AGENT_ROLES, AGENT_ROLE_LABELS, ADAPTER_AUTH_MISSING_CHECK_CODE, LOCAL_MODEL_TIMEOUT_FLOOR_MS } from "@todero/shared";
 import { AdapterLoginPanel } from "./AgentConfigForm";
+import { localLlmWindowHint } from "../lib/local-llm-window";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -120,7 +121,7 @@ type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 type LocalLlmTestState =
   | { status: "idle" }
   | { status: "testing"; key: string }
-  | { status: "ok"; key: string; reply: string; latencyMs: number }
+  | { status: "ok"; key: string; reply: string; latencyMs: number; contextLength: number | null }
   | { status: "fail"; key: string; error: string };
 
 function localLlmSelectionKeyFor(selection: LocalLlmSelection | null): string | null {
@@ -1804,6 +1805,10 @@ function OnboardingWizardInner({
     localLlmTest.status === "ok" &&
     localLlmTest.key === localLlmSelectionKey;
   const localLlmTesting = localLlmTest.status === "testing" && localLlmTest.key === localLlmSelectionKey;
+  // Item 2: when the model's window is too small for the whole skill pack,
+  // say so next to the connection result, and how to raise it.
+  const localLlmWindowNote =
+    localLlmTest.status === "ok" ? localLlmWindowHint({ contextLength: localLlmTest.contextLength }) : null;
 
   async function handleTestLocalLlm() {
     if (!localLlmSelection || !localLlmSelectionKey || localLlmTesting) return;
@@ -1817,7 +1822,7 @@ function OnboardingWizardInner({
       });
       setLocalLlmTest(
         result.ok
-          ? { status: "ok", key, reply: result.reply, latencyMs: result.latencyMs }
+          ? { status: "ok", key, reply: result.reply, latencyMs: result.latencyMs, contextLength: result.contextLength ?? null }
           : { status: "fail", key, error: result.error },
       );
     } catch (err) {
@@ -2548,6 +2553,11 @@ function OnboardingWizardInner({
                         <p className="text-xs text-foreground" data-testid="local-llm-test-status">
                           Connected. {localLlmSelection.modelId} answered in{" "}
                           {formatLocalLlmLatency(localLlmTest.latencyMs)}.
+                        </p>
+                      )}
+                      {localLlmVerified && localLlmWindowNote && (
+                        <p className="text-xs text-muted-foreground" data-testid="local-llm-window-hint">
+                          {localLlmWindowNote}
                         </p>
                       )}
                       {localLlmTest.status === "fail" && localLlmTest.key === localLlmSelectionKey && (

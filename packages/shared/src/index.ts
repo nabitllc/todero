@@ -271,6 +271,12 @@ export {
   SKILL_PACK_KINDS_KEY,
   parseSkillPackKinds,
   isSkillPackSkill,
+  SKILL_PACK_TEXT_CEILING,
+  SKILL_PACK_DEFAULT_CONTEXT_LENGTH,
+  skillPackCeilingForContext,
+  SKILL_PACK_FULL_CHARS,
+  SKILL_PACK_COMFORTABLE_CONTEXT_LENGTH,
+  skillPackFitsContext,
 } from "./skill-pack-utils.js";
 export {
   TRUST_PRESETS,

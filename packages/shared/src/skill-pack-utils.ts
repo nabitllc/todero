@@ -50,3 +50,56 @@ export function isSkillPackSkill(metadata: unknown): boolean {
   const kinds = parseSkillPackKinds(metadata[SKILL_PACK_KINDS_KEY]);
   return kinds !== null;
 }
+
+/**
+ * How much of the pack one turn may carry, in characters.
+ *
+ * Sized to hold the whole pack for the busiest kind (a planning turn reads six
+ * of the ten) with room for an organization's own edits, and to bite before a
+ * person who has written four long skills of their own hands a small model
+ * more rubrics than it can follow. Over the ceiling, the lowest-priority skill
+ * goes first and a line about it reaches the task's log.
+ */
+export const SKILL_PACK_TEXT_CEILING = 20_000;
+
+/**
+ * Ollama serves a model with a 4,096-token window unless the person raised it
+ * (OLLAMA_CONTEXT_LENGTH or a Modelfile), and the OpenAI-compatible endpoint
+ * cannot ask for more per request. When nothing was detected, size for that.
+ */
+export const SKILL_PACK_DEFAULT_CONTEXT_LENGTH = 4096;
+
+/** The share of the window the skills may take; the rest is the task, the thread and the reply. */
+const SKILL_PACK_CONTEXT_SHARE = 0.35;
+
+/** A rough characters-per-token ratio for English prose and markdown. */
+const SKILL_PACK_CHARS_PER_TOKEN = 4;
+
+/**
+ * The ceiling for a runtime with this many tokens of context: a share of the
+ * window in characters, never above the fixed ceiling. The server sizes the
+ * pack with it on every turn; the wizard uses it to say when the window is
+ * too small for the whole pack.
+ */
+export function skillPackCeilingForContext(contextLength: number | null | undefined): number {
+  const tokens =
+    typeof contextLength === "number" && Number.isFinite(contextLength) && contextLength > 0
+      ? contextLength
+      : SKILL_PACK_DEFAULT_CONTEXT_LENGTH;
+  return Math.min(SKILL_PACK_TEXT_CEILING, Math.floor(tokens * SKILL_PACK_CONTEXT_SHARE * SKILL_PACK_CHARS_PER_TOKEN));
+}
+
+/**
+ * The model-facing size of the ten pack skills as shipped (frontmatter and the
+ * "What Todero changed" notes left out), measured on 2026-09-11. A server test
+ * keeps this within reach of the real files, so the wizard's hint stays honest.
+ */
+export const SKILL_PACK_FULL_CHARS = 15_893;
+
+/** The window at which the whole pack fits, the value the wizard recommends. */
+export const SKILL_PACK_COMFORTABLE_CONTEXT_LENGTH = 16_384;
+
+/** True when a runtime with this window carries the whole pack. */
+export function skillPackFitsContext(contextLength: number): boolean {
+  return skillPackCeilingForContext(contextLength) >= SKILL_PACK_FULL_CHARS;
+}
