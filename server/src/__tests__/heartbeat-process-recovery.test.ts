@@ -7221,6 +7221,34 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     }
   });
 
+  it("leaves a paused organization's tasks exactly as they are (Master Pause)", async () => {
+    // The same stranded shape as above: on an active organization this queues a
+    // continuation. Paused, the sweep must neither requeue, escalate, nor post —
+    // it is how Tampa's waiting tasks ended up Blocked overnight.
+    const { companyId, agentId, issueId } = await seedStrandedIssueFixture({
+      status: "in_progress",
+      runStatus: "succeeded",
+      livenessState: "advanced",
+    });
+    await db
+      .update(companies)
+      .set({ status: "paused", pauseReason: "manual", pausedAt: new Date() })
+      .where(eq(companies.id, companyId));
+    const heartbeat = heartbeatService(db);
+
+    const result = await heartbeat.reconcileStrandedAssignedIssues();
+    expect(result.continuationRequeued).toBe(0);
+    expect(result.escalated).toBe(0);
+    expect(result.issueIds).toEqual([]);
+
+    const [issue] = await db.select({ status: issues.status }).from(issues).where(eq(issues.id, issueId));
+    expect(issue?.status).toBe("in_progress");
+    const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+    expect(comments).toHaveLength(0);
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
+    expect(runs).toHaveLength(1);
+  });
+
   it("reuses the raced stranded recovery issue when duplicate active recovery creation conflicts", async () => {
     const { companyId, issueId } = await seedStrandedIssueFixture({
       status: "in_progress",

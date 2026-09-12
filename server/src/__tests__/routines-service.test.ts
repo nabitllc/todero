@@ -2572,6 +2572,36 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
     expect((await svc.runRoutine(routine.id, { source: "api" })).status).toBe("issue_created");
   });
 
+  it("suppresses scheduled ticks while the whole organization is paused (Master Pause)", async () => {
+    const { companyId, routine, svc } = await seedFixture();
+    const { trigger } = await svc.createTrigger(
+      routine.id,
+      { kind: "schedule", label: "daily", cronExpression: "0 0 * * *", timezone: "UTC" },
+      {},
+    );
+    const pastDue = new Date("2020-01-01T00:00:00.000Z");
+    await db.update(companies).set({ status: "paused", pauseReason: "master", pausedAt: new Date() }).where(eq(companies.id, companyId));
+    await db.update(routineTriggers).set({ nextRunAt: pastDue }).where(eq(routineTriggers.id, trigger.id));
+
+    const pausedResult = await svc.tickScheduledTriggers(new Date());
+    expect(pausedResult.triggered).toBe(0);
+    const issuesWhilePaused = await db.select().from(issues).where(eq(issues.companyId, companyId));
+    expect(issuesWhilePaused).toHaveLength(0);
+    const skippedRuns = await db.select().from(routineRuns).where(eq(routineRuns.routineId, routine.id));
+    expect(skippedRuns).toHaveLength(1);
+    expect(skippedRuns[0]?.status).toBe("skipped");
+    expect(skippedRuns[0]?.failureReason).toBe("paused");
+    const pausedTrigger = await db.select().from(routineTriggers).where(eq(routineTriggers.id, trigger.id)).then((rows) => rows[0]);
+    expect(pausedTrigger!.nextRunAt!.getTime()).toBeGreaterThan(pastDue.getTime());
+    expect(pausedTrigger?.lastResult).toMatch(/paused/i);
+
+    // Play: the next due tick creates work again.
+    await db.update(companies).set({ status: "active", pauseReason: null, pausedAt: null }).where(eq(companies.id, companyId));
+    await db.update(routineTriggers).set({ nextRunAt: pastDue }).where(eq(routineTriggers.id, trigger.id));
+    const resumedResult = await svc.tickScheduledTriggers(new Date());
+    expect(resumedResult.triggered).toBe(1);
+  });
+
   it("suppresses scheduled ticks while the routine project is paused, then resumes when unpaused", async () => {
     const { companyId, projectId, routine, svc } = await seedFixture();
     const { trigger } = await svc.createTrigger(

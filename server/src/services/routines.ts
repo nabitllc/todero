@@ -294,7 +294,7 @@ function isSubHourlyCronExpression(expression: string, timeZone: string, after: 
 function nextResultText(status: string, issueId?: string | null) {
   if (status === "issue_created" && issueId) return `Created execution issue ${issueId}`;
   if (status === "coalesced") return "Coalesced into an existing live execution issue";
-  if (status === "skipped_paused") return "Skipped because the project is paused";
+  if (status === "skipped_paused") return "Skipped while paused";
   if (status === "skipped") return "Skipped because a live execution issue already exists";
   if (status === "completed") return "Execution issue completed";
   if (status === "failed") return "Execution failed";
@@ -3058,10 +3058,12 @@ export function routineService(
           trigger: routineTriggers,
           routine: routines,
           projectPausedAt: projects.pausedAt,
+          companyStatus: companies.status,
         })
         .from(routineTriggers)
         .innerJoin(routines, eq(routineTriggers.routineId, routines.id))
         .leftJoin(projects, eq(routines.projectId, projects.id))
+        .leftJoin(companies, eq(routines.companyId, companies.id))
         .where(
           and(
             eq(routineTriggers.kind, "schedule"),
@@ -3077,11 +3079,11 @@ export function routineService(
       for (const row of due) {
         if (!row.trigger.nextRunAt || !row.trigger.cronExpression || !row.trigger.timezone) continue;
 
-        // Suppress scheduled firings while the routine's project is paused. The tick is still
+        // Suppress scheduled firings while the routine's project is paused, or while its whole
+        // organization is (Master Pause: nothing talks to a model until Play). The tick is still
         // claimed and advanced to the next single cron tick (no backfill), so resume continues
-        // at the next cron boundary instead of replaying missed firings. Routines with no
-        // project are never suppressed here.
-        const projectPaused = !!(row.routine.projectId && row.projectPausedAt);
+        // at the next cron boundary instead of replaying missed firings.
+        const projectPaused = !!(row.routine.projectId && row.projectPausedAt) || row.companyStatus === "paused";
         const automaticEligibility = await getAutomaticRoutineDispatchEligibility(row.routine, worktreeActivation);
         const worktreeSuppressed = !automaticEligibility.eligible;
 

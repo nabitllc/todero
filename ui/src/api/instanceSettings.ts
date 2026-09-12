@@ -19,6 +19,8 @@ export interface InstancePauseResult {
 export const instanceSettingsApi = {
   /** Pause every organization that is running right now. */
   pauseAll: () => api.post<InstancePauseResult>("/instance/pause-all", {}),
+  /** Master Pause: whether the sidebar's Pause is on, and since when. */
+  pauseState: () => api.get<{ paused: boolean; pausedAt: string | null; companyIds: string[] }>("/instance/pause"),
   /**
    * Put back only what this switch stopped. An organization the person paused
    * by hand keeps its own pause.
