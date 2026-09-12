@@ -1,3 +1,4 @@
+import type { IssuePriority } from "@todero/shared";
 import { BOARD_COLUMN_LABELS, type BoardColumn } from "./board-model";
 
 export type { BoardColumn };
@@ -11,7 +12,38 @@ export type DropAction = {
   taskId: string;
   /** The sentence the person confirms before anything happens. */
   confirm?: string;
+  /** A reorder inside a column: the priority the task takes at its new place. */
+  priority?: IssuePriority;
 };
+
+/** The least of a card the reorder rule needs: where it stands and what it weighs. */
+export interface ReorderCard {
+  id: string;
+  priority: IssuePriority;
+}
+
+/**
+ * Gauntlet item 3: the order inside a column is the task's priority. A card
+ * dropped above another takes that card's priority; dropped at the bottom it
+ * takes the lowest neighbour's. Landing where it already is changes nothing.
+ * `column` is the lane top to bottom before the drop; `toIndex` is the slot
+ * the card lands on, read off the card it was dropped over.
+ */
+export function reorderFor(args: {
+  column: ReorderCard[];
+  movedId: string;
+  toIndex: number;
+}): { id: string; priority: IssuePriority } | null {
+  const { column, movedId, toIndex } = args;
+  const fromIndex = column.findIndex((card) => card.id === movedId);
+  if (fromIndex === -1 || column.length === 0) return null;
+  const index = Math.max(0, Math.min(toIndex, column.length - 1));
+  if (index === fromIndex) return null;
+  const landedOn = column[index]!;
+  const moved = column[fromIndex]!;
+  if (landedOn.priority === moved.priority) return null;
+  return { id: movedId, priority: landedOn.priority };
+}
 
 export type DropRefusal = { refused: string };
 
@@ -56,15 +88,22 @@ export function dropFor(args: {
   task: DropTask;
   from: BoardColumn;
   to: BoardColumn;
+  /** The lane the card came from, top to bottom, for a drop inside one column. */
+  column?: ReorderCard[];
+  /** The slot it landed on inside that lane. */
+  toIndex?: number;
 }): DropResult {
-  const { task, from, to } = args;
+  const { task, from, to, column, toIndex } = args;
 
-  // Landing where it started changes nothing. The order inside a column is the
-  // task's priority, which the board does not write yet, so this is deliberately
-  // a no-op rather than a silent half-move: dropping a card back on its own
-  // column asks for nothing and saves nothing.
+  // Inside one column the order is the task's priority: the card takes the
+  // priority of the card it landed on. Without a position (a phone's buttons,
+  // an older caller) or when nothing changes, the drop asks for nothing.
   if (from === to) {
-    return { action: "reorder", taskId: task.id };
+    const reordered =
+      column && typeof toIndex === "number" ? reorderFor({ column, movedId: task.id, toIndex }) : null;
+    return reordered
+      ? { action: "reorder", taskId: task.id, priority: reordered.priority }
+      : { action: "reorder", taskId: task.id };
   }
 
   if (to === "your-turn") {

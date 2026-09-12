@@ -28,6 +28,14 @@ describe("company routes", () => {
     );
   });
 
+  it("treats /board as a board route that needs a company prefix", () => {
+    // The sidebar links to /board; without the prefix a full navigation read
+    // "board" as an organization prefix and showed "Organization not found".
+    expect(isBoardPathWithoutPrefix("/board")).toBe(true);
+    expect(extractCompanyPrefixFromPath("/board")).toBeNull();
+    expect(applyCompanyPrefix("/board", "TAM")).toBe("/TAM/board");
+  });
+
   it("treats /search as a board route that needs a company prefix", () => {
     expect(isBoardPathWithoutPrefix("/search")).toBe(true);
     expect(extractCompanyPrefixFromPath("/search")).toBeNull();

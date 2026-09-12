@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { Agent, Issue } from "@todero/shared";
-import { dropFor, isRefusal, type BoardColumn, type DropTask } from "../../lib/board-drop";
+import { dropFor, isRefusal, type BoardColumn, type DropTask, type ReorderCard } from "../../lib/board-drop";
 import { issuesApi } from "../../api/issues";
 import { agentsApi } from "../../api/agents";
 import { patchFromBlockedBy, workItemTypeFor } from "../work-item/work-item-adapter";
@@ -64,21 +64,32 @@ export function useBoardDrop(config: BoardDropConfig) {
   } = config;
 
   const handleDrop = useCallback(
-    (taskId: string, from: BoardColumn, to: BoardColumn) => {
+    (
+      taskId: string,
+      from: BoardColumn,
+      to: BoardColumn,
+      /** For a drop inside one column: the lane top to bottom, and the slot it landed on. */
+      position?: { column: ReorderCard[]; toIndex: number },
+    ) => {
       const issue = tasks.find((candidate) => candidate.id === taskId);
       if (!issue) return;
 
       const task = dropTaskFor({ issue, agentsById, openChildCountById, organizationPaused });
-      const result = dropFor({ task, from, to });
+      const result = dropFor({ task, from, to, column: position?.column, toIndex: position?.toIndex });
       if (isRefusal(result)) {
         onRefuse(result.refused);
         return;
       }
-      if (result.action === "reorder") return;
+      if (result.action === "reorder" && !result.priority) return;
 
       const run = async () => {
         try {
-          if (result.action === "accept") {
+          if (result.action === "reorder") {
+            // Item 3: the order inside a column is the task's priority, the
+            // same field the task page's priority picker writes.
+            await issuesApi.update(issue.id, { priority: result.priority });
+            onDone?.(`${issue.identifier} is now ${result.priority} priority.`);
+          } else if (result.action === "accept") {
             await issuesApi.update(issue.id, { status: "done" });
             onDone?.(`${issue.identifier} accepted.`);
           } else if (result.action === "start-now") {
