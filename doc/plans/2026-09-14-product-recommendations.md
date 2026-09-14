@@ -23,10 +23,15 @@ running is the entire product.
 
 ## Recommendation 1 — the quality gate goes first
 
-**Evidence.** On a throwaway company run on 2026-09-14, the reviewer approved a handed-in document
-six seconds after it was written, with "I reviewed this and it does what the task asked", and did
-the same on all eight tasks. Nine tasks reached `done` in eighteen minutes. Nothing established
-that any of the output was worth having.
+**Evidence.** On a throwaway company run on 2026-09-14, the reviewer passed a handed-in document
+six seconds after it was written, and did the same on all eight tasks, each time opening with the
+same fixed sentence: "I reviewed this and it does what the task asked."
+
+The reviewer is not a stub — it is given the goal, the feature's done-when line and the task's
+hand-in line, and it did read the work. The problem is that its verdict is a word and a paragraph.
+It never says which criteria it checked, nothing is checked mechanically, and the criteria
+themselves are one line shared across a whole feature. From the outside a careful review and a lazy
+one look identical.
 
 The product can currently demonstrate **motion**, not output. For a control plane whose promise is
 that you can leave it alone, that is the gap that matters most: a person can only leave something

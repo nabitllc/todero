@@ -46,11 +46,22 @@ Everything in this plan is that same move, applied to the places that still ask.
 more likely to succeed. This one makes it safe to fail. A weak model is an acceptable model when
 something real catches its mistakes; without that, no amount of configuration makes it trustworthy.
 
-**Today the gate is a formality.** Measured on a throwaway company on 2026-09-14: the reviewer
-approved a handed-in document **six seconds** after it was written — "I reviewed this and it does
-what the task asked" — and did the same on all eight tasks of the project. The reviewer runs the
-same model as the worker, on the same machine, with no criteria to check against. Nine tasks reached
-`done` in eighteen minutes and nothing established that any of the output was worth having.
+**Today the gate is thin, and unreadable from outside.** The reviewer is real: `judge-review.ts`
+gives it the plan's goal, the feature's "done when" line, the task's "hand in" line, and the work
+itself. Three things are missing.
+
+- **The criteria are one line per feature**, shared by every task under it, plus one line per task.
+  There is no per-task list of what must be true.
+- **The verdict does not say what was checked.** `parseJudgeVerdict` reads `pass` or `fail` and one
+  paragraph. A person cannot tell which criteria were examined, or whether any were.
+- **Nothing is checked mechanically.** Every verdict is one model's opinion of prose, even when the
+  criterion is something a script could settle.
+
+Measured on a throwaway company on 2026-09-14: the reviewer passed a document six seconds after it
+was written, on all eight tasks, each time opening with the same fixed sentence — "I reviewed this
+and it does what the task asked." The model did read the work. But a person reading the thread has
+no way to tell a real review from a lazy one, which for a product whose promise is that you can
+leave it alone is the same problem as not reviewing at all.
 
 **Change.**
 
