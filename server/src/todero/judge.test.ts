@@ -250,7 +250,7 @@ describe("buildAcceptanceChecks", () => {
     });
     expect(checks).toEqual([
       "A reader can start in ten minutes.",
-      "The work handed in is: A one-page draft",
+      "The hand-in is A one-page draft",
     ]);
   });
 

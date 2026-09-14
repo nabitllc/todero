@@ -105,7 +105,9 @@ export function buildAcceptanceChecks(input: {
     ? written
     : [
         (input.doneWhen ?? "").trim(),
-        (input.expectedOutput ?? "").trim() ? `The work handed in is: ${(input.expectedOutput ?? "").trim()}` : "",
+        // Phrased as something that can be true or false. "The work handed in
+        // is: X" reads as a label, and a reviewer answering it just restates X.
+        (input.expectedOutput ?? "").trim() ? `The hand-in is ${(input.expectedOutput ?? "").trim()}` : "",
       ];
   const seen = new Set<string>();
   const checks: string[] = [];
