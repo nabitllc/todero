@@ -13,6 +13,8 @@ import {
   companySkills,
   companyMemberships,
   createDb,
+  goals,
+  projects,
   heartbeatRunEvents,
   heartbeatRuns,
   issues,
@@ -63,6 +65,9 @@ describeEmbeddedPostgres("companyService", () => {
     await db.delete(companyMemberships);
     await db.delete(cases);
     await db.delete(issues);
+    // Projects before goals, for the same foreign key the delete path hits.
+    await db.delete(projects);
+    await db.delete(goals);
     await db.delete(companies);
   });
 
@@ -1105,6 +1110,27 @@ describeEmbeddedPostgres("companyService", () => {
         cases: ["ACM-C3"],
       });
     });
+  });
+
+  it("deletes a company that has a project attached to a goal", async () => {
+    // Regression: remove() deleted goals before projects, and
+    // projects.goal_id references goals.id with no cascade, so Postgres
+    // rejected the whole transaction. Every company built through
+    // onboarding has exactly this shape, so none of them could be deleted.
+    const created = await companyService(db).create({ name: "Deletable Co" });
+    const [goal] = await db
+      .insert(goals)
+      .values({ companyId: created.id, title: "Ship the guide", level: "company", status: "active" })
+      .returning();
+    await db
+      .insert(projects)
+      .values({ companyId: created.id, name: "Onboarding", status: "in_progress", goalId: goal!.id })
+      .returning();
+
+    await expect(companyService(db).remove(created.id)).resolves.toMatchObject({ id: created.id });
+    await expect(db.select().from(companies).where(eq(companies.id, created.id))).resolves.toEqual([]);
+    await expect(db.select().from(goals).where(eq(goals.companyId, created.id))).resolves.toEqual([]);
+    await expect(db.select().from(projects).where(eq(projects.companyId, created.id))).resolves.toEqual([]);
   });
 
 });
