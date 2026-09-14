@@ -26,6 +26,7 @@ import { deliverableVersions } from "./work-item-deliverable";
 import type { ChainLink } from "./work-item-chain";
 import type { ComposerChip } from "./work-item-chips";
 import {
+  COMPOSER_HIGHLIGHT_MS,
   TITLE_PLACEHOLDER,
   commitWorkItemStatus,
   taskRowLabel,
@@ -187,6 +188,35 @@ export function WorkItemView(props: WorkItemViewProps) {
     setDroppedPlanTasks(new Set());
   }, [planKey]);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [composerHighlighted, setComposerHighlighted] = useState(false);
+  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    },
+    [],
+  );
+
+  /**
+   * Every button that answers "type your reply down there" ends here. Focus on
+   * its own is a caret at the foot of a long page: nothing appears to happen,
+   * and the button reads as broken. So the box is scrolled into view and
+   * marked for a moment, and the eye follows the focus.
+   */
+  function focusComposer() {
+    const input = composerRef.current;
+    if (!input) return;
+    input.focus();
+    // jsdom has no scrollIntoView, and neither do very old browsers.
+    input.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    setComposerHighlighted(true);
+    if (highlightTimer.current) clearTimeout(highlightTimer.current);
+    highlightTimer.current = setTimeout(() => {
+      setComposerHighlighted(false);
+      highlightTimer.current = null;
+    }, COMPOSER_HIGHLIGHT_MS);
+  }
+
   const [sendBackOpen, setSendBackOpen] = useState(false);
   const [agentListOpen, setAgentListOpen] = useState(false);
   const caption = statusCaption ?? staleStatusCaption ?? null;
@@ -289,7 +319,7 @@ export function WorkItemView(props: WorkItemViewProps) {
   function askForPlanChanges() {
     onPlanChanges?.();
     setComment((prev) => (prev.trim() ? prev : "Please change the plan: "));
-    composerRef.current?.focus();
+    focusComposer();
   }
 
   /**
@@ -305,7 +335,7 @@ export function WorkItemView(props: WorkItemViewProps) {
       else askForPlanChanges();
     }
     if (id === "approve") onPlanApprove?.(keptPlanTasks.map((task) => task.id));
-    if (id === "answer") composerRef.current?.focus();
+    if (id === "answer") focusComposer();
     if (id === "start-now") onStartNow?.();
     if (id === "play") onResume?.();
   }
@@ -366,7 +396,7 @@ export function WorkItemView(props: WorkItemViewProps) {
       return;
     }
     setComment((prev) => (prev.trim() ? prev : (chip.opener ?? "")));
-    composerRef.current?.focus();
+    focusComposer();
   }
 
   function pickAgent(agent: WorkItemAgentOption) {
@@ -541,6 +571,7 @@ export function WorkItemView(props: WorkItemViewProps) {
           modeLabel={modeMeta.label}
           onModeChange={() => onWorkModeChange?.(nextWorkMode(workMode))}
           inputRef={composerRef}
+          highlighted={composerHighlighted}
         />
       </div>
     </div>
