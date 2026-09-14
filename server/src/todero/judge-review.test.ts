@@ -60,7 +60,8 @@ describe("requestJudgeVerdict", () => {
         return completion("VERDICT: fail\nThe prices are missing.");
       }) as unknown as typeof fetch,
     });
-    expect(result).toEqual({ verdict: "fail", note: "The prices are missing." });
+    // This call asked for no per-check answers, so there are none to report.
+    expect(result).toEqual({ verdict: "fail", note: "The prices are missing.", checks: null });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.body.model).toBe("qwen2.5-coder:14b");
     expect(calls[0]!.body.messages[0].role).toBe("system");

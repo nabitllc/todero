@@ -15,6 +15,7 @@ import { documentService } from "../services/documents.js";
 import { CONVERSATION_PLAN_DOCUMENT_KEY } from "./conversation-thread.js";
 import { findJudgeAgentForLead, type JudgeAgentRow } from "./judge-agent.js";
 import {
+  buildAcceptanceChecks,
   buildJudgeComment,
   buildJudgeReviewPrompt,
   buildJudgeSystemPrompt,
@@ -76,8 +77,10 @@ export async function requestJudgeVerdict(input: {
   config: JudgeModelConfig;
   systemPrompt: string;
   prompt: string;
+  /** How many per-check answers the prompt asked for; 0 when nothing was written down. */
+  expectedChecks?: number;
   fetcher?: typeof fetch;
-}): Promise<{ verdict: JudgeVerdict; note: string } | null> {
+}): Promise<{ verdict: JudgeVerdict; note: string; checks: boolean[] | null } | null> {
   const fetcher = input.fetcher ?? fetch;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.config.timeoutMs);
@@ -100,7 +103,7 @@ export async function requestJudgeVerdict(input: {
     if (!res.ok) return null;
     const text = parseChatCompletionsText(await res.text());
     if (!text) return null;
-    return parseJudgeVerdict(text);
+    return parseJudgeVerdict(text, input.expectedChecks ?? 0);
   } catch {
     return null;
   } finally {
@@ -194,8 +197,17 @@ export async function reviewConversationHandIn(
     companySkills: reviewerSkills,
   }).text;
 
+  // What this task has to be true for, so the reviewer answers a written list
+  // rather than an impression, and the person can see which items it looked at.
+  const checks = buildAcceptanceChecks({
+    doneWhen: feature?.doneWhen ?? null,
+    expectedOutput: planTask?.output ?? null,
+    description: input.issue.description,
+  });
+
   const review = await requestJudgeVerdict({
     config,
+    expectedChecks: checks.length,
     systemPrompt: buildJudgeSystemPrompt({
       judgeName: judgeAgent.name,
       companyName: input.companyName ?? null,
@@ -208,6 +220,7 @@ export async function reviewConversationHandIn(
       taskTitle: input.issue.title,
       expectedOutput: planTask?.output ?? null,
       deliverable,
+      checks,
     }),
     fetcher: input.fetcher,
   });
@@ -222,7 +235,13 @@ export async function reviewConversationHandIn(
     outcome,
     verdict: review.verdict,
     note: review.note,
-    comment: buildJudgeComment({ verdict: review.verdict, note: review.note, outcome }),
+    comment: buildJudgeComment({
+      verdict: review.verdict,
+      note: review.note,
+      outcome,
+      checks,
+      checkResults: review.checks,
+    }),
     judgeAgent,
     skipped: null,
   };
