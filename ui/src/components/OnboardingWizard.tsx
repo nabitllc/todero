@@ -33,6 +33,7 @@ import {
   resolveLocalDefaultEnvironmentId,
   resolveManagedSandboxEnvironmentId,
 } from "../lib/adapter-test-environment";
+import { onboardingQuestionSteps } from "../lib/onboarding-steps";
 import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogPortal } from "@/components/ui/dialog";
 import {
@@ -1773,7 +1774,9 @@ function OnboardingWizardInner({
       // yet — two goals for one mission, two agents for one hire.
       if (loading) return;
       if (step === 0) return; // front door requires click
-      if (step === 1 && companyName.trim()) {
+      // Step 1 is the mission when building a new organization and the name
+      // when growing one, so the gate is whichever field that screen asks for.
+      if (step === 1 && (buildsNewOrganization ? companyGoal.trim() : companyName.trim())) {
         setStep(2);
       }
       else if (step === 2 && companyName.trim() && companyGoal.trim()) handleConfirmMission();
@@ -1849,6 +1852,8 @@ function OnboardingWizardInner({
   }
 
   const isAgentArcStep = agentArcStepFor(step) !== null;
+  // Which of the first two screens asks which question. See onboarding-steps.
+  const { buildsNewOrganization, missionStep, nameStep } = onboardingQuestionSteps(onboardingPath);
   const showsAgentArcStepper = isAgentArcStep && entryStep >= 3;
 
   const launchStateIncomplete = step === 6 && (!createdCompanyId || !createdAgentId);
@@ -1944,6 +1949,21 @@ function OnboardingWizardInner({
                   );
                 })}
               </div>
+              )}
+
+              {/* Said once, on whichever question is the first one. The bar
+                  above counts five steps and names none of them; unlabelled
+                  progress is where people leave, because the cost is unknown.
+                  No minutes in the copy: connecting a model takes as long as
+                  it takes, and a number we cannot stand behind is worse than
+                  none. */}
+              {step === 1 && !showsAgentArcStepper && (
+                <p
+                  className="mb-8 -mt-4 text-sm text-muted-foreground"
+                  data-testid="onboarding-what-to-expect"
+                >
+                  {ONBOARDING_WHAT_TO_EXPECT}
+                </p>
               )}
 
               {/* The agent arc's progress strip. Numbered 1–3 over the wizard's
@@ -2112,19 +2132,23 @@ function OnboardingWizardInner({
                   question, same sub, same left-aligned heading in a centered
                   column — so a customer creating their second organization
                   in-app is asked exactly what their first one asked them. */}
-              {step === 1 && (
+              {step === nameStep && (
                 <div className="mx-auto w-full max-w-md space-y-6">
                   <OnboardingHeading
                     title="What is the name of your organization?"
                     lede="This will be the name of your Todero organization — choose something your team will recognize."
                   />
-                  {/* The progress bar above counts five steps and says nothing
-                      about what they are. Unlabelled progress is where people
-                      leave, because the cost is unknown. One line, and no time
-                      estimate we cannot stand behind. */}
-                  <p className="text-sm text-muted-foreground" data-testid="onboarding-what-to-expect">
-                    {ONBOARDING_WHAT_TO_EXPECT}
-                  </p>
+                  {/* The mission was just written, one screen ago. Showing it
+                      here is what makes naming easy instead of abstract. */}
+                  {buildsNewOrganization && companyGoal.trim() ? (
+                    <div
+                      className="rounded-md border border-border px-3 py-2"
+                      data-testid="onboarding-name-mission-context"
+                    >
+                      <p className="text-xs text-muted-foreground">Your mission</p>
+                      <p className="mt-1 text-sm text-foreground">{companyGoal.trim()}</p>
+                    </div>
+                  ) : null}
                   <div className="group">
                     <label
                       className={cn(
@@ -2160,7 +2184,7 @@ function OnboardingWizardInner({
               )}
 
               {/* Step 2: Define your mission */}
-              {step === 2 && onboardingPath !== "grow" && (
+              {step === missionStep && (
                 <div className="space-y-5">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
@@ -2168,8 +2192,11 @@ function OnboardingWizardInner({
                     </div>
                     <div>
                       <h3 className="font-medium">Define your mission</h3>
+                      {/* The name is asked for on the next screen now, so this
+                          line can no longer print it. */}
                       <p className="text-xs text-muted-foreground">
-                        Your mission guides everything — your lead agent, who you bring on, and the work <strong>{companyName}</strong> takes on.
+                        Your mission guides everything — your lead agent, who you bring on, and the
+                        work the team takes on.
                       </p>
                     </div>
                   </div>
@@ -2857,7 +2884,9 @@ function OnboardingWizardInner({
                   {step === 1 && (
                     <Button
                       size="sm"
-                      disabled={!companyName.trim() || loading}
+                      disabled={
+                        (buildsNewOrganization ? !companyGoal.trim() : !companyName.trim()) || loading
+                      }
                       onClick={() => {
                         setStep(2);
                       }}
@@ -2880,7 +2909,13 @@ function OnboardingWizardInner({
                       ) : (
                         <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "Creating..." : "Confirm mission"}
+                      {/* Step 2 is the name when building a new organization,
+                          so "Confirm mission" would name the wrong screen. */}
+                      {loading
+                        ? "Creating..."
+                        : buildsNewOrganization
+                          ? "Create organization"
+                          : "Confirm mission"}
                     </Button>
                   )}
                   {step === 3 && (
