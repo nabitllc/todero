@@ -359,3 +359,116 @@ describe("status line tacked onto the last sentence", () => {
     expect(done.disposition).toBe("done");
   });
 });
+
+describe("the window Todero sets for the model", () => {
+  const OLLAMA = {
+    url: "http://127.0.0.1:11434/v1/chat/completions",
+    model: "qwen2.5-coder:14b",
+    localLlm: { runtimeId: "ollama", baseUrl: "http://127.0.0.1:11434", modelId: "qwen2.5-coder:14b" },
+  };
+
+  it("asks Ollama for the window the connection test recorded", () => {
+    const body = buildChatCompletionsBody({
+      config: OLLAMA,
+      context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 16_384 },
+      payloadTemplate: {},
+    });
+    expect(body.options).toEqual({ num_ctx: 16_384 });
+  });
+
+  it("invents no window when none was recorded", () => {
+    const body = buildChatCompletionsBody({
+      config: OLLAMA,
+      context: { toderoTaskMarkdown: TASK_MARKDOWN },
+      payloadTemplate: {},
+    });
+    expect(body.options).toBeUndefined();
+  });
+
+  it("keeps whatever else the payload template already asked Ollama for", () => {
+    const body = buildChatCompletionsBody({
+      config: OLLAMA,
+      context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 8_192 },
+      payloadTemplate: { options: { temperature: 0.2 } },
+    });
+    expect(body.options).toEqual({ temperature: 0.2, num_ctx: 8_192 });
+  });
+
+  it("asks for no more than Todero needs, whatever the model could hold", () => {
+    const body = buildChatCompletionsBody({
+      config: OLLAMA,
+      context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 131_072 },
+      payloadTemplate: {},
+    });
+    expect(body.options).toEqual({ num_ctx: 16_384 });
+  });
+
+  it("sends no Ollama option to an endpoint that is not Ollama", () => {
+    const body = buildChatCompletionsBody({
+      config: { url: "https://api.example.test/v1/chat/completions", model: "gpt-x" },
+      context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 16_384 },
+      payloadTemplate: {},
+    });
+    expect(body.options).toBeUndefined();
+  });
+});
+
+describe("budgeting the prompt against the window", () => {
+  function longThread(count: number) {
+    return Array.from({ length: count }, (_v, index) => ({
+      role: index % 2 === 0 ? "user" : "agent",
+      body: `turn ${index}: ${"word ".repeat(120)}`,
+    }));
+  }
+
+  it("keeps the system prompt, what the agent knows, and the task when the thread is too long", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoSkillText: `Always answer with a fenced todero-plan block. ${"detail ".repeat(200)}`,
+        toderoThread: longThread(40),
+        toderoContextLength: 4096,
+      },
+      { agentName: "Ash" },
+    );
+    expect(messages[0]!.role).toBe("system");
+    expect(messages[0]!.content).toContain("You are Ash");
+    expect(messages[1]!.content).toContain("Always answer with a fenced todero-plan block.");
+    expect(messages[2]!.content).toContain(MISSION);
+    const joined = messages.map((m) => m.content).join("\n");
+    expect(joined).toContain("turn 39");
+    expect(joined).not.toContain("turn 0:");
+    expect(joined).toMatch(/left out/i);
+  });
+
+  it("leaves a short conversation exactly as it was", () => {
+    const context = {
+      toderoTaskMarkdown: TASK_MARKDOWN,
+      toderoThread: [
+        { role: "agent", body: "Here is my question." },
+        { role: "user", body: "Here is my answer." },
+      ],
+      toderoContextLength: 16_384,
+    };
+    const messages = buildChatCompletionsMessages(context, { agentName: "Ash" });
+    const joined = messages.map((m) => m.content).join("\n");
+    expect(joined).toContain("Here is my question.");
+    expect(joined).toContain("Here is my answer.");
+    expect(joined).not.toMatch(/left out/i);
+  });
+
+  it("keeps Todero's own turn instruction last even when the thread is trimmed", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoThread: longThread(40),
+        toderoTurnInstruction: "Write the plan block now, nothing else.",
+        toderoContextLength: 4096,
+      },
+      { agentName: "Ash" },
+    );
+    const last = messages[messages.length - 1]!;
+    expect(last.role).toBe("user");
+    expect(last.content).toContain("Write the plan block now, nothing else.");
+  });
+});

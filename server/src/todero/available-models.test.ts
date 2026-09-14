@@ -9,6 +9,7 @@ const {
   readStoredAvailableModelIds,
   readStoredContextLength,
   resolveAvailableModelIdsForRun,
+  resolveContextLengthForRun,
   storeAvailableModelIds,
   storeContextLength,
 } = await import("./available-models.js");
@@ -141,6 +142,19 @@ describe("context length", () => {
     expect(await detectContextLength("http://127.0.0.1:11434/v1/chat/completions", "qwen2.5-coder:14b", fetcher)).toBe(4096);
   });
 
+  it("asks the model itself when the runtime has nothing loaded", async () => {
+    const calls: string[] = [];
+    const fetcher = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      if (String(url).endsWith("/api/ps")) return new Response(JSON.stringify({ models: [] }), { status: 200 });
+      return new Response(JSON.stringify({ model_info: { "qwen2.arch": 1, "qwen2.context_length": 32_768 } }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434", "qwen2.5-coder:14b", fetcher)).toBe(32_768);
+    expect(calls).toEqual(["http://127.0.0.1:11434/api/ps", "http://127.0.0.1:11434/api/show"]);
+  });
+
   it("answers null when the runtime does not say or is down", async () => {
     const silent = (async () => new Response(JSON.stringify({ models: [] }), { status: 200 })) as unknown as typeof fetch;
     expect(await detectContextLength("http://127.0.0.1:11434", "x", silent)).toBeNull();
@@ -160,5 +174,53 @@ describe("context length", () => {
     const unknown = fakeDb({ governance: {} });
     await storeContextLength(unknown.db, "company-1", null);
     expect(unknown.updates).toHaveLength(0);
+  });
+});
+
+describe("resolveContextLengthForRun", () => {
+  it("uses the window the connection test already recorded", async () => {
+    const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 16_384 } });
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: async () => 4096,
+      }),
+    ).resolves.toBe(16_384);
+    expect(updates).toEqual([]);
+  });
+
+  it("fills it in for an agent hired before the window was ever recorded", async () => {
+    const { db, updates } = fakeDb({ governance: {} });
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: async () => 8_192,
+      }),
+    ).resolves.toBe(8_192);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      interactionResolverGovernance: { toderoLocalLlmContextLength: 8_192 },
+    });
+  });
+
+  it("answers null, and remembers nothing, when the runtime does not say", async () => {
+    const { db, updates } = fakeDb({ governance: {} });
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: async () => null,
+      }),
+    ).resolves.toBeNull();
+    expect(updates).toEqual([]);
+  });
+
+  it("does not go looking when the agent has no local runtime URL", async () => {
+    const { db } = fakeDb({ governance: {} });
+    const detect = vi.fn();
+    await expect(resolveContextLengthForRun(db, "company-1", { baseUrl: null, detect })).resolves.toBeNull();
+    expect(detect).not.toHaveBeenCalled();
   });
 });

@@ -310,3 +310,44 @@ describe("http adapter chat completions: plan block and empty replies", () => {
     expect(result.resultJson).toMatchObject({ toderoDisposition: "done" });
   });
 });
+
+describe("the window the request itself asks Ollama for", () => {
+  it("asks Ollama's own endpoint for the recorded window — the OpenAI-shaped one ignores it", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(
+        JSON.stringify({ message: { role: "assistant", content: "Here is the plan.\nSTATUS: waiting" }, done_reason: "stop" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = localLlmExecuteArgs();
+    args.config.url = "http://127.0.0.1:11434/v1/chat/completions";
+    args.context = { ...args.context, toderoContextLength: 16_384 };
+    const result = await execute(args);
+
+    expect(calls[0]!.url).toBe("http://127.0.0.1:11434/api/chat");
+    expect(calls[0]!.body.options).toMatchObject({ num_ctx: 16_384 });
+    expect(calls[0]!.body.stream).toBe(false);
+    expect(Array.isArray(calls[0]!.body.messages)).toBe(true);
+    expect(result.summary).toBe("Here is the plan.");
+    expect(result.resultJson).toMatchObject({ toderoDisposition: "waiting" });
+  });
+
+  it("keeps the OpenAI-shaped request when no window was ever recorded", async () => {
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return chatCompletionsResponse(LOCAL_LLM_COMPLETION);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = localLlmExecuteArgs();
+    args.config.url = "http://127.0.0.1:11434/v1/chat/completions";
+    await execute(args);
+
+    expect(calls).toEqual(["http://127.0.0.1:11434/v1/chat/completions"]);
+  });
+});

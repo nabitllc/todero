@@ -72,8 +72,19 @@ export const SKILL_PACK_DEFAULT_CONTEXT_LENGTH = 4096;
 /** The share of the window the skills may take; the rest is the task, the thread and the reply. */
 const SKILL_PACK_CONTEXT_SHARE = 0.35;
 
-/** A rough characters-per-token ratio for English prose and markdown. */
-const SKILL_PACK_CHARS_PER_TOKEN = 4;
+/**
+ * A rough characters-per-token ratio for English prose and markdown. Every
+ * place that has to turn a context window in tokens into a size in characters
+ * uses this one number: the skill pack ceiling here, and the prompt budget the
+ * http adapter applies to the conversation.
+ */
+export const CONTEXT_CHARS_PER_TOKEN = 4;
+
+/** About how many tokens a piece of text costs a model. Never negative. */
+export function estimateContextTokens(text: string): number {
+  const length = typeof text === "string" ? text.length : 0;
+  return Math.ceil(length / CONTEXT_CHARS_PER_TOKEN);
+}
 
 /**
  * The ceiling for a runtime with this many tokens of context: a share of the
@@ -86,7 +97,7 @@ export function skillPackCeilingForContext(contextLength: number | null | undefi
     typeof contextLength === "number" && Number.isFinite(contextLength) && contextLength > 0
       ? contextLength
       : SKILL_PACK_DEFAULT_CONTEXT_LENGTH;
-  return Math.min(SKILL_PACK_TEXT_CEILING, Math.floor(tokens * SKILL_PACK_CONTEXT_SHARE * SKILL_PACK_CHARS_PER_TOKEN));
+  return Math.min(SKILL_PACK_TEXT_CEILING, Math.floor(tokens * SKILL_PACK_CONTEXT_SHARE * CONTEXT_CHARS_PER_TOKEN));
 }
 
 /**

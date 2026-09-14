@@ -11,9 +11,17 @@ import {
   parseChatCompletionsFinishReason,
   chatCompletionsReplyWasCutOff,
   CHAT_COMPLETIONS_CUT_OFF_NOTE,
+  isOllamaChatCompletionsConfig,
+  readChatCompletionsContextLength,
   type ChatCompletionsMessage,
 } from "./chat-completions.js";
 import { resolveHttpAdapterTimeoutMs } from "./local-model-timeout.js";
+import {
+  buildOllamaNativeBody,
+  ollamaNativeChatUrl,
+  parseOllamaNativeFinishReason,
+  parseOllamaNativeText,
+} from "./ollama-native.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -25,8 +33,23 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const headers = parseObject(config.headers) as Record<string, string>;
   const payloadTemplate = parseObject(config.payloadTemplate);
   const chatCompletions = isChatCompletionsUrl(url);
-  const body = chatCompletions
+  // Ollama ignores the window on its OpenAI-shaped endpoint and honours it on
+  // its own; when a connection test recorded one, the request goes there.
+  const recordedContextLength = chatCompletions ? readChatCompletionsContextLength(context) : null;
+  const nativeUrl =
+    recordedContextLength && isOllamaChatCompletionsConfig(config as Record<string, unknown>)
+      ? ollamaNativeChatUrl(url)
+      : null;
+  const openAiBody = chatCompletions
     ? buildChatCompletionsBody({ config, context, payloadTemplate, agentName: agent.name })
+    : null;
+  const requestUrl = nativeUrl ?? url;
+  const readReplyText = nativeUrl ? parseOllamaNativeText : parseChatCompletionsText;
+  const readFinishReason = nativeUrl ? parseOllamaNativeFinishReason : parseChatCompletionsFinishReason;
+  const body = openAiBody
+    ? nativeUrl
+      ? buildOllamaNativeBody({ body: openAiBody, contextLength: recordedContextLength! })
+      : openAiBody
     : {
         ...payloadTemplate,
         agentId: agent.id,
@@ -43,7 +66,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // before starting the remote request so dispatch gates can release without
     // waiting for the endpoint to respond.
     ctx.onDispatch?.();
-    const res = await fetch(url, {
+    const res = await fetch(requestUrl, {
       method,
       headers: {
         "content-type": "application/json",
@@ -70,8 +93,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // via buildHeartbeatRunIssueComment. Discarding a 2xx body used to count as
     // success with nothing on the ticket.
     const raw = await res.text();
-    let completion = parseChatCompletionsText(raw);
-    let finishReason = parseChatCompletionsFinishReason(raw);
+    let completion = readReplyText(raw);
+    let finishReason = readFinishReason(raw);
     if (!completion) {
       throw new Error("HTTP chat completions returned empty assistant text");
     }
@@ -91,7 +114,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           { role: "user", content: CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE },
         ],
       };
-      const retry = await fetch(url, {
+      const retry = await fetch(requestUrl, {
         method,
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(retryBody),
@@ -99,12 +122,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
       if (retry.ok) {
         const retriedRaw = await retry.text();
-        const retried = parseChatCompletionsText(retriedRaw);
+        const retried = readReplyText(retriedRaw);
         if (retried) {
           await ctx.onLog("stdout", `[todero] Empty reply; asked once more.\n${retried}\n`);
           completion = retried;
           reply = parseChatCompletionsReply(retried);
-          finishReason = parseChatCompletionsFinishReason(retriedRaw);
+          finishReason = readFinishReason(retriedRaw);
         }
       }
     }

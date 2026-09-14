@@ -15000,9 +15000,24 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // organization's own copies, so a person's edit takes effect on the
       // next turn without a restart.
       const skillPackSkills = await companySkills.listFull(agent.companyId).catch(() => [] as CompanySkill[]);
-      // The runtime's window bounds how much of the pack a turn can carry;
-      // recorded by the connection test, null (a 4,096-token default) before.
-      const skillPackContextLength = await resolveContextLengthForRun(db, agent.companyId).catch(() => null);
+      // The runtime's window bounds how much of the pack a turn can carry, and
+      // how much of the thread the prompt may hold; recorded by the connection
+      // test, and filled in from the runtime for an agent hired before that was
+      // kept. Null (a 4,096-token default) when nothing can say.
+      const localModelBaseUrl = readNonEmptyString(parseObject(agent.adapterConfig).url);
+      const skillPackContextLength = await resolveContextLengthForRun(db, agent.companyId, {
+        baseUrl: localModelBaseUrl,
+        modelId:
+          readNonEmptyString(parseObject(parseObject(agent.adapterConfig).localLlm).modelId) ||
+          readNonEmptyString(parseObject(agent.adapterConfig).model),
+      }).catch(() => null);
+      // The http adapter reads this to set the runtime's window for the
+      // request and to budget the prompt against it.
+      if (skillPackContextLength) {
+        context.toderoContextLength = skillPackContextLength;
+      } else {
+        delete context.toderoContextLength;
+      }
       const skillPack = loadAgentSkillText({
         agent,
         kind: toderoTaskKind,
@@ -15038,7 +15053,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // the runtime for an organization hired before that was kept.
       const availableModels = await resolveAvailableModelIdsForRun(db, {
         companyId: agent.companyId,
-        baseUrl: readNonEmptyString(parseObject(agent.adapterConfig).url),
+        baseUrl: localModelBaseUrl,
       }).catch(() => [] as string[]);
       if (availableModels.length > 0) {
         context.toderoAvailableModels = availableModels;
@@ -15052,6 +15067,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       delete context.toderoTaskKind;
       delete context.toderoSkillText;
       delete context.toderoAvailableModels;
+      delete context.toderoContextLength;
     }
     if (issueRef) {
       context.toderoIssue = {

@@ -424,3 +424,52 @@ instead of guessing.
     describes for an outlier file, with its own PR — not a side effect of a feature wave.
 - **Source:** `ui/src/components/KanbanBoard.tsx`, `ui/src/pages/Board.tsx`,
   `ui/src/components/board/`, `ui/src/lib/board-model.ts`.
+
+## ADR-016 — Todero sets the local model's window and budgets the prompt against it
+
+- **Date:** 2026-09-14
+- **Status:** Accepted
+- **Context:** A local model is served with a fixed context window. When the prompt is longer than
+  the window the runtime drops the front of it — exactly where the system prompt and the format
+  instructions sit. That is the mechanism behind the observed failure: an agent on
+  `qwen2.5-coder:14b` produced a fenced `todero-plan` block early in a thread and, by comment 40,
+  only produced "Do you approve this plan?" with no block at all. Two earlier organizations the
+  same day, same model, same prompts, did produce it. Nothing on Todero's side knew the window:
+  `toderoLocalLlmContextLength` was recorded only when a connection test happened to name an
+  organization, was read only to size the skill pack, and no request ever asked for a window, so
+  Ollama's 4,096-token default applied whatever the model could hold.
+- **Decision:** Three parts, all on the local-model path only.
+  1. The window is resolved per run (`resolveContextLengthForRun`): the recorded value, or — for an
+     organization hired before it was kept, or whose connection test ran before the organization
+     existed — one look at the runtime, remembered for next time. `detectContextLength` now falls
+     back from `/api/ps` (which lists only loaded models) to `/api/show`, so a cold runtime can
+     still answer. The heartbeat puts the result on the run context as `toderoContextLength`.
+  2. The request asks for that window. Measured against Ollama 0.34.0, the OpenAI-shaped endpoint
+     at `/v1/chat/completions` **ignores** `options.num_ctx` — a request carrying 16,384 still
+     loaded the model at 4,096 — while Ollama's own `/api/chat` honours it (the model loaded at
+     16,384). So when, and only when, a window is known and the endpoint is Ollama, the http
+     adapter posts the same conversation to `/api/chat` with `options.num_ctx` and reads the native
+     reply. With no recorded window nothing changes: the request stays OpenAI-shaped and the
+     runtime keeps deciding. Todero never invents a window, and never asks for more than 16,384
+     tokens (`MAX_REQUESTED_CONTEXT_LENGTH`, the window the wizard already recommends): what a
+     model was built with — 128k for some, which is what `/api/show` reports — is not what the
+     machine can serve.
+  3. The prompt is budgeted against the window before it is sent
+     (`server/src/adapters/http/prompt-budget.ts`). The opening block — who the agent is, what it
+     knows, and the task, which is where the format instructions live — is pinned and always
+     survives, as does Todero's instruction for the turn. The conversation in the middle is trimmed
+     oldest-first and the pinned block says how many messages were left out.
+- **Consequences:**
+  - Format instructions can no longer lose a fight with old chat history: the trim is Todero's,
+    not the runtime's, and it takes from the end that matters least.
+  - Local Ollama agents with a recorded window talk to a different endpoint than before. The reply
+    shape (`message.content`, `done_reason`) is translated in one small module; a runtime that is
+    not Ollama, and any agent with no recorded window, is untouched.
+  - Raising `OLLAMA_CONTEXT_LENGTH` is no longer the only way to give an agent a bigger window,
+    but a recorded window still comes from what the runtime reports, so the wizard's hint stands.
+  - The chars-per-token estimate is one number (`CONTEXT_CHARS_PER_TOKEN` in `@todero/shared`),
+    shared by the skill-pack ceiling and the prompt budget.
+- **Source:** `server/src/adapters/http/prompt-budget.ts`, `server/src/adapters/http/ollama-native.ts`,
+  `server/src/adapters/http/chat-completions.ts`, `server/src/adapters/http/execute.ts`,
+  `server/src/todero/available-models.ts`, `server/src/services/heartbeat.ts`,
+  `packages/shared/src/skill-pack-utils.ts`.
