@@ -11,9 +11,9 @@ This document says what that costs and in what order to buy it.
 Keep these apart, because the words collide:
 
 - **Which model runs a task.** The user's choice. Todero may choose among models the user has
-  listed, and never outside that list. Covered by piece 3.
+  listed, and never outside that list. Covered by piece 4.
 - **How that model is configured for one request** — context window, temperature, timeout. Todero's
-  job, and the user should not have to think about it. Covered by piece 1.
+  job, and the user should not have to think about it. Covered by piece 2.
 
 ## The goal this serves
 
@@ -40,18 +40,45 @@ Everything in this plan is that same move, applied to the places that still ask.
 
 ## The six pieces
 
-### 1. Todero configures the request; the user picks the model
+### 1. The gate: a script checks before a second agent does
+
+**This is the keystone, and it is why the order below starts here.** Every other piece makes a model
+more likely to succeed. This one makes it safe to fail. A weak model is an acceptable model when
+something real catches its mistakes; without that, no amount of configuration makes it trustworthy.
+
+**Today the gate is a formality.** Measured on a throwaway company on 2026-09-14: the reviewer
+approved a handed-in document **six seconds** after it was written — "I reviewed this and it does
+what the task asked" — and did the same on all eight tasks of the project. The reviewer runs the
+same model as the worker, on the same machine, with no criteria to check against. Nine tasks reached
+`done` in eighteen minutes and nothing established that any of the output was worth having.
+
+**Change.**
+
+- Every task carries acceptance criteria from the moment it is created. A task without them is not
+  ready to start.
+- Todero decides whether those criteria are machine-checkable.
+- If they are — tests pass, the build runs, a file exists, a link resolves, a document has the
+  required sections — a script is the gate. Its verdict is one no model can talk its way around.
+- If they are not — does this read well, does it answer the brief — a second agent is the gate, and
+  it judges against the written criteria rather than against its own impression.
+- A verdict records what was checked. "It does what the task asked" is not a verdict.
+
+**Why this first.** It is the cheapest way to make every model safer, it is the only piece that
+improves output quality rather than throughput, and the pieces that follow are much easier to judge
+once something downstream is actually checking their work.
+
+### 2. Todero configures the request; the user picks the model
 
 **Today.** Ollama serves a 4,096-token context window by default whatever the model can actually
 hold. The skill pack is about 16,000 characters. The mismatch was found by a person watching a loop
 fail, not by Todero.
 
 **Change.** Todero sets the window per request where the runtime allows it (Ollama `num_ctx`, and
-the equivalent elsewhere), from the profile in piece 2, and assembles every prompt to a measured
+the equivalent elsewhere), from the profile in piece 3, and assembles every prompt to a measured
 budget: skills by task kind, thread trimmed, documents by reference. A prompt that does not fit is
 Todero's bug, not the model's.
 
-### 2. Todero measures what each model can do
+### 3. Todero measures what each model can do
 
 **Today.** Model capability is assumed.
 
@@ -62,12 +89,12 @@ connection test already exists and is the natural place to extend:
 - does tool calling actually work, or only claim to
 - does constrained JSON output hold
 - observed seconds per turn at a representative length
-- observed success rate per task kind, updated as the company runs
+- observed pass rate at the piece 1 gate, per task kind, updated as the company runs
 
-**What consumes it.** Everything below. Without measurement, "pick the right model" and "pick the
-right task size" are both guesses.
+That last line is what ties the profile to reality. Once the gate is real, "can this model do this
+kind of work" stops being a guess and becomes a measured rate.
 
-### 3. An agent has a roster of models, and the roster is declared
+### 4. An agent has a roster of models, and the roster is declared
 
 **Today.** One agent has exactly one model: a single `model` in its adapter config. To get a second
 capability tier you hire a second agent. That works, and for a solo user on one machine it is
@@ -81,8 +108,9 @@ planning: qwen2.5-coder:32b
 code:     claude (API)
 ```
 
-Todero picks from the roster using the piece 2 profile — which model can actually hold this
-prompt, return this shape, and finish in reasonable time — and never picks anything not on it.
+Todero picks from the roster using the piece 3 profile — which model can actually hold this
+prompt, return this shape, pass the gate for this task kind, and finish in reasonable time — and
+never picks anything not on it.
 
 Three rules make this safe rather than clever:
 
@@ -97,18 +125,8 @@ Three rules make this safe rather than clever:
   spend real money.
 
 **Complexity is measured, not guessed.** Todero cannot judge how hard a task is by looking at it.
-It can read the profile: this model returns valid JSON 40% of the time and takes four minutes a
-turn, that one is 99% and twenty seconds. Routing follows the measurement.
-
-### 4. Task size follows the profile
-
-Break work into the smallest useful pieces, with one guard: size should be a consequence of the
-measured profile, not a fixed taste. A 14B model gets tasks with one acceptance criterion. A
-frontier model gets a whole feature.
-
-The trade to name honestly: smaller pieces mean more turns, and on a slow local model turns are the
-expensive resource. The profile's measured seconds-per-turn is what balances the two. The manager
-agent already breaks work into features and tasks; it needs the profile as an input.
+It can read the profile: this model passes the gate on 40% of planning tasks and takes four minutes
+a turn, that one passes 95% in twenty seconds. Routing follows the measurement.
 
 ### 5. The contract with the model is enforced, not requested
 
@@ -126,18 +144,15 @@ person as a decision.
 **Why it matters more on a weak model.** A frontier model follows a format because it inferred the
 intent. A 7B model follows a format because the decoder would not let it do otherwise.
 
-### 6. Check with a script first, a second agent second
+### 6. Task size follows the profile
 
-A builder and a checker is the right shape, with one refinement: **never ask a model to judge what a
-script can score.** Two models double the cost and double the chance of a confident wrong answer.
+Break work into the smallest useful pieces, with one guard: size should be a consequence of the
+measured profile, not a fixed taste. A 14B model gets tasks with one acceptance criterion. A
+frontier model gets a whole feature.
 
-- Every task carries acceptance criteria from the moment it is created.
-- Todero decides whether those criteria are machine-checkable.
-- If they are — tests, build, lint, a file exists, a link resolves — a script is the gate, and its
-  verdict is one no model can talk its way around.
-- If they are not — does this read well, does it answer the brief — a second agent is the gate.
-
-This is the existing reviewer agent, with a deterministic tier in front of it.
+The trade to name honestly: smaller pieces mean more turns, and on a slow local model turns are the
+expensive resource. The profile's measured seconds-per-turn is what balances the two. The manager
+agent already breaks work into features and tasks; it needs the profile as an input.
 
 ## Failure is a normal path
 
@@ -154,25 +169,27 @@ The gauntlet already runs a scripted company end to end against one local model
 expectations, against a small local model, a mid local model, and a frontier model. Score the same
 outcomes.
 
-Until that check exists, model independence is an intention. After it exists, it is a gate that
-fails loudly, and every piece above has a place to prove itself.
+The matrix only means something once piece 1 exists. Today the scripted company would pass on every
+model, because the reviewer approves everything. A matrix scored against a real gate is a gate
+itself; scored against a rubber stamp it measures nothing.
 
 ## Order of work
 
-1. **Todero sets the model's window per request** — small, and the first half of the prompt budget.
+1. **The quality gate** — acceptance criteria on every task, a deterministic checker tier in front
+   of the reviewer, and verdicts that say what was checked.
+2. **Todero sets the model's window per request** — small, and the first half of the prompt budget.
    Already the recommendation of the wave 15 verdict.
-2. **Capability profile written by the connection test** — nothing else can be sized or routed
-   without it.
-3. **The model matrix check** — before any new task kind, so that new work is measured on arrival.
-4. **The roster on the agent** — a second model per agent, chosen by profile, shown on every run,
+3. **Capability profile written by the connection test**, including the measured pass rate at the
+   gate.
+4. **The model matrix check** — now that it measures something.
+5. **The roster on the agent** — a second model per agent, chosen by profile, shown on every run,
    with escalation to a paid model gated by the existing budget.
-5. **Enforced output contracts** — schema or grammar where the runtime allows.
-6. **Acceptance criteria plus the deterministic checker tier.**
+6. **Enforced output contracts** — schema or grammar where the runtime allows.
 7. **Task sizing from the profile.**
 
 Code tasks (the "wave L" item: routing implement-tasks to Claude Code or Codex) should come after
-steps 1-4 and be designed from the start around step 6. Running code tasks on a local model before
-the matrix exists produces failures nobody can attribute.
+steps 1-5. Code is the task kind where the gate is most obviously real — tests and builds either
+pass or they do not — so it benefits from step 1 more than any other work.
 
 ## Non-goals
 
@@ -193,3 +210,5 @@ the matrix exists produces failures nobody can attribute.
   report the failure?
 - When an agent's roster has no entry that can do a task, is the right move to stop and ask, or to
   attempt it with the best entry and flag the result as low confidence?
+- When a task's acceptance criteria are not machine-checkable and no second model is available, does
+  the task stop, or finish with an explicit "unchecked" mark on the output?
