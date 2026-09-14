@@ -26,6 +26,8 @@ export type WorkItemComposerProps = {
   modeLabel: string;
   onModeChange?: () => void;
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  /** Marked for a moment when a button up the page sent a person down here. */
+  highlighted?: boolean;
 };
 
 export function WorkItemComposer(props: WorkItemComposerProps) {
@@ -43,6 +45,7 @@ export function WorkItemComposer(props: WorkItemComposerProps) {
     modeLabel,
     onModeChange,
     inputRef,
+    highlighted = false,
   } = props;
   const fileRef = useRef<HTMLInputElement>(null);
   const quickReplies = composerChipsFor(chips);
@@ -62,7 +65,12 @@ export function WorkItemComposer(props: WorkItemComposerProps) {
   }
 
   return (
-    <form className="work-item-composer" data-testid="work-item-composer" onSubmit={submit}>
+    <form
+      className="work-item-composer"
+      data-testid="work-item-composer"
+      data-highlight={highlighted ? "on" : undefined}
+      onSubmit={submit}
+    >
       {quickReplies.length > 0 ? (
         <div className="work-item-chips" data-testid="work-item-chips">
           {quickReplies.map((chip) => (

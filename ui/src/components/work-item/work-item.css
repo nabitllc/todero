@@ -449,6 +449,21 @@
   border-radius: var(--wi-radius-input);
   background: var(--wi-surface);
   padding: var(--wi-space-8);
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+/* Answer, Ask for changes and the quick replies all send a person to this box.
+   It borrows the turn bar's own colour for a moment so the eye reads the two
+   as one move, then settles back. */
+.work-item-composer[data-highlight="on"] {
+  border-color: var(--wi-mark);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--wi-mark) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-item-composer {
+    transition: none;
+  }
 }
 
 .work-item-composer-input {

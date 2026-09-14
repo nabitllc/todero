@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   AGENT_SUMMARY_LIMIT,
+  COMPOSER_HIGHLIGHT_MS,
   COMPOSER_PLACEHOLDER,
   EMPTY_ACTIVITY,
   WAITING_ON_YOU,
@@ -414,6 +415,49 @@ describe("handed-in output, queued tasks, and blocker counts", () => {
     });
     const composer = container.querySelector('[data-testid="work-item-composer-input"]') as HTMLTextAreaElement;
     expect(composer.value).toBe("Please change the plan: ");
+  });
+
+  it("Answer marks the composer so the eye follows the focus, then lets the mark fade", async () => {
+    vi.useFakeTimers();
+    try {
+      await render(fixture({ waitingOnYou: true, assigneeId: "agent-nova", assigneeLabel: "Nova" }));
+      const composer = container.querySelector('[data-testid="work-item-composer"]') as HTMLFormElement;
+      const input = container.querySelector('[data-testid="work-item-composer-input"]') as HTMLTextAreaElement;
+      expect(composer.dataset.highlight).toBeUndefined();
+
+      await act(async () => {
+        (
+          container.querySelector(
+            '[data-testid="work-item-turn-action"][data-action="answer"]',
+          ) as HTMLButtonElement
+        ).click();
+      });
+      // Focus alone is a caret and nothing more; the mark is what a person sees.
+      expect(document.activeElement).toBe(input);
+      expect(composer.dataset.highlight).toBe("on");
+
+      await act(async () => {
+        vi.advanceTimersByTime(COMPOSER_HIGHLIGHT_MS + 10);
+      });
+      expect(composer.dataset.highlight).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marks the composer for every button that sends a person to it", async () => {
+    vi.useFakeTimers();
+    try {
+      const plan = { goal: "Seat neighbors.", features: [], tasks: [{ id: "t1", title: "One", feature: "", output: "", after: "" }] };
+      await render(fixture({ plan, planApprovable: true }));
+      const composer = container.querySelector('[data-testid="work-item-composer"]') as HTMLFormElement;
+      await act(async () => {
+        (container.querySelector('[data-testid="work-item-plan-changes"]') as HTMLButtonElement).click();
+      });
+      expect(composer.dataset.highlight).toBe("on");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("says the agent is writing once, in the turn bar, and does not repeat it", async () => {

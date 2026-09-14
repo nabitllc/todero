@@ -46,6 +46,12 @@ export const WORK_ITEM_SECTION_TITLES = [
 export type WorkItemSectionTitle = (typeof WORK_ITEM_SECTION_TITLES)[number];
 
 export const COMPOSER_PLACEHOLDER = "Comment, or @ an agent";
+/**
+ * How long the composer stays marked after a button sends a person to it.
+ * Long enough to catch the eye on a full screen, short enough that it is gone
+ * before anyone finishes their first sentence.
+ */
+export const COMPOSER_HIGHLIGHT_MS = 1400;
 export const EMPTY_BODY_PLACEHOLDER = "What is the work?";
 export const EMPTY_ACTIVITY = "No activity yet.";
 export const TITLE_PLACEHOLDER = "Short title";
