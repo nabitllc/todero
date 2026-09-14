@@ -15,6 +15,44 @@ import {
 } from "./chat-completions.js";
 import { resolveHttpAdapterTimeoutMs } from "./local-model-timeout.js";
 
+/**
+ * Detects if a reply claims to present a plan but has no actual plan block.
+ * Looks for language like "approve this plan", "do you confirm", etc.
+ */
+function claimsPlanWithoutStructure(replyBody: string): boolean {
+  if (!replyBody.trim()) return false;
+  // Plan-claiming language patterns
+  const patterns = [
+    /\bapprove\b/i,           // "Do you approve this plan?"
+    /\bconfirm\b/i,           // "Do you confirm..."
+    /\baccept\b/i,            // "Do you accept..."
+    /here['\s]s.*plan/i,      // "Here's the plan" but didn't provide it
+    /the plan/i,              // Reference to a plan
+    /ready.*(?:approve|review)/i, // "I'm ready. Do you approve?"
+  ];
+  return patterns.some(pattern => pattern.test(replyBody));
+}
+
+/**
+ * One-shot retry instruction for when the model claims a plan but didn't produce the block.
+ * Teaches the exact shape required, once.
+ */
+export const CHAT_COMPLETIONS_NO_PLAN_BLOCK_NUDGE = `I saw you mention a plan, but I didn't receive it in the required format. The plan must be inside a fenced block with this exact shape:
+
+\`\`\`todero-plan
+goal: One sentence: what we are building and for whom.
+features:
+  - name: Feature name
+    why: Why it matters
+    done_when: How we know it's finished
+tasks:
+  - title: Task title
+    feature: Which feature
+    output: What you'll deliver
+\`\`\`
+
+Three to seven features. Four to twelve tasks. Write the plan block now.`;
+
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
   const url = asString(config.url, "");
@@ -105,6 +143,60 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           completion = retried;
           reply = parseChatCompletionsReply(retried);
           finishReason = parseChatCompletionsFinishReason(retriedRaw);
+        }
+      }
+    }
+    // A reply that claims a plan but has no actual plan block structure.
+    // This happens when small models understand they should propose a plan
+    // but fail to emit the fenced block. Retry once with exact shape instructions.
+    // Do not loop forever: if the retry also fails, stop and post an error.
+    const alreadyRetriedForNoPlanBlock = Array.isArray(body.messages)
+      ? (body.messages as ChatCompletionsMessage[]).some(msg =>
+          typeof msg.content === "string" && msg.content.includes("fenced block")
+        )
+      : false;
+    if (
+      reply.body &&
+      claimsPlanWithoutStructure(reply.body) &&
+      !parseToderoPlanBlock(reply.body) &&
+      !alreadyRetriedForNoPlanBlock &&
+      !controller.signal.aborted
+    ) {
+      const noPlanRetryBody = {
+        ...body,
+        messages: [
+          ...(body.messages as ChatCompletionsMessage[]),
+          { role: "assistant", content: completion },
+          { role: "user", content: CHAT_COMPLETIONS_NO_PLAN_BLOCK_NUDGE },
+        ],
+      };
+      const noPlanRetry = await fetch(url, {
+        method,
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(noPlanRetryBody),
+        ...(timer ? { signal: controller.signal } : {}),
+      });
+      if (noPlanRetry.ok) {
+        const retriedRaw = await noPlanRetry.text();
+        const retried = parseChatCompletionsText(retriedRaw);
+        if (retried) {
+          const retriedReply = parseChatCompletionsReply(retried);
+          // Check if the retry produced a plan block
+          if (parseToderoPlanBlock(retriedReply.body)) {
+            // Success: the retry produced a block
+            await ctx.onLog("stdout", `[todero] Retried: model produced the plan block.\n${retried}\n`);
+            completion = retried;
+            reply = retriedReply;
+            finishReason = parseChatCompletionsFinishReason(retriedRaw);
+          } else {
+            // The retry also failed to produce a block. Stop here and post a clear error.
+            await ctx.onLog(
+              "stderr",
+              "[todero] The model claimed to have a plan but could not produce it in the required format after a retry. Stopping.\n",
+            );
+            completion = `The agent said it had a plan but could not produce it in the required form. Please ask the agent to provide the plan in plain words so you can help guide it.`;
+            reply = { body: completion, disposition: "waiting" };
+          }
         }
       }
     }

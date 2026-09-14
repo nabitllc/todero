@@ -309,4 +309,79 @@ describe("http adapter chat completions: plan block and empty replies", () => {
     expect(result.summary).toBe("Here is the registration form spec.");
     expect(result.resultJson).toMatchObject({ toderoDisposition: "done" });
   });
+
+  it("stops after one retry when reply claims a plan but produced no structure", async () => {
+    // Model says "Do you approve?" but never emitted a plan block
+    const claimWithoutStructure = "Do you approve this plan?\nSTATUS: waiting";
+    let callCount = 0;
+    const fetchMock = vi.fn(async () => {
+      callCount++;
+      // First call: model claims but produces no block
+      if (callCount === 1) {
+        return chatCompletionsResponse(claimWithoutStructure);
+      }
+      // Second call (retry): model still produces no block
+      if (callCount === 2) {
+        return chatCompletionsResponse(claimWithoutStructure);
+      }
+      throw new Error("Should not make more than 2 calls");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(localLlmExecuteArgs());
+
+    // Should have retried once (2 total calls)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // After the retry fails, should have a plain-language error message, not the claim
+    expect(result.summary).toBeTruthy();
+    expect(result.summary).not.toContain("Do you approve");
+    // Should clearly indicate the model could not produce the required structure
+    expect(result.summary).toContain("could not produce it");
+  });
+
+  it("succeeds on retry when the model produces a plan block on second attempt", async () => {
+    const claimWithoutStructure = "Do you approve this plan?\nSTATUS: waiting";
+    const planBlock = `Here's my plan:
+
+\`\`\`todero-plan
+goal: Build a registration flow
+features:
+  - name: Email signup
+    why: Lets users join
+    done_when: Users can enter email and password
+tasks:
+  - title: Design the form
+    feature: Email signup
+    output: HTML mockup
+\`\`\`
+
+STATUS: waiting`;
+
+    let callCount = 0;
+    const fetchMock = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // First call: claims but no structure
+        return chatCompletionsResponse(claimWithoutStructure);
+      }
+      // Second call (retry): now produces the block
+      if (callCount === 2) {
+        return chatCompletionsResponse(planBlock);
+      }
+      throw new Error("Should not make more than 2 calls");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(localLlmExecuteArgs());
+
+    // Should have retried once (2 total calls)
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Should have extracted the plan block and kept the words around it
+    expect(result.summary).toContain("Here's my plan:");
+    // The plan block itself should be in resultJson
+    expect(result.resultJson).toMatchObject({
+      toderoDisposition: "waiting",
+    });
+    expect(String((result.resultJson as Record<string, unknown>).toderoPlanBlock)).toContain("goal: Build a registration flow");
+  });
 });
