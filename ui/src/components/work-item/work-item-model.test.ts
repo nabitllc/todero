@@ -75,6 +75,14 @@ describe("work-item model", () => {
     expect(parsed.body).toBe("Write the sign up words.");
   });
 
+  it("keeps the count of tries at the plan out of the body", () => {
+    const parsed = parseWorkItemDescription(
+      "<!-- todero-type: Task -->\n<!-- todero-plan-tries: 2 -->\nWrite the sign up words.",
+    );
+    expect(parsed.type).toBe("Task");
+    expect(parsed.body).toBe("Write the sign up words.");
+  });
+
   it("keeps the manager's own notes out of the body", () => {
     const parsed = parseWorkItemDescription(
       [

@@ -133,13 +133,19 @@ import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js
 import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
 import {
   allPlanChildrenClosed,
+  applyMissingPlanRecovery,
+  buildMissingPlanRetryInstruction,
   buildPlanSummaryTurnInstruction,
+  buildStopAskingForPlanInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
   descriptionWithoutConversationMarkers,
+  hasGivenUpOnPlan,
   loadPlanChildren,
+  MISSING_PLAN_RETRY_WAKE_REASON,
   NEXT_PROJECT_DOCUMENT_KEY,
   parseNextProjectLine,
   planConversationOutcome,
+  planMissingPlanRecovery,
   planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
 import {
@@ -14979,6 +14985,14 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         hasParentIssue: Boolean(issueContext?.parentId),
       });
       context.toderoTaskKind = toderoTaskKind;
+      // A plan that was claimed and never written (conversation-outcome.ts).
+      // Set after the routing kind so a corrective turn is still routed as the
+      // planning turn it is.
+      if (hasGivenUpOnPlan(issueRef.description)) {
+        context.toderoTurnInstruction = buildStopAskingForPlanInstruction();
+      } else if (conversationWakeReason === MISSING_PLAN_RETRY_WAKE_REASON) {
+        context.toderoTurnInstruction = buildMissingPlanRetryInstruction();
+      }
       // What this agent knows for this kind of turn. The rows are the
       // organization's own copies, so a person's edit takes effect on the
       // next turn without a restart.
@@ -17461,7 +17475,77 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         // successful-run handoff below does not raise a second wake for a turn
         // that already reached its end state.
         let conversationDispositionApplied = managerWaveHandled;
+        // A reply that asks to have a plan approved and carries no plan is a
+        // question nobody can answer: there is nothing on the task to approve,
+        // and answering it only produces the same question again. Todero asks
+        // the model once more with the shape spelled out, and if that comes
+        // back empty too the task goes to the person with one plain message
+        // and the plan step closed. The decision is pure and lives in
+        // conversation-outcome.ts; this only carries it out.
+        let missingPlanHandled = false;
         if (issueId && outcome === "succeeded" && conversationDisposition && !managerWaveHandled) {
+          try {
+            const planTurnIssue = await issuesSvc.getById(issueId);
+            const planTurnWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
+            const missingPlan = planTurnIssue
+              ? planMissingPlanRecovery({
+                  issue: planTurnIssue,
+                  disposition: conversationDisposition,
+                  reply: readNonEmptyString(parseObject(persistedResultJson).summary) ?? "",
+                  planBlock: conversationPlanBlock,
+                  steeredTurn:
+                    planTurnWakeReason === ISSUE_BLOCKERS_RESOLVED_WAKE_REASON ||
+                    planTurnWakeReason === "issue_children_completed" ||
+                    planTurnWakeReason === MANAGER_ASSIGNMENT_WAKE_REASON ||
+                    planTurnWakeReason === MANAGER_SENDBACK_WAKE_REASON,
+                  agentName: agent.name,
+                })
+              : null;
+            if (missingPlan) {
+              await applyMissingPlanRecovery(
+                {
+                  updateIssue: (id, patch) => issuesSvc.update(id, { ...patch, actorAgentId: agent.id }),
+                  addComment: (id, body) =>
+                    issuesSvc.addComment(id, body, { agentId: agent.id, runId: livenessRun.id }),
+                  wakeAgent: ({ issueId: wakeIssueId, agentId: wakeAgentId }) =>
+                    enqueueWakeup(wakeAgentId, {
+                      source: "assignment",
+                      triggerDetail: "system",
+                      reason: MISSING_PLAN_RETRY_WAKE_REASON,
+                      payload: { issueId: wakeIssueId, mutation: "update" },
+                      requestedByActorType: "agent",
+                      requestedByActorId: agent.id,
+                      contextSnapshot: {
+                        issueId: wakeIssueId,
+                        taskId: wakeIssueId,
+                        source: "issue.plan_not_written",
+                        wakeReason: MISSING_PLAN_RETRY_WAKE_REASON,
+                      },
+                    }).catch(() => null),
+                  log: (message) => {
+                    void onLog("stdout", message);
+                  },
+                },
+                { issueId, agentId: agent.id, recovery: missingPlan },
+              );
+              missingPlanHandled = true;
+              conversationDispositionApplied = true;
+              await recordConversationDispositionApplied(db, livenessRun.id, onLog);
+            }
+          } catch (err) {
+            await onLog(
+              "stderr",
+              `[todero] Could not act on the plan that never arrived: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
+        }
+        if (
+          issueId &&
+          outcome === "succeeded" &&
+          conversationDisposition &&
+          !managerWaveHandled &&
+          !missingPlanHandled
+        ) {
           try {
             const currentIssue = await issuesSvc.getById(issueId);
             const conversationRunWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);

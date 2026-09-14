@@ -11,6 +11,13 @@ import {
   planConversationOutcome,
   planReviewedOutcome,
   REVIEW_PENDING_MARKER,
+  applyMissingPlanRecovery,
+  buildStopAskingForPlanInstruction,
+  descriptionWithPlanTries,
+  hasGivenUpOnPlan,
+  planMissingPlanRecovery,
+  readPlanTries,
+  type MissingPlanRecoveryDeps,
 } from "./conversation-outcome.js";
 
 describe("planConversationOutcome", () => {
@@ -167,5 +174,153 @@ describe("descriptionWithoutConversationMarkers", () => {
     expect(clean).not.toContain(PLAN_PENDING_MARKER);
     expect(clean).toContain("Body");
     expect(clean).toContain("<!-- todero-type: Task -->");
+  });
+});
+
+/**
+ * A local model that says "Do you approve this plan?" and writes no plan is
+ * asking for an answer nobody can give: there is nothing on the task to
+ * approve. Todero asks once more, and then stops asking.
+ */
+describe("a reply that asks to approve a plan that is not there", () => {
+  const BRIEF = [
+    "<!-- todero-type: Task -->",
+    "You are this company's first agent.",
+    "",
+    "```todero-plan",
+    "goal: One sentence.",
+    "tasks:",
+    "  - title: A task",
+    "```",
+    "",
+    "Write for the person.",
+  ].join("\n");
+
+  function recovery(over: {
+    description?: string;
+    reply?: string;
+    disposition?: "done" | "waiting";
+    parentId?: string | null;
+    planBlock?: string | null;
+    steeredTurn?: boolean;
+  } = {}) {
+    return planMissingPlanRecovery({
+      issue: {
+        status: "in_progress",
+        description: over.description ?? BRIEF,
+        parentId: over.parentId ?? null,
+      },
+      disposition: over.disposition ?? "waiting",
+      reply: over.reply ?? "I'm ready. Here's the revised plan:  Do you approve this plan?",
+      planBlock: over.planBlock ?? null,
+      steeredTurn: over.steeredTurn ?? false,
+      agentName: "Nova",
+    });
+  }
+
+  it("asks the model once more, and does not put the task in front of the person", () => {
+    const first = recovery();
+    expect(first?.kind).toBe("retry");
+    expect(first?.description).not.toContain(WAITING_ON_YOU_MARKER);
+    expect(first?.description).not.toContain(PLAN_PENDING_MARKER);
+    expect(readPlanTries(first!.description)).toBe(1);
+    if (first?.kind !== "retry") throw new Error("expected a retry");
+    expect(first.instruction).toContain("```todero-plan");
+    expect(first.instruction).toContain("goal:");
+    expect(first.instruction).toContain("tasks:");
+  });
+
+  it("hands the task to the person after that one retry, and never asks again", () => {
+    const first = recovery();
+    const second = recovery({ description: first!.description });
+    expect(second?.kind).toBe("hand-back");
+    if (second?.kind !== "hand-back") throw new Error("expected a hand-back");
+    expect(second.description).toContain(WAITING_ON_YOU_MARKER);
+    expect(second.description).not.toContain(PLAN_PENDING_MARKER);
+    expect(second.comment).toContain("Nova");
+    expect(second.comment.toLowerCase()).not.toContain("todero-plan");
+    expect(second.comment.toLowerCase()).not.toContain("marker");
+    // A third round of the same reply is no longer the agent's to answer.
+    expect(hasGivenUpOnPlan(second.description)).toBe(true);
+    expect(recovery({ description: second.description })).toBeNull();
+    expect(buildStopAskingForPlanInstruction()).toMatch(/do not/i);
+  });
+
+  it("counts the tries in the description, so they survive the run that made them", () => {
+    const once = descriptionWithPlanTries(BRIEF, 1);
+    expect(readPlanTries(once)).toBe(1);
+    expect(readPlanTries(descriptionWithPlanTries(once, 2))).toBe(2);
+    expect(descriptionWithPlanTries(once, 2).match(/todero-plan-tries/g)).toHaveLength(1);
+    expect(readPlanTries(BRIEF)).toBe(0);
+    expect(hasGivenUpOnPlan(once)).toBe(false);
+  });
+
+  it("stays out of the way of every reply that is not the planning turn", () => {
+    // An ordinary hand-in that happens to use the word accept.
+    expect(recovery({ reply: "Done. Please accept the config as handed in." })).toBeNull();
+    // Talking about a plan without handing the turn over on one.
+    expect(recovery({ reply: "The plan is going well so far. What colour do you want?" })).toBeNull();
+    // A worker's task, not the conversation.
+    expect(recovery({ parentId: "parent-1" })).toBeNull();
+    // The plan did arrive.
+    expect(recovery({ planBlock: "```todero-plan\ngoal: x\ntasks:\n  - title: y\n```" })).toBeNull();
+    // The turn closed rather than handing over.
+    expect(recovery({ disposition: "done" })).toBeNull();
+    // A task that was never asked for a plan in the first place.
+    expect(recovery({ description: "<!-- todero-type: Task -->\nWrite the launch email." })).toBeNull();
+    // A wrap-up or manager turn Todero steered itself.
+    expect(recovery({ steeredTurn: true })).toBeNull();
+  });
+});
+
+describe("applyMissingPlanRecovery", () => {
+  type Recorded = {
+    updates: Array<{ issueId: string; patch: { status?: string; description?: string } }>;
+    comments: Array<{ issueId: string; body: string }>;
+    wakes: Array<{ issueId: string; agentId: string }>;
+    logs: string[];
+  };
+
+  function deps(): { deps: MissingPlanRecoveryDeps; recorded: Recorded } {
+    const recorded: Recorded = { updates: [], comments: [], wakes: [], logs: [] };
+    return {
+      recorded,
+      deps: {
+        updateIssue: async (issueId, patch) => {
+          recorded.updates.push({ issueId, patch });
+        },
+        addComment: async (issueId, body) => {
+          recorded.comments.push({ issueId, body });
+        },
+        wakeAgent: async (input) => {
+          recorded.wakes.push(input);
+        },
+        log: (message) => recorded.logs.push(message),
+      },
+    };
+  }
+
+  it("sends the retry back to the agent without troubling the person", async () => {
+    const { deps: d, recorded } = deps();
+    await applyMissingPlanRecovery(d, {
+      issueId: "issue-1",
+      agentId: "agent-1",
+      recovery: { kind: "retry", description: "body", instruction: "write it again" },
+    });
+    expect(recorded.updates).toEqual([{ issueId: "issue-1", patch: { status: "todo", description: "body" } }]);
+    expect(recorded.wakes).toEqual([{ issueId: "issue-1", agentId: "agent-1" }]);
+    expect(recorded.comments).toHaveLength(0);
+  });
+
+  it("hands the task to the person with one plain message, and wakes nobody", async () => {
+    const { deps: d, recorded } = deps();
+    await applyMissingPlanRecovery(d, {
+      issueId: "issue-1",
+      agentId: "agent-1",
+      recovery: { kind: "hand-back", description: "body", comment: "Nova could not write the plan." },
+    });
+    expect(recorded.updates).toEqual([{ issueId: "issue-1", patch: { status: "blocked", description: "body" } }]);
+    expect(recorded.comments).toEqual([{ issueId: "issue-1", body: "Nova could not write the plan." }]);
+    expect(recorded.wakes).toHaveLength(0);
   });
 });
