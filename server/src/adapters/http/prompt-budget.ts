@@ -25,14 +25,25 @@ import type { ChatCompletionsMessage } from "./chat-completions.js";
 /**
  * The largest window Todero will ask a runtime for.
  *
- * What a model was built with is not what the machine can serve: Ollama's
- * /api/show reports a model's own maximum, which for some models is 128k, and
- * loading a 14B model at 128k tokens would take a desktop to its knees. The
- * ceiling is the window the wizard already recommends — enough for the whole
- * skill pack, the task and a long thread — so a bigger recorded number costs
- * nobody their machine.
+ * There are two mistakes available here and they are not the same size. Ask
+ * for more than the machine can serve and a desktop swaps or the load fails —
+ * a model's own maximum is 128k for some, and a 14B held at 128k takes a
+ * desktop to its knees. Ask for less than the model can hold and every
+ * organization on that machine runs shrunken, quietly, forever; that is the
+ * one that actually happened, at 4,096 tokens on a model that holds 32,768.
+ *
+ * So the ceiling is 32,768, not the wizard's 16,384 comfort recommendation.
+ * 16,384 was chosen as "enough for the skill pack, the task and a long
+ * thread", which is a comfort number, not a hardware limit: it would have
+ * capped qwen2.5-coder:14b — the model this is actually run with — to half of
+ * what it holds. 32k of KV cache on a 14B is roughly two gigabytes, which the
+ * machines Todero targets can pay; 128k is not, so the ceiling stays.
+ *
+ * Above it Todero does trim, deliberately: it has to name a number in the
+ * request, and 32k already carries the whole pack, the task and a long
+ * thread. Someone serving more than that loses room, not capability.
  */
-export const MAX_REQUESTED_CONTEXT_LENGTH = SKILL_PACK_COMFORTABLE_CONTEXT_LENGTH;
+export const MAX_REQUESTED_CONTEXT_LENGTH = 2 * SKILL_PACK_COMFORTABLE_CONTEXT_LENGTH;
 
 /**
  * The window Todero acts on: the recorded one, never above the ceiling, and

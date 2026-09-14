@@ -513,3 +513,40 @@ instead of guessing.
 - **Source:** `packages/shared/src/todero-plan-schema.ts`,
   `server/src/adapters/http/structured-plan.ts`, `server/src/adapters/http/execute.ts`,
   `server/src/adapters/http/chat-completions.ts`, `server/src/adapters/http/ollama-native.ts`.
+
+## ADR-018 — The recorded window is what the model can hold, not what it is loaded at
+
+- **Date:** 2026-09-14
+- **Status:** Accepted (amends ADR-016, parts 1 and 2)
+- **Context:** ADR-016 read the window by asking Ollama's `/api/ps` first and only falling back to
+  `/api/show`. The two endpoints answer different questions: `/api/ps` reports the window the model
+  is **loaded** at — Ollama's 4,096 default unless someone set otherwise — while `/api/show`
+  reports what the model can **hold**, 32,768 for `qwen2.5-coder:14b`. Both were observed on this
+  machine minutes apart for that model. Because ADR-016 preferred the loaded reading, any
+  organization whose window was filled in while the model happened to be warm recorded 4,096 —
+  and, now that Todero actively sets `num_ctx` and trims the prompt, went on to force the model to
+  one eighth of what it holds, for good. That is worse than the pre-ADR-016 behaviour it replaced.
+  All five organizations in the first live run recorded 4,096 this way.
+- **Decision:**
+  1. `detectContextLength` asks both endpoints at once and takes the larger. `/api/show` is the
+     capability and is never lowered by a loaded-state snapshot; `/api/ps` still counts, because a
+     model deliberately loaded above its own reported maximum really is serving that window.
+  2. `storeContextLength` only ever moves upward. A reading can be an understatement, and an
+     understatement that overwrites a known capability is permanent.
+  3. `resolveContextLengthForRun` does not trust a recorded window below
+     `MAX_REQUESTED_CONTEXT_LENGTH` forever: it re-checks the runtime and keeps the larger number,
+     which repairs every organization already holding 4,096 on its next turn, with no migration.
+     At or above the ceiling there is nothing to gain, so the runtime is left alone.
+  4. `MAX_REQUESTED_CONTEXT_LENGTH` rises from 16,384 to 32,768. 16,384 was the wizard's comfort
+     recommendation, not a hardware limit, and it would have capped the model Todero is actually
+     run with to half of what it holds. 32k of KV cache on a 14B is roughly two gigabytes; 128k —
+     what `/api/show` reports for some models — is not affordable, so a ceiling stays.
+- **Consequences:**
+  - An organization recorded at 4,096 repairs itself on the next turn: one extra pair of localhost
+    requests per run until the recorded window reaches the ceiling, then none.
+  - Todero can now ask a machine for 32,768 tokens where it previously asked for 16,384. Someone
+    serving a window larger than 32k is still trimmed to 32k and loses room, not capability.
+  - The number Todero acts on is the same one it records, so the request and the prompt budget
+    still cannot disagree.
+- **Source:** `server/src/todero/available-models.ts`,
+  `server/src/adapters/http/prompt-budget.ts`.

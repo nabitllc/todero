@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { MAX_REQUESTED_CONTEXT_LENGTH } from "../adapters/http/prompt-budget.js";
+
 const mockDetectLocalLlms = vi.hoisted(() => vi.fn());
 vi.mock("./local-llm-detect.js", () => ({ detectLocalLlms: mockDetectLocalLlms }));
 
@@ -134,25 +136,47 @@ describe("context length", () => {
     expect(readStoredContextLength(null)).toBeNull();
   });
 
-  it("asks Ollama's /api/ps for the served model's window", async () => {
-    const fetcher = (async (url: string | URL | Request) => {
-      expect(String(url)).toBe("http://127.0.0.1:11434/api/ps");
-      return new Response(JSON.stringify({ models: [{ name: "qwen2.5-coder:14b", context_length: 4096 }] }), { status: 200 });
-    }) as unknown as typeof fetch;
-    expect(await detectContextLength("http://127.0.0.1:11434/v1/chat/completions", "qwen2.5-coder:14b", fetcher)).toBe(4096);
-  });
-
-  it("asks the model itself when the runtime has nothing loaded", async () => {
+  it("takes what the model can hold, not the window it happens to be loaded at", async () => {
+    // Observed on one machine minutes apart for qwen2.5-coder:14b: /api/ps
+    // says 4,096 (Ollama's default load), /api/show says 32,768 (the model).
     const calls: string[] = [];
     const fetcher = (async (url: string | URL | Request) => {
       calls.push(String(url));
+      if (String(url).endsWith("/api/ps")) {
+        return new Response(JSON.stringify({ models: [{ name: "qwen2.5-coder:14b", context_length: 4096 }] }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ model_info: { "qwen2.arch": 1, "qwen2.context_length": 32_768 } }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434/v1/chat/completions", "qwen2.5-coder:14b", fetcher)).toBe(
+      32_768,
+    );
+    expect(calls.sort()).toEqual(["http://127.0.0.1:11434/api/ps", "http://127.0.0.1:11434/api/show"]);
+  });
+
+  it("keeps a window the runtime is already serving above the model's own maximum", async () => {
+    const fetcher = (async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/ps")) {
+        return new Response(JSON.stringify({ models: [{ name: "qwen2.5-coder:14b", context_length: 65_536 }] }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ model_info: { "qwen2.context_length": 32_768 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434", "qwen2.5-coder:14b", fetcher)).toBe(65_536);
+  });
+
+  it("asks the model itself when the runtime has nothing loaded", async () => {
+    const fetcher = (async (url: string | URL | Request) => {
       if (String(url).endsWith("/api/ps")) return new Response(JSON.stringify({ models: [] }), { status: 200 });
       return new Response(JSON.stringify({ model_info: { "qwen2.arch": 1, "qwen2.context_length": 32_768 } }), {
         status: 200,
       });
     }) as unknown as typeof fetch;
     expect(await detectContextLength("http://127.0.0.1:11434", "qwen2.5-coder:14b", fetcher)).toBe(32_768);
-    expect(calls).toEqual(["http://127.0.0.1:11434/api/ps", "http://127.0.0.1:11434/api/show"]);
   });
 
   it("answers null when the runtime does not say or is down", async () => {
@@ -175,6 +199,15 @@ describe("context length", () => {
     await storeContextLength(unknown.db, "company-1", null);
     expect(unknown.updates).toHaveLength(0);
   });
+
+  it("never lowers a window that was already recorded larger", async () => {
+    const shrink = fakeDb({ governance: { toderoLocalLlmContextLength: 32_768 } });
+    await storeContextLength(shrink.db, "company-1", 4096);
+    expect(shrink.updates).toEqual([]);
+    const grow = fakeDb({ governance: { toderoLocalLlmContextLength: 4096 } });
+    await storeContextLength(grow.db, "company-1", 32_768);
+    expect(grow.updates).toHaveLength(1);
+  });
 });
 
 describe("resolveContextLengthForRun", () => {
@@ -188,6 +221,44 @@ describe("resolveContextLengthForRun", () => {
       }),
     ).resolves.toBe(16_384);
     expect(updates).toEqual([]);
+  });
+
+  it("re-checks a recorded window that is smaller than Todero would ask for, and keeps the larger", async () => {
+    // 4,096 is what a backfill records while the model is warm: it is the
+    // window Ollama loaded, not the one the model can hold.
+    const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 4096 } });
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: async () => 32_768,
+      }),
+    ).resolves.toBe(32_768);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      interactionResolverGovernance: { toderoLocalLlmContextLength: 32_768 },
+    });
+  });
+
+  it("keeps the recorded window when a re-check comes back smaller", async () => {
+    const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 8_192 } });
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434",
+        modelId: "qwen2.5-coder:14b",
+        detect: async () => 4096,
+      }),
+    ).resolves.toBe(8_192);
+    expect(updates).toEqual([]);
+  });
+
+  it("stops re-checking once the recorded window is everything Todero would ask for", async () => {
+    const { db } = fakeDb({ governance: { toderoLocalLlmContextLength: MAX_REQUESTED_CONTEXT_LENGTH } });
+    const detect = vi.fn();
+    await expect(
+      resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
+    ).resolves.toBe(MAX_REQUESTED_CONTEXT_LENGTH);
+    expect(detect).not.toHaveBeenCalled();
   });
 
   it("fills it in for an agent hired before the window was ever recorded", async () => {

@@ -35,13 +35,16 @@ describe("effectiveContextLength", () => {
   it("takes the recorded window as it is when it is one Todero would ask for", () => {
     expect(effectiveContextLength(4096)).toBe(4096);
     expect(effectiveContextLength(16_384)).toBe(16_384);
+    // The window qwen2.5-coder:14b actually holds. Capping this one is what
+    // pinned live organizations to an eighth of the model they paid for.
+    expect(effectiveContextLength(32_768)).toBe(32_768);
   });
 
   it("does not ask a machine for the model's whole maximum", () => {
     // /api/show reports what the model was built with — 128k for some — which
     // is not what the machine can serve.
     expect(effectiveContextLength(131_072)).toBe(MAX_REQUESTED_CONTEXT_LENGTH);
-    expect(MAX_REQUESTED_CONTEXT_LENGTH).toBe(16_384);
+    expect(MAX_REQUESTED_CONTEXT_LENGTH).toBe(32_768);
   });
 
   it("is null when nothing recorded a window", () => {

@@ -9,6 +9,7 @@ import {
   parseChatCompletionsReply,
   parseChatCompletionsText,
 } from "./chat-completions.js";
+import { MAX_REQUESTED_CONTEXT_LENGTH } from "./prompt-budget.js";
 
 const MISSION = "Ship the marketplace";
 const TASK_MARKDOWN = `Todero task context:
@@ -400,7 +401,16 @@ describe("the window Todero sets for the model", () => {
       context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 131_072 },
       payloadTemplate: {},
     });
-    expect(body.options).toEqual({ num_ctx: 16_384 });
+    expect(body.options).toEqual({ num_ctx: MAX_REQUESTED_CONTEXT_LENGTH });
+  });
+
+  it("asks for the whole window of a model that holds 32k", () => {
+    const body = buildChatCompletionsBody({
+      config: OLLAMA,
+      context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 32_768 },
+      payloadTemplate: {},
+    });
+    expect(body.options).toEqual({ num_ctx: 32_768 });
   });
 
   it("sends no Ollama option to an endpoint that is not Ollama", () => {

@@ -11,6 +11,7 @@
  */
 import { companies, type Db } from "@todero/db";
 import { eq } from "drizzle-orm";
+import { MAX_REQUESTED_CONTEXT_LENGTH } from "../adapters/http/prompt-budget.js";
 import { detectLocalLlms } from "./local-llm-detect.js";
 
 /** The key inside `interactionResolverGovernance`. Mirrored in @todero/shared. */
@@ -116,10 +117,19 @@ export function readStoredContextLength(governance: unknown): number | null {
 }
 
 /**
- * Ask an Ollama runtime what window it is serving a model with. Ollama's
- * /api/ps lists the loaded models with their context_length; the model is
- * loaded right after a connection test, which is when this is asked. Any
- * other runtime, or a runtime that does not say, answers null.
+ * Ask an Ollama runtime how big a window a model can be given.
+ *
+ * Two endpoints answer, and they answer different questions. /api/ps reports
+ * the window the model is *loaded* at right now, which is Ollama's 4,096
+ * default unless someone set otherwise. /api/show reports what the model can
+ * *hold* — 32,768 for qwen2.5-coder:14b. Both were seen for the same model on
+ * the same machine minutes apart.
+ *
+ * The capability is the answer, so this takes the larger of the two and never
+ * lets a loaded-state snapshot lower it. /api/ps is still worth asking: when
+ * someone has deliberately loaded a model above its own reported maximum,
+ * that window is real and already paid for. Any other runtime, or a runtime
+ * that does not say, answers null.
  */
 export async function detectContextLength(
   baseUrl: string,
@@ -128,12 +138,18 @@ export async function detectContextLength(
 ): Promise<number | null> {
   const root = normalizeBaseUrl(baseUrl).replace(/\/v1(\/.*)?$/, "");
   if (!root) return null;
-  const loaded = await readLoadedContextLength(root, modelId, fetcher);
-  if (loaded) return loaded;
-  // /api/ps only lists models the runtime has in memory. A run that starts
-  // cold — every backfill for an agent hired before the window was recorded —
-  // finds nothing there, so ask the model itself what it was built with.
-  return readModelContextLength(root, modelId, fetcher);
+  const [loaded, capability] = await Promise.all([
+    readLoadedContextLength(root, modelId, fetcher),
+    readModelContextLength(root, modelId, fetcher),
+  ]);
+  return largerContextLength(loaded, capability);
+}
+
+/** The bigger of two readings, either of which may be nothing. */
+function largerContextLength(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
 }
 
 async function readLoadedContextLength(
@@ -157,8 +173,9 @@ async function readLoadedContextLength(
 
 /**
  * Ollama's /api/show reports the model's own architecture, where the window it
- * was built with is `<architecture>.context_length`. It answers whether or not
- * the model is loaded, which is what a backfill needs.
+ * can hold is `<architecture>.context_length`. It answers whether or not the
+ * model is loaded, and it answers about the model rather than about one load
+ * of it — which is why it, not /api/ps, is the one that must not be lost.
  */
 async function readModelContextLength(
   root: string,
@@ -192,7 +209,14 @@ function asContextLength(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
 }
 
-/** Remember the window for an organization; a no-op when unchanged or unknown. */
+/**
+ * Remember the window for an organization; a no-op when unknown, unchanged,
+ * or smaller than what is already recorded.
+ *
+ * Only ever upward. A reading can be an understatement — /api/ps answering
+ * about one load of the model is exactly that — and an understatement that
+ * overwrites a known capability pins the organization to it for good.
+ */
 export async function storeContextLength(db: Db, companyId: string, contextLength: number | null): Promise<void> {
   if (!contextLength) return;
   const rows = await db
@@ -202,7 +226,8 @@ export async function storeContextLength(db: Db, companyId: string, contextLengt
     .limit(1);
   if (rows.length === 0) return;
   const governance = asRecord(rows[0]?.governance);
-  if (readStoredContextLength(governance) === contextLength) return;
+  const stored = readStoredContextLength(governance);
+  if (stored !== null && stored >= contextLength) return;
   await db
     .update(companies)
     .set({
@@ -219,6 +244,12 @@ export async function storeContextLength(db: Db, companyId: string, contextLengt
  * — for an agent hired before that was kept, and for a hire whose test ran
  * before the organization existed — a fresh look at the runtime, remembered
  * for next time. Null when nothing can say; the caller must not invent one.
+ *
+ * A recorded window is not trusted forever. Anything below the ceiling may be
+ * an understatement written by an earlier, worse reading (every organization
+ * backfilled while the model was warm holds 4,096), so it is re-checked and
+ * the larger number wins. At the ceiling there is nothing left to gain, so
+ * the runtime is left alone.
  */
 export async function resolveContextLengthForRun(
   db: Db,
@@ -236,12 +267,13 @@ export async function resolveContextLengthForRun(
     .limit(1);
   if (rows.length === 0) return null;
   const stored = readStoredContextLength(rows[0]?.governance);
-  if (stored) return stored;
+  if (stored !== null && stored >= MAX_REQUESTED_CONTEXT_LENGTH) return stored;
   const baseUrl = typeof options.baseUrl === "string" ? options.baseUrl.trim() : "";
-  if (!baseUrl) return null;
+  if (!baseUrl) return stored;
   const detect = options.detect ?? ((url: string, model: string) => detectContextLength(url, model));
   const detected = await detect(baseUrl, typeof options.modelId === "string" ? options.modelId.trim() : "");
-  if (!detected) return null;
-  await storeContextLength(db, companyId, detected);
-  return detected;
+  const best = largerContextLength(stored, detected ?? null);
+  if (best === null) return null;
+  if (best !== stored) await storeContextLength(db, companyId, best);
+  return best;
 }
