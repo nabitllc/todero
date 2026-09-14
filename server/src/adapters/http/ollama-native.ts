@@ -12,6 +12,8 @@
  * changes: the request stays OpenAI-shaped and the runtime keeps deciding.
  * Everything here is a pure translation between the two shapes.
  */
+import { readPlanNativeFormat } from "./structured-plan.js";
+
 export function ollamaNativeChatUrl(url: string): string | null {
   const trimmed = typeof url === "string" ? url.trim() : "";
   if (!trimmed) return null;
@@ -28,7 +30,15 @@ export function buildOllamaNativeBody(input: {
   body: Record<string, unknown>;
   contextLength: number;
 }): Record<string, unknown> {
-  const { model, messages, temperature, max_tokens: maxTokens, options, ...rest } = input.body;
+  const {
+    model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+    options,
+    response_format: responseFormat,
+    ...rest
+  } = input.body;
   const nativeOptions: Record<string, unknown> = { ...asRecord(options) };
   if (typeof temperature === "number") nativeOptions.temperature = temperature;
   if (typeof maxTokens === "number") nativeOptions.num_predict = maxTokens;
@@ -37,11 +47,16 @@ export function buildOllamaNativeBody(input: {
   // native endpoint ignores what it does not know, the same as the other one.
   const passthrough = { ...rest };
   delete passthrough.stream;
+  // The same shape asked for two ways: the OpenAI-shaped request wraps the
+  // schema in `response_format`, this endpoint takes the bare schema in
+  // `format`. Translated here so only one place builds the request.
+  const nativeFormat = readPlanNativeFormat(responseFormat);
   return {
     ...passthrough,
     ...(model ? { model } : {}),
     messages: Array.isArray(messages) ? messages : [],
     stream: false,
+    ...(nativeFormat ? { format: nativeFormat } : {}),
     options: nativeOptions,
   };
 }

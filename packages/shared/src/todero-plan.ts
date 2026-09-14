@@ -262,7 +262,7 @@ function parsePlanInner(inner: string): ToderoPlan | null {
 }
 
 /** One task per feature, for a plan that named its features but no tasks. */
-function tasksFromFeatures(features: ToderoPlanFeature[]): ToderoPlanTask[] {
+export function tasksFromFeatures(features: ToderoPlanFeature[]): ToderoPlanTask[] {
   return features.slice(0, TODERO_PLAN_MAX_TASKS).map((feature, index) => ({
     id: `t${index + 1}`,
     title: feature.name,

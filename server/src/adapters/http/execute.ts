@@ -22,6 +22,7 @@ import {
   parseOllamaNativeFinishReason,
   parseOllamaNativeText,
 } from "./ollama-native.js";
+import { planResponseFormat, replyFromStructuredPlan, shouldAskForStructuredPlan } from "./structured-plan.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -40,8 +41,18 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     recordedContextLength && isOllamaChatCompletionsConfig(config as Record<string, unknown>)
       ? ollamaNativeChatUrl(url)
       : null;
+  // On the one turn that asks for a plan, and only against a runtime Todero
+  // knows can enforce it, the shape is asked for rather than described.
+  const structuredPlanAsked =
+    chatCompletions && shouldAskForStructuredPlan({ config: config as Record<string, unknown>, context });
   const openAiBody = chatCompletions
-    ? buildChatCompletionsBody({ config, context, payloadTemplate, agentName: agent.name })
+    ? buildChatCompletionsBody({
+        config,
+        context,
+        payloadTemplate,
+        agentName: agent.name,
+        ...(structuredPlanAsked ? { responseFormat: planResponseFormat() } : {}),
+      })
     : null;
   const requestUrl = nativeUrl ?? url;
   const readReplyText = nativeUrl ? parseOllamaNativeText : parseChatCompletionsText;
@@ -98,6 +109,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (!completion) {
       throw new Error("HTTP chat completions returned empty assistant text");
     }
+    // A plan the runtime shaped is rewritten into the reply the rest of Todero
+    // already reads: the words for the person, the canonical fenced block, the
+    // status line. A runtime that ignored the schema falls through untouched
+    // and the prose parser has it, exactly as before.
+    let structuredPlanUsed = false;
+    const asReplyText = (text: string): string => {
+      if (!structuredPlanAsked) return text;
+      const rewritten = replyFromStructuredPlan(text);
+      if (!rewritten) return text;
+      structuredPlanUsed = true;
+      return rewritten;
+    };
+    completion = asReplyText(completion);
     await ctx.onLog("stdout", completion.endsWith("\n") ? completion : `${completion}\n`);
     // The trailing status line is for Todero, not the user: it tells the
     // heartbeat whether to close the task or hand the turn back.
@@ -125,8 +149,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         const retried = readReplyText(retriedRaw);
         if (retried) {
           await ctx.onLog("stdout", `[todero] Empty reply; asked once more.\n${retried}\n`);
-          completion = retried;
-          reply = parseChatCompletionsReply(retried);
+          completion = asReplyText(retried);
+          reply = parseChatCompletionsReply(completion);
           finishReason = readFinishReason(retriedRaw);
         }
       }
@@ -142,6 +166,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // A plan block is for Todero too: it becomes the task's Plan document and
     // the approval card, and the person reads the words around it.
     const planned = parseToderoPlanBlock(reply.body);
+    if (structuredPlanAsked) {
+      await ctx.onLog(
+        "stdout",
+        structuredPlanUsed
+          ? "[todero] The plan came back in the shape Todero asked the runtime to hold it to.\n"
+          : "[todero] Todero asked the runtime to hold the reply to the plan's shape; it came back as prose and was read the usual way.\n",
+      );
+    }
     // Never post the bare status line as if it were the reply.
     const summary = (planned ? planned.body : reply.body) || CHAT_COMPLETIONS_NO_TEXT_FALLBACK;
     // The routing choice (server/src/todero/model-routing.ts) already landed
@@ -158,6 +190,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         toderoDisposition: reply.disposition,
         ...(chosenModel ? { toderoModel: chosenModel } : {}),
         ...(cutOff ? { toderoCutOff: true } : {}),
+        // Which path produced the plan, recorded on the run itself, so a
+        // person can tell whether the runtime enforced the shape or the
+        // model wrote it by hand.
+        ...(structuredPlanAsked ? { toderoStructuredPlan: structuredPlanUsed } : {}),
         ...(planned ? { toderoPlanBlock: formatToderoPlanBlock(planned.plan) } : {}),
       },
     };

@@ -360,6 +360,12 @@ export function buildChatCompletionsBody(input: {
   context: Record<string, unknown>;
   payloadTemplate: Record<string, unknown>;
   agentName?: string;
+  /**
+   * Ask the runtime to hold the reply to the plan's shape (structured-plan.ts).
+   * Off by default, and only ever on for the one turn that asks for a plan:
+   * a schema constrains the whole reply.
+   */
+  responseFormat?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   const configuredModel =
     asString(input.config.model, "") || asString(input.payloadTemplate.model, "");
@@ -383,6 +389,7 @@ export function buildChatCompletionsBody(input: {
     ...input.payloadTemplate,
     ...(model ? { model } : {}),
     ...(Object.keys(options).length > 0 ? { options } : {}),
+    ...(input.responseFormat ? { response_format: input.responseFormat } : {}),
     messages: buildChatCompletionsMessages(input.context, { agentName: input.agentName }),
   };
 }

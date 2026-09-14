@@ -473,3 +473,43 @@ instead of guessing.
   `server/src/adapters/http/chat-completions.ts`, `server/src/adapters/http/execute.ts`,
   `server/src/todero/available-models.ts`, `server/src/services/heartbeat.ts`,
   `packages/shared/src/skill-pack-utils.ts`.
+
+## ADR-017 — Where a runtime can enforce the plan's shape, Todero makes it, instead of asking
+
+- **Date:** 2026-09-14
+- **Status:** Accepted
+- **Context:** `TODERO_PLAN_BLOCK_INSTRUCTIONS` describes the fenced `todero-plan` block in words
+  and hopes the model writes one. Observed on this machine (company `abb1b283`, issue `d12f7298`):
+  `qwen2.5-coder:14b` on Ollama answered "Do you approve this plan?" fifteen times in four minutes
+  and never wrote a block, so `parseToderoPlanBlock` found nothing, the description never got the
+  pending marker, the app never offered Approve, and the task dead-ended. Two earlier organizations
+  the same day, same model, same prompts, wrote the block. Words are not a mechanism; a schema is.
+  ADR-016 gave the model a window big enough to still see the instructions. This makes the shape
+  something it cannot miss.
+- **Decision:** On the one turn where Todero itself asks for the plan — the corrective turn from
+  `buildMissingPlanRetryInstruction` — and only against Ollama, the request carries a JSON schema
+  for the plan (`TODERO_PLAN_JSON_SCHEMA`): `response_format: { type: "json_schema" }` on the
+  OpenAI-shaped endpoint, the bare schema in `format` on Ollama's own `/api/chat`. What comes back
+  is rewritten into the reply Todero already reads — the words for the person, the canonical fenced
+  block, the status line — so nothing downstream changes. Scope is deliberately narrow on two axes:
+  1. **Only that turn.** A schema constrains the whole reply, so a conversational turn carrying one
+     would answer the person in JSON. The signal is Todero's own turn instruction naming the fence,
+     never the task description, which carries the template for the life of the conversation.
+  2. **Only Ollama.** It is the endpoint Todero can be sure reads a schema. Everywhere else the
+     request goes out exactly as it does today.
+  The prose path stays the fallback: if the runtime ignores the schema or answers with a fenced
+  block anyway, `parseToderoPlanBlock` reads it as before. The run records which path produced the
+  plan — `resultJson.toderoStructuredPlan`, plus a line in the run log.
+- **Consequences:**
+  - The loop this branch is about now has an end: a model that will not write a block is made to.
+    Measured against Ollama 0.34.0 with `qwen2.5-coder:14b`, both endpoints honoured the schema and
+    returned a usable plan.
+  - The two organizations that already worked are untouched: they never reach the corrective turn,
+    and an ordinary turn carries no schema.
+  - The plan shape now has two statements — the prose template and the schema. They must be changed
+    together; both live next to each other in `packages/shared/src/todero-plan*.ts`.
+  - Any later endpoint that advertises `response_format` support can be added to the one predicate
+    in `structured-plan.ts` without touching anything else.
+- **Source:** `packages/shared/src/todero-plan-schema.ts`,
+  `server/src/adapters/http/structured-plan.ts`, `server/src/adapters/http/execute.ts`,
+  `server/src/adapters/http/chat-completions.ts`, `server/src/adapters/http/ollama-native.ts`.

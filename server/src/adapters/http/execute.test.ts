@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@todero/shared";
+import { TODERO_PLAN_JSON_SCHEMA, TODERO_PLAN_JSON_SCHEMA_NAME } from "@todero/shared/todero-plan-schema";
+import { buildMissingPlanRetryInstruction } from "../../todero/conversation-outcome.js";
 import {
   buildHeartbeatRunIssueComment,
   mergeHeartbeatRunResultJson,
@@ -349,5 +351,119 @@ describe("the window the request itself asks Ollama for", () => {
     await execute(args);
 
     expect(calls).toEqual(["http://127.0.0.1:11434/v1/chat/completions"]);
+  });
+});
+
+describe("asking the runtime for the plan in a shape it cannot get wrong", () => {
+  function planRetryArgs() {
+    const args = localLlmExecuteArgs();
+    args.config.url = "http://127.0.0.1:11434/v1/chat/completions";
+    args.context = { ...args.context, toderoTurnInstruction: buildMissingPlanRetryInstruction() };
+    return args;
+  }
+
+  const PLAN_JSON = JSON.stringify({
+    message: "Here is the plan.",
+    goal: "Seat neighbors at monthly dinners",
+    features: [{ name: "Sign-ups", why: "People need a way in", done_when: "A form is live" }],
+    tasks: [{ title: "Draft the sign-up spec", feature: "Sign-ups", output: "A one-page spec", after: "" }],
+  });
+
+  it("puts the schema on the OpenAI-shaped request and reads the plan back out", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return chatCompletionsResponse(PLAN_JSON);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(planRetryArgs());
+
+    expect(calls[0]!.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: TODERO_PLAN_JSON_SCHEMA_NAME, schema: TODERO_PLAN_JSON_SCHEMA },
+    });
+    expect(result.summary).toBe("Here is the plan.");
+    const resultJson = result.resultJson as Record<string, unknown>;
+    expect(resultJson.toderoDisposition).toBe("waiting");
+    expect(resultJson.toderoStructuredPlan).toBe(true);
+    expect(String(resultJson.toderoPlanBlock)).toContain("goal: Seat neighbors at monthly dinners");
+    expect(String(resultJson.toderoPlanBlock)).toContain("- title: Draft the sign-up spec");
+  });
+
+  it("asks Ollama's own endpoint with `format` when a window is recorded", async () => {
+    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(JSON.stringify({ message: { role: "assistant", content: PLAN_JSON } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = planRetryArgs();
+    args.context = { ...args.context, toderoContextLength: 16_384 };
+    const result = await execute(args);
+
+    expect(calls[0]!.url).toBe("http://127.0.0.1:11434/api/chat");
+    expect(calls[0]!.body.format).toEqual(TODERO_PLAN_JSON_SCHEMA);
+    expect(calls[0]!.body.response_format).toBeUndefined();
+    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe(true);
+  });
+
+  it("still takes a fenced plan when the runtime ignored the schema", async () => {
+    const reply = [
+      "Here is my proposal.",
+      "",
+      "```todero-plan",
+      "goal: Seat neighbors at dinners",
+      "tasks:",
+      "  - title: Draft the sign-up spec",
+      "```",
+      "",
+      "STATUS: waiting",
+    ].join("\n");
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(reply)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe("Here is my proposal.");
+    const resultJson = result.resultJson as Record<string, unknown>;
+    expect(resultJson.toderoStructuredPlan).toBe(false);
+    expect(String(resultJson.toderoPlanBlock)).toContain("goal: Seat neighbors at dinners");
+  });
+
+  it("asks for nothing on an ordinary turn, so a working conversation is untouched", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return chatCompletionsResponse(LOCAL_LLM_COMPLETION);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = localLlmExecuteArgs();
+    args.config.url = "http://127.0.0.1:11434/v1/chat/completions";
+    const result = await execute(args);
+
+    expect(calls[0]!.response_format).toBeUndefined();
+    expect(result.resultJson).not.toHaveProperty("toderoStructuredPlan");
+  });
+
+  it("asks for nothing when the endpoint is not one Todero knows can enforce it", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return chatCompletionsResponse("Here is the plan.\nSTATUS: waiting");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const args = planRetryArgs();
+    args.config.url = "https://api.example.com/v1/chat/completions";
+    args.config.localLlm = { runtimeId: "vllm", modelId: "local-model" };
+    const result = await execute(args);
+
+    expect(calls[0]!.response_format).toBeUndefined();
+    expect(result.resultJson).not.toHaveProperty("toderoStructuredPlan");
   });
 });
