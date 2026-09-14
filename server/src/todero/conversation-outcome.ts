@@ -234,20 +234,51 @@ export function hasGivenUpOnPlan(description: string | null | undefined): boolea
 }
 
 const PLAN_WORD_RE = /\bplans?\b/i;
-const HANDS_OVER_RE = /\b(?:approve[sd]?|approving|approval|confirm|sign[-\s]?off|signs?\s+off|green[-\s]?light)\b/i;
+/**
+ * The ways a model actually hands the turn over: "do you approve", "please
+ * confirm", "shall I proceed", "let me know if this works", "if you're happy
+ * with it, say go". Deliberately not the bare words "accept" or "review" —
+ * those belong to ordinary hand-ins.
+ */
+const HANDS_OVER_RES: RegExp[] = [
+  /\b(?:approve[sd]?|approving|approval)\b/i,
+  /\bconfirm(?:s|ed|ation)?\b/i,
+  /\bsign[-\s]?off\b|\bsigns?\s+off\b/i,
+  /\bgreen[-\s]?light\b|\bgo[-\s]?ahead\b/i,
+  /\bshall\s+i\b/i,
+  /\b(?:should|can|may)\s+i\s+(?:proceed|start|begin|continue|get\s+going|kick\s+off)\b/i,
+  /\bhappy\s+with\b|\bokay?\s+with\b/i,
+  /\bsay\s+go\b|\bgive\s+(?:me\s+)?the\s+(?:go|green)\b/i,
+  /\bsounds?\s+good\b|\blooks?\s+good\b/i,
+  /\blet\s+me\s+know\s+(?:if|whether)\s+(?:this|that|it|these|they|the\s+plan|you(?:'re|\s+are)?\s*(?:happy|ok|okay|good))\b/i,
+];
 const PLAN_FENCE_ASKED_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*todero-plan\b/i;
+/** How much of the tail of a reply counts as "the closing lines". */
+const CLOSING_LINES = 8;
+
+function handsTheTurnOver(text: string): boolean {
+  return HANDS_OVER_RES.some((re) => re.test(text));
+}
 
 /**
- * Does the reply hand the turn over on the strength of a plan? One sentence
- * has to both name a plan and ask for it to be approved — "Do you approve
- * this plan?". A hand-in that says "please accept the config", or a line that
- * merely mentions a plan, is an ordinary reply and never matches.
+ * Does the reply hand the turn over on the strength of a plan? A plan has to
+ * be named and the turn handed over close together — in one paragraph, or
+ * across the closing lines of the reply, which is where a model writes "Here
+ * is the plan:", lists it, and signs off with "Please confirm and I'll get
+ * started." A hand-in that says "please accept the config", a line that
+ * merely mentions a plan, and a sign-off that only invites questions are
+ * ordinary replies and never match.
  */
 export function asksToApproveAPlan(reply: string): boolean {
-  return reply
-    .replace(/\r\n?/g, "\n")
-    .split(/(?<=[.!?:])\s+|\n+/)
-    .some((sentence) => PLAN_WORD_RE.test(sentence) && HANDS_OVER_RE.test(sentence));
+  const text = reply.replace(/\r\n?/g, "\n");
+  const paragraphs = text.split(/\n[ \t]*\n+/);
+  if (paragraphs.some((para) => PLAN_WORD_RE.test(para) && handsTheTurnOver(para))) return true;
+  const closing = text
+    .split("\n")
+    .filter((line) => line.trim())
+    .slice(-CLOSING_LINES)
+    .join("\n");
+  return PLAN_WORD_RE.test(closing) && handsTheTurnOver(closing);
 }
 
 /** The task was told to write a plan in the one shape Todero can read. */
@@ -286,11 +317,27 @@ export function buildMissingPlanGaveUpComment(agentName: string | null): string 
   ].join("\n");
 }
 
+/** The one thing the person reads when the agent could not even be restarted. */
+export function buildMissingPlanStalledComment(agentName: string | null): string {
+  const who = agentName?.trim() || "This agent";
+  return [
+    `${who} asked you to approve a plan and then did not write one down, so there is nothing here for you to approve. Todero tried to start it again to have another go and could not.`,
+    "",
+    "Tell it in your own words what the first few pieces of work should be and it will pick it up from there — it will not ask you to approve a plan again.",
+  ].join("\n");
+}
+
+export type MissingPlanHandBack = { description: string; comment: string };
+
 export type MissingPlanRecovery =
-  /** Ask the model once more, in the same task, with the shape spelled out. */
-  | { kind: "retry"; description: string; instruction: string }
+  /**
+   * Ask the model once more, in the same task, with the shape spelled out.
+   * `fallback` is what to write instead if the agent cannot be brought back
+   * at all: the task must never be left sitting with nobody told.
+   */
+  | { kind: "retry"; description: string; instruction: string; fallback: MissingPlanHandBack }
   /** Give up: the task goes to the person and the plan step is closed. */
-  | { kind: "hand-back"; description: string; comment: string };
+  | ({ kind: "hand-back" } & MissingPlanHandBack);
 
 /**
  * What to do about a conversational reply that claimed a plan and wrote none.
@@ -318,18 +365,25 @@ export function planMissingPlanRecovery(input: {
 
   const tries = readPlanTries(input.issue.description);
   const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false);
+  // Whatever happens, the plan step is over once this description is written:
+  // the count is past the last try, so the agent is never driven into the
+  // same ask again.
+  const handBack: MissingPlanHandBack = {
+    description: descriptionWithPlanTries(descriptionWithWaitingMarker(base, true), PLAN_MAX_TRIES + 1),
+    comment: buildMissingPlanGaveUpComment(input.agentName ?? null),
+  };
   if (tries < PLAN_MAX_TRIES) {
     return {
       kind: "retry",
       description: descriptionWithPlanTries(descriptionWithWaitingMarker(base, false), tries + 1),
       instruction: buildMissingPlanRetryInstruction(),
+      fallback: {
+        description: handBack.description,
+        comment: buildMissingPlanStalledComment(input.agentName ?? null),
+      },
     };
   }
-  return {
-    kind: "hand-back",
-    description: descriptionWithPlanTries(descriptionWithWaitingMarker(base, true), tries + 1),
-    comment: buildMissingPlanGaveUpComment(input.agentName ?? null),
-  };
+  return { kind: "hand-back", ...handBack };
 }
 
 export type MissingPlanRecoveryDeps = {
@@ -349,7 +403,18 @@ export async function applyMissingPlanRecovery(
   const { recovery } = input;
   if (recovery.kind === "retry") {
     await deps.updateIssue(input.issueId, { status: "todo", description: recovery.description });
-    await deps.wakeAgent({ issueId: input.issueId, agentId: input.agentId });
+    try {
+      await deps.wakeAgent({ issueId: input.issueId, agentId: input.agentId });
+    } catch (err) {
+      // The task is sitting in todo with nobody on the way to it. Put it in
+      // front of the person rather than leave it there.
+      deps.log(
+        `[todero] It could not be started again to rewrite the plan: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      await deps.updateIssue(input.issueId, { status: "blocked", description: recovery.fallback.description });
+      await deps.addComment(input.issueId, recovery.fallback.comment);
+      return "hand-back";
+    }
     deps.log("[todero] It asked to have a plan approved but wrote none; asking it once more.\n");
     return "retry";
   }

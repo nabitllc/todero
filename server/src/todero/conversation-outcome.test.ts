@@ -271,6 +271,35 @@ describe("a reply that asks to approve a plan that is not there", () => {
     // A wrap-up or manager turn Todero steered itself.
     expect(recovery({ steeredTurn: true })).toBeNull();
   });
+
+  it("catches the ways a model really writes this", () => {
+    const asks = [
+      "Here's the plan above. Please confirm and I'll get started.",
+      "Please review the plan above and let me know if it works for you.",
+      "Shall I proceed with this plan?",
+      "If you're happy with the plan, say go.",
+      "Here is the plan: do you approve?",
+      "Thanks! Here is the plan:\n\n1. Research\n2. Build\n\nPlease confirm and I will get started.",
+      "Do you approve this plan?",
+      "I've written the plan out above.\n\nLet me know if this works for you and I'll begin.",
+    ];
+    for (const reply of asks) {
+      expect(recovery({ reply })?.kind, reply).toBe("retry");
+    }
+  });
+
+  it("leaves ordinary replies alone, however they are worded", () => {
+    const ordinary = [
+      "Done. Please accept the config as handed in.",
+      "The plan is going well so far. What colour do you want?",
+      "I've pushed the change. Let me know if you have any questions.",
+      "Please confirm the address before I send the invoice.",
+      "The deployment plan document is in the repo already.",
+    ];
+    for (const reply of ordinary) {
+      expect(recovery({ reply }), reply).toBeNull();
+    }
+  });
 });
 
 describe("applyMissingPlanRecovery", () => {
@@ -305,7 +334,12 @@ describe("applyMissingPlanRecovery", () => {
     await applyMissingPlanRecovery(d, {
       issueId: "issue-1",
       agentId: "agent-1",
-      recovery: { kind: "retry", description: "body", instruction: "write it again" },
+      recovery: {
+        kind: "retry",
+        description: "body",
+        instruction: "write it again",
+        fallback: { description: "stalled body", comment: "Nova could not be started again." },
+      },
     });
     expect(recorded.updates).toEqual([{ issueId: "issue-1", patch: { status: "todo", description: "body" } }]);
     expect(recorded.wakes).toEqual([{ issueId: "issue-1", agentId: "agent-1" }]);
@@ -322,5 +356,29 @@ describe("applyMissingPlanRecovery", () => {
     expect(recorded.updates).toEqual([{ issueId: "issue-1", patch: { status: "blocked", description: "body" } }]);
     expect(recorded.comments).toEqual([{ issueId: "issue-1", body: "Nova could not write the plan." }]);
     expect(recorded.wakes).toHaveLength(0);
+  });
+
+  it("puts the task in front of the person when the agent cannot be brought back", async () => {
+    const { deps: d, recorded } = deps();
+    d.wakeAgent = async () => {
+      throw new Error("the queue is down");
+    };
+    const kind = await applyMissingPlanRecovery(d, {
+      issueId: "issue-1",
+      agentId: "agent-1",
+      recovery: {
+        kind: "retry",
+        description: "body",
+        instruction: "write it again",
+        fallback: { description: "stalled body", comment: "Nova could not be started again." },
+      },
+    });
+    expect(kind).toBe("hand-back");
+    // Never left sitting in todo with nobody told.
+    expect(recorded.updates.at(-1)).toEqual({
+      issueId: "issue-1",
+      patch: { status: "blocked", description: "stalled body" },
+    });
+    expect(recorded.comments).toEqual([{ issueId: "issue-1", body: "Nova could not be started again." }]);
   });
 });

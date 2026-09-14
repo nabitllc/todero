@@ -67,6 +67,7 @@ const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;
 const JUDGE_ROUNDS_COMMENT_RE = /<!--\s*todero-judge-rounds:\s*\d+\s*-->\s*\n?/gi;
 // How many times Todero has had to ask for the plan again. Its own tally.
 const PLAN_TRIES_COMMENT_RE = /<!--\s*todero-plan-tries:\s*\d+\s*-->\s*\n?/gi;
+const PLAN_TRIES_VALUE_RE = /<!--\s*todero-plan-tries:\s*(\d+)\s*-->/i;
 // Manager mode keeps three more notes to itself in the description: who handed
 // the task out, that it is parked on the manager, and that a rewritten brief is
 // filed against it. None of them is anybody's reading.
@@ -105,6 +106,12 @@ export type ParsedWorkItemDescription = {
   reviewPending: boolean;
   /** The agent proposed a plan; the person approves or asks for changes. */
   planPending: boolean;
+  /**
+   * How many times Todero has had to ask for the plan again. Its own tally,
+   * never shown, and carried back out on save so an edit here does not wipe
+   * it and let the same loop start over.
+   */
+  planTries: number;
   body: string;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
@@ -147,6 +154,7 @@ export function parseWorkItemDescription(
   const waitingOnYou = WAITING_COMMENT_RE.test(raw);
   const reviewPending = REVIEW_COMMENT_RE.test(raw);
   const planPending = PLAN_COMMENT_RE.test(raw);
+  const planTries = Number.parseInt(raw.match(PLAN_TRIES_VALUE_RE)?.[1] ?? "0", 10) || 0;
   const stripped = stripWorkItemMeta(raw);
   const lines = stripped.split(/\r?\n/);
 
@@ -192,6 +200,7 @@ export function parseWorkItemDescription(
     waitingOnYou,
     reviewPending,
     planPending,
+    planTries,
     body: bodyLines.join("\n").replace(/^\n+/, "").replace(/\n+$/, ""),
     sections,
     checklist,
@@ -203,6 +212,7 @@ export function serializeWorkItemDescription(args: {
   waitingOnYou: boolean;
   reviewPending?: boolean;
   planPending?: boolean;
+  planTries?: number;
   body: string;
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
@@ -211,6 +221,8 @@ export function serializeWorkItemDescription(args: {
   if (args.waitingOnYou) parts.push("<!-- todero-blocked-by: waiting-on-you -->");
   if (args.reviewPending) parts.push("<!-- todero-review: pending -->");
   if (args.planPending) parts.push("<!-- todero-plan: pending -->");
+  const planTries = Math.max(0, Math.trunc(args.planTries ?? 0));
+  if (planTries > 0) parts.push(`<!-- todero-plan-tries: ${planTries} -->`);
   if (args.body.trim()) parts.push(args.body.trim());
   for (const item of args.checklist) {
     parts.push(`- [${item.done ? "x" : " "}] ${item.text}`);

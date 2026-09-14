@@ -14988,7 +14988,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // A plan that was claimed and never written (conversation-outcome.ts).
       // Set after the routing kind so a corrective turn is still routed as the
       // planning turn it is.
-      if (hasGivenUpOnPlan(issueRef.description)) {
+      if (hasGivenUpOnPlan(issueRef.description) && !readNonEmptyString(context.toderoTurnInstruction)) {
+        // Only when Todero has nothing else to say this turn: a wrap-up or a
+        // manager assignment set just above is the more specific instruction
+        // and must not be thrown away.
         context.toderoTurnInstruction = buildStopAskingForPlanInstruction();
       } else if (conversationWakeReason === MISSING_PLAN_RETRY_WAKE_REASON) {
         context.toderoTurnInstruction = buildMissingPlanRetryInstruction();
@@ -17521,7 +17524,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                         source: "issue.plan_not_written",
                         wakeReason: MISSING_PLAN_RETRY_WAKE_REASON,
                       },
-                    }).catch(() => null),
+                      // No .catch here: if the agent cannot be brought back,
+                      // applyMissingPlanRecovery puts the task in front of the
+                      // person instead of leaving it in todo with nobody told.
+                    }),
                   log: (message) => {
                     void onLog("stdout", message);
                   },
