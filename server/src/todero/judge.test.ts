@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ToderoPlan } from "@todero/shared";
 import {
+  ACCEPTANCE_CHECK_LIMIT,
+  buildAcceptanceChecks,
   buildJudgeComment,
   buildJudgeReviewPrompt,
   buildJudgeSystemPrompt,
@@ -29,7 +31,8 @@ const plan: ToderoPlan = {
 describe("parseJudgeVerdict", () => {
   it("reads the plain shape the reviewer is asked for", () => {
     const parsed = parseJudgeVerdict("VERDICT: pass\nIt covers every step a beginner needs.");
-    expect(parsed).toEqual({ verdict: "pass", note: "It covers every step a beginner needs." });
+    // No checks were asked for, so there are none to report either way.
+    expect(parsed).toEqual({ verdict: "pass", note: "It covers every step a beginner needs.", checks: null });
   });
 
   it("reads a fail with the paragraph above the line", () => {
@@ -216,5 +219,141 @@ describe("buildJudgeSystemPrompt", () => {
       skillText: "   ",
     });
     expect(prompt2).not.toContain("   ");
+  });
+});
+
+describe("buildAcceptanceChecks", () => {
+  it("uses the task's own Acceptance Criteria list when the description has one", () => {
+    const checks = buildAcceptanceChecks({
+      doneWhen: "A reader can start in ten minutes.",
+      expectedOutput: "A one-page draft",
+      description: [
+        "<!-- todero-type: Task -->",
+        "Goal: A one-page guide.",
+        "",
+        "Acceptance Criteria",
+        "- The guide fits on one page",
+        "- It names three cards to buy first",
+        "",
+        "Testing Strategies",
+        "- Read it out loud",
+      ].join("\n"),
+    });
+    expect(checks).toEqual(["The guide fits on one page", "It names three cards to buy first"]);
+  });
+
+  it("falls back to the done-when and hand-in lines when no list was written", () => {
+    const checks = buildAcceptanceChecks({
+      doneWhen: "A reader can start in ten minutes.",
+      expectedOutput: "A one-page draft",
+      description: "Goal: A one-page guide.",
+    });
+    expect(checks).toEqual([
+      "A reader can start in ten minutes.",
+      "The work handed in is: A one-page draft",
+    ]);
+  });
+
+  it("drops blanks and duplicates, and caps the list so a small model is not buried", () => {
+    const many = ["Acceptance Criteria", ...Array.from({ length: 20 }, (_, i) => `- Item ${i + 1}`)].join("\n");
+    const checks = buildAcceptanceChecks({ doneWhen: "", expectedOutput: "", description: many });
+    expect(checks).toHaveLength(ACCEPTANCE_CHECK_LIMIT);
+    expect(checks[0]).toBe("Item 1");
+
+    const dupes = ["Acceptance Criteria", "- Same thing", "-   ", "- Same thing"].join("\n");
+    expect(buildAcceptanceChecks({ doneWhen: "", expectedOutput: "", description: dupes })).toEqual(["Same thing"]);
+  });
+
+  it("returns nothing to check when there is nothing written down", () => {
+    expect(buildAcceptanceChecks({ doneWhen: "", expectedOutput: "", description: "" })).toEqual([]);
+  });
+});
+
+describe("the review prompt, with checks", () => {
+  it("numbers the checks and asks for one answer each", () => {
+    const prompt = buildJudgeReviewPrompt({
+      taskTitle: "Draft the starter guide",
+      deliverable: "Here is the guide.",
+      checks: ["The guide fits on one page", "It names three cards to buy first"],
+    });
+    expect(prompt).toContain("1. The guide fits on one page");
+    expect(prompt).toContain("2. It names three cards to buy first");
+    expect(prompt).toContain("1: met");
+    expect(prompt).toContain("VERDICT: pass");
+  });
+
+  it("is unchanged when there is nothing to check against", () => {
+    const prompt = buildJudgeReviewPrompt({
+      taskTitle: "Draft the starter guide",
+      deliverable: "Here is the guide.",
+      checks: [],
+    });
+    expect(prompt).not.toContain("1: met");
+  });
+});
+
+describe("parseJudgeVerdict, reading the per-check answers", () => {
+  it("reads one answer per check, in order", () => {
+    const parsed = parseJudgeVerdict(
+      ["1: met", "2: not met", "VERDICT: fail", "The second card list is missing."].join("\n"),
+      2,
+    );
+    expect(parsed?.verdict).toBe("fail");
+    expect(parsed?.checks).toEqual([true, false]);
+    // The answer lines are bookkeeping, not prose the person should read.
+    expect(parsed?.note).toBe("The second card list is missing.");
+  });
+
+  it("reports nothing rather than guessing when the reviewer skipped the answers", () => {
+    const parsed = parseJudgeVerdict(["VERDICT: pass", "Looks fine to me."].join("\n"), 2);
+    expect(parsed?.verdict).toBe("pass");
+    expect(parsed?.checks).toBeNull();
+  });
+
+  it("reports nothing when the reviewer answered a different number of checks", () => {
+    const parsed = parseJudgeVerdict(["1: met", "VERDICT: pass", "Fine."].join("\n"), 3);
+    expect(parsed?.checks).toBeNull();
+  });
+});
+
+describe("buildJudgeComment, showing what was checked", () => {
+  const checks = ["The guide fits on one page", "It names three cards to buy first"];
+
+  it("lists each check and how it went", () => {
+    const comment = buildJudgeComment({
+      verdict: "fail",
+      note: "The card list is missing.",
+      outcome: { kind: "revise", round: 1 },
+      checks,
+      checkResults: [true, false],
+    });
+    expect(comment).toContain("Checked 2 things. 1 met, 1 not met.");
+    expect(comment).toContain("- met — The guide fits on one page");
+    expect(comment).toContain("- not met — It names three cards to buy first");
+    expect(comment).toContain("The card list is missing.");
+  });
+
+  it("says so plainly when the reviewer did not answer the checks", () => {
+    const comment = buildJudgeComment({
+      verdict: "pass",
+      note: "Looks fine.",
+      outcome: { kind: "handoff", because: "passed" },
+      checks,
+      checkResults: null,
+    });
+    expect(comment).toContain("did not say which of the 2 checks it made");
+  });
+
+  it("keeps today's wording when the task had nothing written to check", () => {
+    const comment = buildJudgeComment({
+      verdict: "pass",
+      note: "Looks fine.",
+      outcome: { kind: "accept" },
+      checks: [],
+      checkResults: null,
+    });
+    expect(comment).toContain("I reviewed this and it does what the task asked");
+    expect(comment).not.toContain("Checked");
+    expect(comment).not.toContain("did not say which");
   });
 });

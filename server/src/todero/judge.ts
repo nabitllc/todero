@@ -78,21 +78,112 @@ function clipNote(note: string): string {
  * sentence in the middle of the reply. Returns null when no verdict can be
  * read at all, which the caller treats as "no review happened".
  */
-export function parseJudgeVerdict(text: string): { verdict: JudgeVerdict; note: string } | null {
+/**
+ * How many checks the reviewer is asked to answer. A small model asked about
+ * twenty things answers none of them well, so the list is capped and the
+ * first items win.
+ */
+export const ACCEPTANCE_CHECK_LIMIT = 8;
+
+const ACCEPTANCE_HEADING_RE = /^\s*(?:#{1,6}\s+|\*\*)?acceptance criteria(?:\*\*)?\s*:?\s*$/i;
+const BULLET_RE = /^\s*[-*]\s+(.*)$/;
+
+/**
+ * What this task has to be true for. A task that wrote its own Acceptance
+ * Criteria list is checked against that list; a task created from a plan has
+ * no list, so the feature's done-when line and the task's hand-in line stand
+ * in for one. Returns an empty list when nothing was written down anywhere,
+ * which the caller reports rather than papering over.
+ */
+export function buildAcceptanceChecks(input: {
+  doneWhen?: string | null;
+  expectedOutput?: string | null;
+  description?: string | null;
+}): string[] {
+  const written = readAcceptanceCriteriaSection(input.description);
+  const source = written.length > 0
+    ? written
+    : [
+        (input.doneWhen ?? "").trim(),
+        (input.expectedOutput ?? "").trim() ? `The work handed in is: ${(input.expectedOutput ?? "").trim()}` : "",
+      ];
+  const seen = new Set<string>();
+  const checks: string[] = [];
+  for (const raw of source) {
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    const key = text.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    checks.push(text);
+    if (checks.length >= ACCEPTANCE_CHECK_LIMIT) break;
+  }
+  return checks;
+}
+
+/** The bullets under an "Acceptance Criteria" heading, if the description has one. */
+function readAcceptanceCriteriaSection(description: string | null | undefined): string[] {
+  const lines = (description ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const start = lines.findIndex((line) => ACCEPTANCE_HEADING_RE.test(line));
+  if (start < 0) return [];
+  const items: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (!line.trim()) continue;
+    const bullet = line.match(BULLET_RE);
+    // The first line that is not a bullet ends the section, which is how the
+    // next heading stops it without needing to know every heading there is.
+    if (!bullet) break;
+    items.push(bullet[1]!);
+  }
+  return items;
+}
+
+const CHECK_ANSWER_RE = /^\s*\**\s*(\d+)\s*\**\s*[:.)\-]\s*\**\s*(met|not met|unmet|pass|passed|fail|failed|yes|no)\s*\**\s*\.?\s*$/i;
+const CHECK_MET_WORDS = new Set(["met", "pass", "passed", "yes"]);
+
+/** One answer per check, in order, or null when the reviewer did not answer them all. */
+function readCheckAnswers(lines: string[], expected: number): boolean[] | null {
+  if (expected <= 0) return null;
+  const byIndex = new Map<number, boolean>();
+  for (const line of lines) {
+    const match = line.match(CHECK_ANSWER_RE);
+    if (!match) continue;
+    const index = Number.parseInt(match[1]!, 10);
+    if (!Number.isFinite(index) || index < 1 || index > expected) continue;
+    if (byIndex.has(index)) continue;
+    byIndex.set(index, CHECK_MET_WORDS.has(match[2]!.trim().toLowerCase()));
+  }
+  // Partial answers are worse than none: they read as a full review that
+  // happens to be short. Report nothing and let the comment say so.
+  if (byIndex.size !== expected) return null;
+  return Array.from({ length: expected }, (_, i) => byIndex.get(i + 1)!);
+}
+
+function isCheckAnswerLine(line: string): boolean {
+  return CHECK_ANSWER_RE.test(line);
+}
+
+export function parseJudgeVerdict(
+  text: string,
+  expectedChecks = 0,
+): { verdict: JudgeVerdict; note: string; checks: boolean[] | null } | null {
   const lines = (text ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const checks = readCheckAnswers(lines, expectedChecks);
+  // The per-check answers are bookkeeping. They are rendered as their own
+  // list, so they come out of the paragraph a person reads.
+  const prose = (keep: string[]) => clipNote(keep.filter((line) => !isCheckAnswerLine(line)).join("\n"));
   for (let i = 0; i < lines.length; i += 1) {
     const match = lines[i]!.match(VERDICT_LINE_RE);
     const verdict = match ? readVerdictWord(match[1]!) : null;
     if (!verdict) continue;
-    const note = clipNote([...lines.slice(0, i), ...lines.slice(i + 1)].join("\n"));
-    return { verdict, note };
+    return { verdict, note: prose([...lines.slice(0, i), ...lines.slice(i + 1)]), checks };
   }
   const inline = (text ?? "").match(VERDICT_INLINE_RE);
   if (inline) {
     const verdict = readVerdictWord(inline[1]!);
     if (verdict) {
-      const note = clipNote((text ?? "").replace(VERDICT_INLINE_RE, "").trim());
-      return { verdict, note };
+      const stripped = (text ?? "").replace(VERDICT_INLINE_RE, "").replace(/\r\n?/g, "\n").split("\n");
+      return { verdict, note: prose(stripped), checks };
     }
   }
   return null;
@@ -157,6 +248,8 @@ export function buildJudgeReviewPrompt(input: {
   taskTitle: string;
   expectedOutput?: string | null;
   deliverable: string;
+  /** What this task has to be true for, from `buildAcceptanceChecks`. */
+  checks?: string[];
 }): string {
   const parts: string[] = [
     "A teammate has finished a task and handed in the work below. Decide whether it is good enough to show the person who asked for it.",
@@ -167,6 +260,11 @@ export function buildJudgeReviewPrompt(input: {
   if (input.doneWhen?.trim()) parts.push(`Done when: ${input.doneWhen.trim()}`);
   parts.push(`Task: ${input.taskTitle.trim()}`);
   if (input.expectedOutput?.trim()) parts.push(`Was asked to hand in: ${input.expectedOutput.trim()}`);
+  const checks = (input.checks ?? []).filter((check) => check.trim());
+  if (checks.length > 0) {
+    parts.push("", "It has to be true that:");
+    checks.forEach((check, index) => parts.push(`${index + 1}. ${check.trim()}`));
+  }
   parts.push(
     "",
     "What was handed in:",
@@ -177,6 +275,13 @@ export function buildJudgeReviewPrompt(input: {
     "Judge only what is above. Pass it when it does what the task asked and meets the done-when line, even if it could be longer or prettier. Fail it only when something the task asked for is missing or wrong.",
     "",
     "Answer in exactly this shape and nothing else:",
+  );
+  if (checks.length > 0) {
+    // One line per check, before the verdict, so a person can see which ones
+    // were looked at instead of taking the reviewer's word for it.
+    checks.forEach((_, index) => parts.push(`${index + 1}: ${index === 0 ? "met" : "not met"}`));
+  }
+  parts.push(
     `${JUDGE_VERDICT_SHAPE}`,
     "One short paragraph: why. If it fails, name exactly what to change.",
   );
@@ -214,17 +319,47 @@ export function readAutoAcceptWhenJudgePasses(governance: unknown): boolean {
   return (governance as Record<string, unknown>).autoAcceptWhenJudgePasses === true;
 }
 
-/** The comment the reviewer posts, in the reviewer's own voice. */
-export function buildJudgeComment(input: { verdict: JudgeVerdict; note: string; outcome: JudgeOutcome }): string {
+/**
+ * The comment the reviewer posts, in the reviewer's own voice.
+ *
+ * When the task had things written down to check, the comment says which ones
+ * were met and which were not. When the reviewer skipped the answers it says
+ * that too, in as many words: a review nobody can see into is the one thing
+ * this comment must not look like.
+ */
+export function buildJudgeComment(input: {
+  verdict: JudgeVerdict;
+  note: string;
+  outcome: JudgeOutcome;
+  checks?: string[];
+  checkResults?: boolean[] | null;
+}): string {
   const note = input.note.trim();
+  const checks = (input.checks ?? []).filter((check) => check.trim());
+  const results = input.checkResults ?? null;
+  const body: string[] = [];
+  if (checks.length > 0 && results && results.length === checks.length) {
+    const met = results.filter(Boolean).length;
+    body.push(
+      [
+        `Checked ${checks.length} thing${checks.length === 1 ? "" : "s"}. ${met} met, ${checks.length - met} not met.`,
+        "",
+        ...checks.map((check, index) => `- ${results[index] ? "met" : "not met"} — ${check}`),
+      ].join("\n"),
+    );
+  } else if (checks.length > 0) {
+    body.push(`It did not say which of the ${checks.length} checks it made, so nobody can see what was looked at.`);
+  }
+  if (note) body.push(note);
+  const rest = body.join("\n\n");
   if (input.verdict === "pass") {
     const head = input.outcome.kind === "accept"
       ? "I reviewed this and it does what the task asked, so I accepted it."
       : "I reviewed this and it does what the task asked. It is ready for you to accept.";
-    return note ? `${head}\n\n${note}` : head;
+    return rest ? `${head}\n\n${rest}` : head;
   }
   const head = input.outcome.kind === "revise"
     ? "I reviewed this and it is not finished yet. Sending it back with what to change."
     : "I reviewed this twice and it is still not there. Over to you.";
-  return note ? `${head}\n\n${note}` : head;
+  return rest ? `${head}\n\n${rest}` : head;
 }
