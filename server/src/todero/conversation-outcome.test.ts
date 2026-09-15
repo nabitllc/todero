@@ -404,6 +404,39 @@ describe("a reply that asks to approve a plan that is not there", () => {
       expect(recovery({ reply }), reply).toBeNull();
     }
   });
+
+  it("leaves a progress reply that names the plan alone, long block and all", () => {
+    // The work is under way and the plan was agreed rounds ago. Each of these
+    // names the plan, writes a block longer than the closing-lines window and
+    // signs off politely. Reading the closing lines with the block taken out
+    // brings the naming and the sign-off back together, so the block must not
+    // be the only thing keeping them apart: the sentence has to be putting a
+    // plan forward, not reporting on one that already exists.
+    const block = [
+      "```diff",
+      "- const a = 1;",
+      "+ const a = 2;",
+      "- const b = 3;",
+      "+ const b = 4;",
+      "- const c = 5;",
+      "+ const c = 6;",
+      "- const d = 7;",
+      "+ const d = 8;",
+      "- const e = 9;",
+      "+ const e = 10;",
+      "- const f = 11;",
+      "+ const f = 12;",
+      "```",
+    ].join("\n");
+    const progress = [
+      ["I finished implementing the plan we agreed on.", "", block, "", "Let me know if you need any changes."],
+      ["Step 2 of the plan is done and the tests pass.", "", block, "", "Let me know if you want any tweaks."],
+      ["I followed the plan document.", "", block, "", "Does this work for you?"],
+    ];
+    for (const lines of progress) {
+      expect(recovery({ reply: lines.join("\n") }), lines[0]).toBeNull();
+    }
+  });
 });
 
 describe("applyMissingPlanRecovery", () => {

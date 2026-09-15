@@ -309,13 +309,25 @@ function withoutFencedBlocks(text: string): string {
   return kept.join("\n");
 }
 
-function closesOnAPlan(text: string): boolean {
+/**
+ * A plan being put forward, not one referred back to. "Here's the plan:",
+ * "Below is my proposed plan", "I've drafted a plan" — the plan is the thing
+ * the sentence is handing over. "I finished implementing the plan we agreed
+ * on", "Step 2 of the plan is done", "I followed the plan document" name a
+ * plan that already exists and are reports on work, not asks. The plan word
+ * has to be what is being presented, so at most two words may stand between
+ * the two: "here's the diff for the plan" is a diff, not a plan.
+ */
+const PLAN_PRESENTED_RE =
+  /\b(?:here(?:'s|\s+is|\s+are)|below\s+(?:is|are)|i(?:'ve|\s+have)\s+(?:drafted|prepared|written|outlined|put\s+together))\s+(?:the|this|my|our|an?|that)?\s*(?:[\w-]+\s+){0,2}plans?\b/i;
+
+function closesOnAPlan(text: string, planRe: RegExp): boolean {
   const closing = text
     .split("\n")
     .filter((line) => line.trim())
     .slice(-CLOSING_LINES)
     .join("\n");
-  return PLAN_WORD_RE.test(closing) && handsTheTurnOver(closing);
+  return planRe.test(closing) && handsTheTurnOver(closing);
 }
 
 /**
@@ -330,14 +342,17 @@ function closesOnAPlan(text: string): boolean {
  * The closing lines are read twice, once as written and once with the fenced
  * blocks taken out, so a long block cannot hide the sign-off from the
  * sentence that named the plan. No new way of handing the turn over is
- * recognised by that second pass: the same two signals have to be there, in
- * the same closing lines, with the block no longer counted as words.
+ * recognised by that second pass, and it is stricter about the plan than the
+ * first: taking the block out puts two sentences side by side that the person
+ * never read side by side, so the earlier one has to be presenting a plan,
+ * not mentioning one. Otherwise every "I finished the plan" + diff + "let me
+ * know if you need any changes" would read as an ask.
  */
 export function asksToApproveAPlan(reply: string): boolean {
   const text = reply.replace(/\r\n?/g, "\n");
   const paragraphs = text.split(/\n[ \t]*\n+/);
   if (paragraphs.some((para) => PLAN_WORD_RE.test(para) && handsTheTurnOver(para))) return true;
-  return closesOnAPlan(text) || closesOnAPlan(withoutFencedBlocks(text));
+  return closesOnAPlan(text, PLAN_WORD_RE) || closesOnAPlan(withoutFencedBlocks(text), PLAN_PRESENTED_RE);
 }
 
 /** The task was told to write a plan in the one shape Todero can read. */
@@ -412,12 +427,16 @@ export function planMissingPlanRecovery(input: {
   /** A wrap-up or manager turn Todero steered itself is never a planning turn. */
   steeredTurn?: boolean;
   /**
-   * This conversation already produced a plan: one is stored on it, or its
-   * tasks exist. Then there is no planning turn to rescue — whatever the
-   * reply says about a plan, the plan was written and approved rounds ago and
-   * the work may already be finished. Without this, any of the phrases below
-   * could demand a fresh plan block from a conversation that is past that
-   * step entirely.
+   * This conversation already produced a plan that was taken up: its tasks
+   * exist. Then there is no planning turn to rescue — whatever the reply says
+   * about a plan, the plan was written and approved rounds ago and the work
+   * may already be finished. Without this, any of the phrases below could
+   * demand a fresh plan block from a conversation that is past that step
+   * entirely.
+   *
+   * A plan merely written down is not enough: a proposal that was sent back
+   * for changes has left its mark on the task and still needs this rescue on
+   * the round that comes back with prose.
    */
   conversationHasPlan?: boolean;
   agentName?: string | null;

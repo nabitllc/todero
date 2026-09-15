@@ -17526,33 +17526,22 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           try {
             const planTurnIssue = await issuesSvc.getById(issueId);
             const planTurnWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
-            // A conversation that already has a plan stored on it, or tasks
-            // of its own, is past the planning turn: nothing it says can be a
-            // plan that never arrived.
-            const [planTurnChildren, planTurnDocument] = planTurnIssue
-              ? await Promise.all([
-                loadPlanChildren(db, { companyId: agent.companyId, issueId }).catch(() => []),
-                db
-                  .select({ id: issueDocuments.id })
-                  .from(issueDocuments)
-                  .where(
-                    and(
-                      eq(issueDocuments.companyId, agent.companyId),
-                      eq(issueDocuments.issueId, issueId),
-                      eq(issueDocuments.key, CONVERSATION_PLAN_DOCUMENT_KEY),
-                    ),
-                  )
-                  .limit(1)
-                  .catch(() => []),
-              ])
-              : [[], []];
+            // A conversation whose tasks exist is past the planning turn:
+            // nothing it says can be a plan that never arrived. The Plan
+            // document is no use here — it is written the moment the agent
+            // proposes a plan, so from the second planning round on it would
+            // silence the rescue on exactly the conversations that need it.
+            // Only the children mean the plan was taken up.
+            const planTurnChildren = planTurnIssue
+              ? await loadPlanChildren(db, { companyId: agent.companyId, issueId }).catch(() => [])
+              : [];
             const missingPlan = planTurnIssue
               ? planMissingPlanRecovery({
                   issue: planTurnIssue,
                   disposition: conversationDisposition,
                   reply: readNonEmptyString(parseObject(persistedResultJson).summary) ?? "",
                   planBlock: conversationPlanBlock,
-                  conversationHasPlan: planTurnChildren.length > 0 || planTurnDocument.length > 0,
+                  conversationHasPlan: planTurnChildren.length > 0,
                   steeredTurn:
                     planTurnWakeReason === ISSUE_BLOCKERS_RESOLVED_WAKE_REASON ||
                     planTurnWakeReason === "issue_children_completed" ||
