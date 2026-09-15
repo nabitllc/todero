@@ -213,6 +213,60 @@ pass or they do not — so it benefits from step 1 more than any other work.
 - **Making a small model as good as a large one.** The aim is that a small model fails safely and
   visibly, not that it matches Claude.
 
+## Queued: three setups, sized to the machine in front of you
+
+**Michael's direction, 2026-09-15:** Todero should look at the machine it is running on and offer
+three setups, from heavy thinking and slow to light thinking and fast, instead of asking anyone to
+reason about a token count.
+
+A context window is not a number a person can have an opinion about. What they can have an opinion
+about is *"this one is thorough and takes about half a minute a turn"*. Todero is the only party in
+the conversation that can connect those two, because only Todero can measure the machine.
+
+### The three
+
+| Setup | What it is | What it costs |
+|---|---|---|
+| **Thorough** | The most capable configuration this machine can actually run — the largest window, and the largest installed model that fits | Slowest turns. Best at holding a long conversation without losing the instructions. |
+| **Balanced** | *Recommended.* The largest window that costs little or nothing in speed on this hardware | Fast enough to sit and watch. |
+| **Quick** | Smallest window, smallest capable model, most agents at once | Fastest replies. Long conversations get trimmed sooner, so the format is likelier to slip. |
+
+Each is a bundle — window, model, and how many agents may run at once — not a single dial. And each
+is computed **for this machine** rather than shipped as fixed numbers: what "Thorough" means on a
+12 GB card is not what it means on a 48 GB one.
+
+### It has to be measured, not guessed
+
+Measured on Michael's machine, 2026-09-15 — qwen2.5-coder:14b on Ollama, 12 GB card, two planning
+turns per window with a padded thread:
+
+| Window | Speed | Per planning turn | Model spilled off the card |
+|---|---|---|---|
+| 4,096 | 21.1 tok/s | 24.4 s | 0.0 GB |
+| 16,384 | 21.3 tok/s | 25.7 s | 2.2 GB |
+| 32,768 | 16.0 tok/s | 33.5 s | 5.3 GB |
+
+**Four times the window for no measurable cost.** Nobody would have guessed that, and a fixed
+default would have picked wrong: 4,096 leaves free capability on the table, 32,768 charges 25% for
+headroom this machine cannot use cheaply. **16,384 is the Balanced default on this hardware, and it
+is only correct because it was measured.**
+
+Two honesty notes on that table, so it is not over-read. The short prompt means the window was
+reserved but not full; a conversation that genuinely fills 32,768 pays much more, and an earlier
+run under load measured 4 tok/s there. And all three windows produced a valid plan block in this
+test, so it does **not** demonstrate the reliability benefit of a bigger window — the evidence for
+that remains the 40-comment thread that looped fifteen times at the default.
+
+### What it needs
+
+The capability profile from piece 3, extended with the machine: graphics memory, system memory, how
+much of a given model stays resident, and the measured speed at two or three candidate windows. The
+connection test already runs a probe; this is the same probe with timings kept.
+
+Then the setup shows its consequence in words a person can act on — "about half a minute a turn" —
+never a token count. And when the machine changes, or a bigger model is installed, the three setups
+re-compute rather than going stale.
+
 ## Open questions for Michael
 
 - How slow is too slow? If a 7B model needs nine hours for what Claude does in twenty minutes, is
