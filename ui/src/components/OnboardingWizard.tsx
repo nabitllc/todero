@@ -143,6 +143,20 @@ const MISSION_PROMPT_CHIPS = [
   "Launch a marketplace"
 ];
 
+/**
+ * What the five steps add up to, said once on the first of them. No minutes:
+ * connecting a model can take as long as it takes, and a number we cannot
+ * stand behind is worse than none.
+ */
+export const ONBOARDING_WHAT_TO_EXPECT =
+  "Five short steps. At the end your first agent is hired and starting on its first task.";
+
+/**
+ * The steps that show the art panel beside the form. Both of the opening
+ * questions, so the first screen is not a form floating in an empty half.
+ */
+export const ONBOARDING_ART_STEPS: ReadonlySet<number> = new Set([1, 2]);
+
 function buildMissionFromQuestionnaire(q1: string, q2: string, q3: string, q4: string): string {
   const parts: string[] = [];
   if (q1.trim()) parts.push(q1.trim());
@@ -1879,7 +1893,9 @@ function OnboardingWizardInner({
           <div
             className={cn(
               "w-full flex flex-col overflow-y-auto transition-(--tp-width) duration-500 ease-in-out",
-              step === 2 ? "md:w-1/2" : "md:w-full"
+              // Must track ONBOARDING_ART_STEPS: whenever the art takes half,
+              // the form takes the other half or the two overflow the row.
+              ONBOARDING_ART_STEPS.has(step) ? "md:w-1/2" : "md:w-full"
             )}
           >
             <div
@@ -2102,6 +2118,13 @@ function OnboardingWizardInner({
                     title="What is the name of your organization?"
                     lede="This will be the name of your Todero organization — choose something your team will recognize."
                   />
+                  {/* The progress bar above counts five steps and says nothing
+                      about what they are. Unlabelled progress is where people
+                      leave, because the cost is unknown. One line, and no time
+                      estimate we cannot stand behind. */}
+                  <p className="text-sm text-muted-foreground" data-testid="onboarding-what-to-expect">
+                    {ONBOARDING_WHAT_TO_EXPECT}
+                  </p>
                   <div className="group">
                     <label
                       className={cn(
@@ -2911,12 +2934,15 @@ function OnboardingWizardInner({
           </div>
           )}
 
-          {/* Right half — ASCII art (hidden on mobile, only for the team
-              name + mission steps) */}
+          {/* Right half — ASCII art (hidden on mobile, on the name and
+              mission steps). The condition used to be the mission step alone,
+              which left the very first screen as a form in an empty black
+              half. The comment already described both; the code now matches
+              it. */}
           <div
             className={cn(
               "hidden md:block overflow-hidden bg-muted text-muted-foreground transition-(--tp-width-opacity) duration-500 ease-in-out",
-              step === 2 ? "w-1/2 opacity-100" : "w-0 opacity-0"
+              ONBOARDING_ART_STEPS.has(step) ? "w-1/2 opacity-100" : "w-0 opacity-0"
             )}
           >
             <AsciiArtAnimation />
