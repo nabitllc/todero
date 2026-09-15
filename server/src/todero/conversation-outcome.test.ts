@@ -204,6 +204,7 @@ describe("a reply that asks to approve a plan that is not there", () => {
     parentId?: string | null;
     planBlock?: string | null;
     steeredTurn?: boolean;
+    conversationHasPlan?: boolean;
   } = {}) {
     return planMissingPlanRecovery({
       issue: {
@@ -215,6 +216,7 @@ describe("a reply that asks to approve a plan that is not there", () => {
       reply: over.reply ?? "I'm ready. Here's the revised plan:  Do you approve this plan?",
       planBlock: over.planBlock ?? null,
       steeredTurn: over.steeredTurn ?? false,
+      conversationHasPlan: over.conversationHasPlan ?? false,
       agentName: "Nova",
     });
   }
@@ -305,6 +307,69 @@ describe("a reply that asks to approve a plan that is not there", () => {
     }
   });
 
+  it("catches a plan whose block did not parse, however long the block ran", () => {
+    // Verified against the parser before this test was written: both of these
+    // blocks come back from `parseToderoPlanBlock` as null — the first has no
+    // `goal:` line at all, the second calls it `objective:` — so the task is
+    // left with nothing to approve. Both run past the closing-lines window,
+    // which is the only reason the detector used to miss them: the block, not
+    // the sign-off, filled the lines it was reading.
+    const unparsable = [
+      [
+        "```",
+        "1. Set up the repository and tooling",
+        "2. Build the hero section",
+        "3. Build the menu list",
+        "4. Wire up the contact form",
+        "5. Add the photo gallery",
+        "6. Write the copy",
+        "7. Deploy to staging",
+        "8. Launch",
+        "```",
+      ].join("\n"),
+      [
+        "```todero-plan",
+        "objective: Ship a landing page for the bakery.",
+        "features:",
+        "  - name: Hero section",
+        "    why: First thing a visitor sees",
+        "    done_when: The hero renders",
+        "  - name: Menu list",
+        "    why: People want the menu",
+        "    done_when: Prices show",
+        "  - name: Contact form",
+        "    why: Orders come in",
+        "    done_when: Mail arrives",
+        "```",
+      ].join("\n"),
+    ];
+    for (const block of unparsable) {
+      const reply = [
+        "Sure, here's the plan:",
+        "",
+        block,
+        "",
+        "Please review and let me know if any changes are needed.",
+      ].join("\n");
+      expect(recovery({ reply })?.kind, block.split("\n")[0]).toBe("retry");
+    }
+  });
+
+  it("leaves a conversation that already made a plan alone, whatever the reply says", () => {
+    // The plan was approved long ago and its tasks may already be finished:
+    // there is no loop to rescue, and demanding a fresh plan block would
+    // restart a step that is over. Every ask, old pattern or new, is quiet.
+    const asks = [
+      "I'm ready. Here's the revised plan:  Do you approve this plan?",
+      "Please review the plan and let me know if you need any changes.",
+      "Would you like to proceed with this plan?",
+    ];
+    for (const reply of asks) {
+      expect(recovery({ reply })?.kind, reply).toBe("retry");
+      expect(recovery({ reply, conversationHasPlan: true }), reply).toBeNull();
+    }
+  });
+
   it("leaves ordinary replies alone, however they are worded", () => {
     const ordinary = [
       "Done. Please accept the config as handed in.",
@@ -316,6 +381,24 @@ describe("a reply that asks to approve a plan that is not there", () => {
       // settled and a sign-off that only invites questions.
       "The plan is live now. Let me know if you have any questions.",
       "I reviewed the plan document and it is out of date. Which version should I use?",
+      // Taking the fenced block out of the closing lines must not turn an
+      // ordinary hand-in into a plan: nothing here names a plan.
+      [
+        "Here's the diff from this round:",
+        "",
+        "```diff",
+        "- const a = 1;",
+        "+ const a = 2;",
+        "- const b = 3;",
+        "+ const b = 4;",
+        "- const c = 5;",
+        "+ const c = 6;",
+        "- const d = 7;",
+        "+ const d = 8;",
+        "```",
+        "",
+        "Let me know if you need any changes.",
+      ].join("\n"),
     ];
     for (const reply of ordinary) {
       expect(recovery({ reply }), reply).toBeNull();

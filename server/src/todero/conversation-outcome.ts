@@ -279,6 +279,46 @@ function handsTheTurnOver(text: string): boolean {
 }
 
 /**
+ * The reply with its fenced blocks taken out.
+ *
+ * The closing-lines window is meant to hold the words the model writes to the
+ * person. A block longer than the window fills it on its own and pushes the
+ * sentence that named the plan out of reach of the sign-off, so "Sure, here's
+ * the plan:" + a block + "Please review and let me know if any changes are
+ * needed" reads as an ordinary hand-in. That only matters when the block did
+ * not parse — a plan that parses is on the task and there is nothing to
+ * rescue — and that is exactly the case this rescue exists for. An unclosed
+ * fence runs to the end of the reply, which is what a truncated block looks
+ * like.
+ */
+function withoutFencedBlocks(text: string): string {
+  const lines = text.split("\n");
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const open = lines[i]!.match(/^[ \t]*(`{3,}|~{3,})/);
+    if (!open) {
+      kept.push(lines[i]!);
+      continue;
+    }
+    const marker = open[1]![0]!;
+    const closeRe = new RegExp(`^[ \\t]*${marker}{3,}[ \\t]*$`);
+    let j = i + 1;
+    while (j < lines.length && !closeRe.test(lines[j]!)) j += 1;
+    i = j;
+  }
+  return kept.join("\n");
+}
+
+function closesOnAPlan(text: string): boolean {
+  const closing = text
+    .split("\n")
+    .filter((line) => line.trim())
+    .slice(-CLOSING_LINES)
+    .join("\n");
+  return PLAN_WORD_RE.test(closing) && handsTheTurnOver(closing);
+}
+
+/**
  * Does the reply hand the turn over on the strength of a plan? A plan has to
  * be named and the turn handed over close together — in one paragraph, or
  * across the closing lines of the reply, which is where a model writes "Here
@@ -286,17 +326,18 @@ function handsTheTurnOver(text: string): boolean {
  * started." A hand-in that says "please accept the config", a line that
  * merely mentions a plan, and a sign-off that only invites questions are
  * ordinary replies and never match.
+ *
+ * The closing lines are read twice, once as written and once with the fenced
+ * blocks taken out, so a long block cannot hide the sign-off from the
+ * sentence that named the plan. No new way of handing the turn over is
+ * recognised by that second pass: the same two signals have to be there, in
+ * the same closing lines, with the block no longer counted as words.
  */
 export function asksToApproveAPlan(reply: string): boolean {
   const text = reply.replace(/\r\n?/g, "\n");
   const paragraphs = text.split(/\n[ \t]*\n+/);
   if (paragraphs.some((para) => PLAN_WORD_RE.test(para) && handsTheTurnOver(para))) return true;
-  const closing = text
-    .split("\n")
-    .filter((line) => line.trim())
-    .slice(-CLOSING_LINES)
-    .join("\n");
-  return PLAN_WORD_RE.test(closing) && handsTheTurnOver(closing);
+  return closesOnAPlan(text) || closesOnAPlan(withoutFencedBlocks(text));
 }
 
 /** The task was told to write a plan in the one shape Todero can read. */
@@ -370,11 +411,21 @@ export function planMissingPlanRecovery(input: {
   planBlock?: string | null;
   /** A wrap-up or manager turn Todero steered itself is never a planning turn. */
   steeredTurn?: boolean;
+  /**
+   * This conversation already produced a plan: one is stored on it, or its
+   * tasks exist. Then there is no planning turn to rescue — whatever the
+   * reply says about a plan, the plan was written and approved rounds ago and
+   * the work may already be finished. Without this, any of the phrases below
+   * could demand a fresh plan block from a conversation that is past that
+   * step entirely.
+   */
+  conversationHasPlan?: boolean;
   agentName?: string | null;
 }): MissingPlanRecovery | null {
   if (input.issue.status !== "in_progress") return null;
   if (input.issue.parentId) return null;
   if (input.steeredTurn) return null;
+  if (input.conversationHasPlan) return null;
   if (input.disposition !== "waiting") return null;
   if (input.planBlock?.trim()) return null;
   if (!taskAsksForPlanBlock(input.issue.description)) return null;
