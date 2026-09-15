@@ -235,10 +235,12 @@ export function hasGivenUpOnPlan(description: string | null | undefined): boolea
 
 const PLAN_WORD_RE = /\bplans?\b/i;
 /**
- * The ways a model actually hands the turn over: "do you approve", "please
- * confirm", "shall I proceed", "let me know if this works", "if you're happy
- * with it, say go". Deliberately not the bare words "accept" or "review" —
- * those belong to ordinary hand-ins.
+ * The ways a model actually hands the turn over: "would you like to proceed",
+ * "do you approve", "please confirm", "shall I proceed", "does this plan work
+ * for you", "let me know if you'd like any changes", "if you're happy with it,
+ * say go". Deliberately not the bare words "accept" or "review" — those belong
+ * to ordinary hand-ins, and not a bare "let me know", which is how a model
+ * invites questions after finishing real work.
  */
 const HANDS_OVER_RES: RegExp[] = [
   /\b(?:approve[sd]?|approving|approval)\b/i,
@@ -247,10 +249,26 @@ const HANDS_OVER_RES: RegExp[] = [
   /\bgreen[-\s]?light\b|\bgo[-\s]?ahead\b/i,
   /\bshall\s+i\b/i,
   /\b(?:should|can|may)\s+i\s+(?:proceed|start|begin|continue|get\s+going|kick\s+off)\b/i,
+  // The commonest closing of all in real qwen2.5-coder:14b planning replies:
+  // "Would you like to proceed with this plan?", "Do you want me to start?".
+  // The "me" is optional because the model writes it both ways.
+  /\b(?:would\s+you\s+like|do\s+you\s+want)\s+(?:me\s+)?to\s+(?:proceed|start|begin|continue|go\s+ahead|move\s+forward|get\s+going|kick\s+off)\b/i,
   /\bhappy\s+with\b|\bokay?\s+with\b/i,
   /\bsay\s+go\b|\bgive\s+(?:me\s+)?the\s+(?:go|green)\b/i,
   /\bsounds?\s+good\b|\blooks?\s+good\b/i,
-  /\blet\s+me\s+know\s+(?:if|whether)\s+(?:this|that|it|these|they|the\s+plan|you(?:'re|\s+are)?\s*(?:happy|ok|okay|good))\b/i,
+  /\blet\s+me\s+know\s+(?:if|whether)\s+(?:this|that|it|these|they|the\s+plan|you(?:'d|\s+would)?\s*(?:like|want)|you(?:'re|\s+are)?\s*(?:happy|ok|okay|good))\b/i,
+  // "Does this plan work for you?" — and "Let me know and I'll get going",
+  // which uses "and" where the line above wants "if".
+  /\bworks?\s+for\s+you\b/i,
+  /\blet\s+me\s+know\s+and\s+i(?:'ll|\s+will)\b/i,
+  // The commonest hand-over of all in twenty sampled qwen2.5-coder:14b
+  // planning replies — eleven of them close this way: "Please review the
+  // plan and let me know if you need any changes." Bare "review" is still
+  // an ordinary hand-in; it is "review the plan" that hands the turn over,
+  // and "let me know if you need changes" that asks for an answer, where
+  // "let me know if you have any questions" only invites questions.
+  /\breview\s+(?:the|this|that|my|our|its)?\s*(?:above\s+|proposed\s+|attached\s+)*(?:plan|proposal)\b/i,
+  /\blet\s+me\s+know\s+if\s+(?:you\s+(?:need|want|require|have)|any|there\s+(?:are|is))\b[^.?!\n]{0,40}\b(?:changes?|adjustments?|additions?|additional|feedback|thoughts?|tweaks?|edits?|revisions?|modifications?)\b/i,
 ];
 const PLAN_FENCE_ASKED_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*todero-plan\b/i;
 /** How much of the tail of a reply counts as "the closing lines". */

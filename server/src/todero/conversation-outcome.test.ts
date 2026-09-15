@@ -282,6 +282,22 @@ describe("a reply that asks to approve a plan that is not there", () => {
       "Thanks! Here is the plan:\n\n1. Research\n2. Build\n\nPlease confirm and I will get started.",
       "Do you approve this plan?",
       "I've written the plan out above.\n\nLet me know if this works for you and I'll begin.",
+      // Sampled from real qwen2.5-coder:14b planning replies: the commonest
+      // closing of all, and the three next most common, none of which the
+      // first cut of this rescue caught.
+      "Would you like to proceed with this plan?",
+      "Here is the plan:\n\n1. Set up the repo\n2. Ship the page\n\nDo you want me to proceed?",
+      "Does this plan work for you? Let me know and I'll get going.",
+      "Here's the plan. Let me know if you'd like any changes before I start.",
+      // Verbatim closings from twenty sampled qwen2.5-coder:14b planning
+      // replies. Eleven of the twenty close on "review the plan and let me
+      // know if you need any changes" — the commonest hand-over there is.
+      "Please review the plan and let me know if you need any changes or additions.",
+      "Please review the plan and let me know if you need any adjustments or further details.",
+      "Please review the plan and let me know if any changes or additions are needed.",
+      "Please review the plan and let me know if you have any feedback or additional requirements.",
+      "Please review the above plan and provide your approval.",
+      "Would you like to proceed with this plan, or do you have any specific changes or additions?",
     ];
     for (const reply of asks) {
       expect(recovery({ reply })?.kind, reply).toBe("retry");
@@ -295,6 +311,10 @@ describe("a reply that asks to approve a plan that is not there", () => {
       "I've pushed the change. Let me know if you have any questions.",
       "Please confirm the address before I send the invoice.",
       "The deployment plan document is in the repo already.",
+      // Widening "review the plan" must not swallow these: a plan already
+      // settled and a sign-off that only invites questions.
+      "The plan is live now. Let me know if you have any questions.",
+      "I reviewed the plan document and it is out of date. Which version should I use?",
     ];
     for (const reply of ordinary) {
       expect(recovery({ reply }), reply).toBeNull();
