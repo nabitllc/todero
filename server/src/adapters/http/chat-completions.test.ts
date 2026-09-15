@@ -401,16 +401,18 @@ describe("the window Todero sets for the model", () => {
       context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 131_072 },
       payloadTemplate: {},
     });
-    expect(body.options).toEqual({ num_ctx: 32_768 });
+    expect(body.options).toEqual({ num_ctx: 16_384 });
   });
 
-  it("asks for the whole window of a model that holds 32k", () => {
+  it("stops at the measured window even when the model holds twice it", () => {
+    // 32,768 is what qwen2.5-coder:14b holds and what this machine measured
+    // as a quarter slower for room the prompt does not use.
     const body = buildChatCompletionsBody({
       config: OLLAMA,
       context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 32_768 },
       payloadTemplate: {},
     });
-    expect(body.options).toEqual({ num_ctx: 32_768 });
+    expect(body.options).toEqual({ num_ctx: 16_384 });
   });
 
   it("sends no Ollama option to an endpoint that is not Ollama", () => {

@@ -642,3 +642,57 @@ instead of guessing.
     not "the whole reply was an object".
 - **Source:** `server/src/adapters/http/structured-plan.ts`,
   `packages/shared/src/todero-plan-schema.ts`, `ui/src/components/RunStructuredPlanNote.tsx`.
+
+## ADR-021 — The window is settled by the capability endpoint, and the default is 16,384
+
+- **Date:** 2026-09-15
+- **Status:** Accepted (amends ADR-018, parts 3 and 4)
+- **Context:** Three things measured on this machine after ADR-018 landed.
+
+  1. ADR-018 part 3 re-checks a recorded window **once** and marks the organization with
+     `toderoLocalLlmContextLengthRechecked`. It set that mark for *any* reading. With the model
+     warm and `/api/ps` reporting Ollama's 4,096 default, a single failed `/api/show` recorded
+     4,096 and closed the question: every later turn answered 4,096 and never asked again, and a
+     fully healthy runtime afterwards did not repair it — only a person re-running a connection
+     test could. Reproduced: turn one with one `/api/show` throw wrote
+     `{contextLength: 4096, rechecked: true}`; turn two against a healthy runtime answering 32,768
+     still returned 4,096 and did not call detection at all. This is ADR-018's own bug — a
+     loaded-state snapshot treated as the answer — moved from the reading into the mark.
+  2. ADR-018 part 4 raised the requested window to 32,768 on an argument about what the model can
+     hold, with only a VRAM figure to price it. Timed properly on a 12 GB card with
+     `qwen2.5-coder:14b`, two planning turns each against a padded thread: 4,096 → 21.1 tok/s,
+     24.4 s a turn, nothing spilled; 16,384 → 21.3 tok/s, 25.7 s a turn, 2.2 GB spilled;
+     32,768 → 16.0 tok/s, 33.5 s a turn, 5.3 GB spilled.
+  3. ADR-016 put Todero's turn instruction inside the budget, which was right — outside it, the
+     runtime trimmed the system prompt off the front. But nothing capped it: at a 1,024-token
+     window a 300-word corrective instruction took the whole budget and all 40 turns of history
+     were dropped. A model told to try again, with no memory of what it did the first time, is
+     being set up to fail.
+- **Decision:**
+  1. Detection reports **which endpoint answered**. `detectContextLengthReading` returns
+     `{ contextLength, capabilityAnswered }`, where `capabilityAnswered` is true only for
+     `/api/show`. `detectContextLength` stays as the number-only form for the connection test,
+     which stores upward and cannot lock anything.
+  2. `resolveContextLengthForRun` sets the re-checked mark only when the capability endpoint
+     answered. A run that heard only from `/api/ps` stores whatever that raised — upward only, as
+     before — and asks again next turn, so a later healthy turn repairs a wrong stored value by
+     itself. A reading that raises nothing and settles nothing is not written at all.
+  3. `MAX_REQUESTED_CONTEXT_LENGTH` is **16,384**, from the measurement above: four times the
+     broken default for no measurable cost, where the next step up costs about a quarter of the
+     speed for room the prompt does not use. The number is this machine's, not a law — a 24 GB
+     card would take 32,768 without spilling — which is why sizing the window to the machine is
+     queued in `doc/plans/2026-09-14-any-llm-independence.md`.
+  4. While there is a conversation to protect, the pinned turn instruction may take at most
+     `TURN_INSTRUCTION_MAX_BUDGET_SHARE` (a quarter) of the prompt budget and is cut to fit, with
+     a marker saying so. With no conversation in the prompt it is left exactly as it came.
+- **Consequences:**
+  - An organization can no longer be pinned to a load-time default by one failed request. The
+     cost is that a runtime whose `/api/show` is permanently unreachable pays the detection pair
+     every turn — it is the honest price of never locking in a wrong number.
+  - Todero asks for 16,384 where ADR-018 asked for 32,768. A model that holds more is trimmed to
+     16,384 and loses room, not capability; the `/api/show` capability is still recorded in full,
+     so raising the ceiling later needs no re-detection.
+  - At 16,384 the instruction cap is around 3,000 tokens and no instruction Todero writes comes
+     near it, so it only ever bites on small windows — which is where it was needed.
+- **Source:** `server/src/todero/available-models.ts`,
+  `server/src/adapters/http/prompt-budget.ts`.

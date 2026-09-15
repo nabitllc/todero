@@ -22,6 +22,11 @@ export const CONTEXT_LENGTH_KEY = "toderoLocalLlmContextLength";
  * rather than only written by a connection test. Every organization created
  * before that check existed holds a number that may be an understatement, so
  * the first run re-asks; this is how the second run knows not to.
+ *
+ * Only the capability endpoint may set it. A window is a fact about the
+ * model, and only /api/show answers that question; a reading that came from
+ * /api/ps alone is a snapshot of one load, and letting it close the question
+ * is how an organization gets pinned to Ollama's 4,096 default for good.
  */
 export const CONTEXT_LENGTH_RECHECKED_KEY = "toderoLocalLlmContextLengthRechecked";
 
@@ -139,19 +144,44 @@ export function readStoredContextLength(governance: unknown): number | null {
  * Ollama serves many models and routing switches between them per turn, so
  * the row on top is routinely a different model's. Any other runtime, or a
  * runtime that does not say, answers null.
+ *
+ * The reading says which of the two answered, because they do not carry the
+ * same weight. A number that came only from /api/ps is a snapshot of one
+ * load — usually Ollama's 4,096 default — and nobody may treat it as the
+ * settled truth about the model. Only /api/show answers the capability
+ * question, and only its answer is worth remembering as final.
  */
+export type ContextLengthReading = {
+  /** The larger of what answered, or null when neither endpoint did. */
+  contextLength: number | null;
+  /** True only when /api/show — the capability endpoint — answered. */
+  capabilityAnswered: boolean;
+};
+
+export async function detectContextLengthReading(
+  baseUrl: string,
+  modelId: string,
+  fetcher: typeof fetch = fetch,
+): Promise<ContextLengthReading> {
+  const root = normalizeBaseUrl(baseUrl).replace(/\/v1(\/.*)?$/, "");
+  if (!root) return { contextLength: null, capabilityAnswered: false };
+  const [loaded, capability] = await Promise.all([
+    readLoadedContextLength(root, modelId, fetcher),
+    readModelContextLength(root, modelId, fetcher),
+  ]);
+  return {
+    contextLength: largerContextLength(loaded, capability),
+    capabilityAnswered: capability !== null,
+  };
+}
+
+/** Just the number, for callers that only ever store it upward. */
 export async function detectContextLength(
   baseUrl: string,
   modelId: string,
   fetcher: typeof fetch = fetch,
 ): Promise<number | null> {
-  const root = normalizeBaseUrl(baseUrl).replace(/\/v1(\/.*)?$/, "");
-  if (!root) return null;
-  const [loaded, capability] = await Promise.all([
-    readLoadedContextLength(root, modelId, fetcher),
-    readModelContextLength(root, modelId, fetcher),
-  ]);
-  return largerContextLength(loaded, capability);
+  return (await detectContextLengthReading(baseUrl, modelId, fetcher)).contextLength;
 }
 
 /** The bigger of two readings, either of which may be nothing. */
@@ -280,6 +310,14 @@ async function writeContextLength(
  * turn forever on any model smaller than whatever ceiling we compared to. A
  * later connection test (a new model, a new machine) still raises it through
  * `storeContextLength`.
+ *
+ * "Once" means once the *capability* endpoint answered, not once any number
+ * came back. /api/ps answering 4,096 while /api/show was unreachable is the
+ * original bug in a new place: it records the load-time default and closes
+ * the question, and no amount of healthy runtime afterwards reopens it —
+ * only a person re-running a connection test. So the re-checked flag is set
+ * by /api/show alone, and a run that only heard from /api/ps stores whatever
+ * it raised and asks again next turn.
  */
 export async function resolveContextLengthForRun(
   db: Db,
@@ -287,7 +325,7 @@ export async function resolveContextLengthForRun(
   options: {
     baseUrl?: string | null;
     modelId?: string | null;
-    detect?: (baseUrl: string, modelId: string) => Promise<number | null>;
+    detect?: (baseUrl: string, modelId: string) => Promise<ContextLengthReading>;
   } = {},
 ): Promise<number | null> {
   const rows = await db
@@ -298,15 +336,20 @@ export async function resolveContextLengthForRun(
   if (rows.length === 0) return null;
   const governance = asRecord(rows[0]?.governance);
   const stored = readStoredContextLength(governance);
-  if (stored !== null && governance[CONTEXT_LENGTH_RECHECKED_KEY] === true) return stored;
+  const alreadyRechecked = governance[CONTEXT_LENGTH_RECHECKED_KEY] === true;
+  if (stored !== null && alreadyRechecked) return stored;
   const baseUrl = typeof options.baseUrl === "string" ? options.baseUrl.trim() : "";
   if (!baseUrl) return stored;
-  const detect = options.detect ?? ((url: string, model: string) => detectContextLength(url, model));
-  const detected = await detect(baseUrl, typeof options.modelId === "string" ? options.modelId.trim() : "");
+  const detect = options.detect ?? ((url: string, model: string) => detectContextLengthReading(url, model));
+  const reading = await detect(baseUrl, typeof options.modelId === "string" ? options.modelId.trim() : "");
   // Nothing answered — the runtime may be down. Nothing was learned, so
   // nothing is recorded and the next run asks again.
-  if (detected === null) return stored;
-  const best = largerContextLength(stored, detected) ?? detected;
-  await writeContextLength(db, companyId, governance, best, true);
+  if (reading.contextLength === null) return stored;
+  const best = largerContextLength(stored, reading.contextLength) ?? reading.contextLength;
+  const rechecked = alreadyRechecked || reading.capabilityAnswered;
+  // A loaded-state reading that taught us nothing new is not worth a write,
+  // and must not quietly settle the question on its way past.
+  if (best === stored && rechecked === alreadyRechecked) return stored;
+  await writeContextLength(db, companyId, governance, best, rechecked);
   return best;
 }

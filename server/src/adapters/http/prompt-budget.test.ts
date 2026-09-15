@@ -4,6 +4,7 @@ import {
   effectiveContextLength,
   MAX_REQUESTED_CONTEXT_LENGTH,
   DROPPED_HISTORY_MARKER,
+  SHORTENED_INSTRUCTION_MARKER,
   estimateMessageTokens,
   estimatePromptTokens,
   promptBudgetTokens,
@@ -34,17 +35,16 @@ describe("promptBudgetTokens", () => {
 describe("effectiveContextLength", () => {
   it("takes the recorded window as it is when it is one Todero would ask for", () => {
     expect(effectiveContextLength(4096)).toBe(4096);
+    expect(effectiveContextLength(8_192)).toBe(8_192);
     expect(effectiveContextLength(16_384)).toBe(16_384);
-    // The window qwen2.5-coder:14b actually holds. Capping this one is what
-    // pinned live organizations to an eighth of the model they paid for.
-    expect(effectiveContextLength(32_768)).toBe(32_768);
   });
 
-  it("does not ask a machine for the model's whole maximum", () => {
-    // /api/show reports what the model was built with — 128k for some — which
-    // is not what the machine can serve.
-    expect(effectiveContextLength(131_072)).toBe(MAX_REQUESTED_CONTEXT_LENGTH);
-    expect(MAX_REQUESTED_CONTEXT_LENGTH).toBe(32_768);
+  it("asks for the measured default, not for everything the model could hold", () => {
+    // Measured on a 12 GB card: 16,384 costs nothing over 4,096 and 32,768
+    // costs about a quarter of the speed. See the constant's comment.
+    expect(MAX_REQUESTED_CONTEXT_LENGTH).toBe(16_384);
+    expect(effectiveContextLength(32_768)).toBe(16_384);
+    expect(effectiveContextLength(131_072)).toBe(16_384);
   });
 
   it("is null when nothing recorded a window", () => {
@@ -122,6 +122,44 @@ describe("budgetChatMessages", () => {
     expect(marked).toContain(DROPPED_HISTORY_MARKER);
     expect(marked).toContain(String(budgeted.dropped));
     expect(budgeted.messages.filter((m) => m.content.includes(DROPPED_HISTORY_MARKER))).toHaveLength(1);
+  });
+
+  it("does not let the turn instruction starve the conversation to nothing", () => {
+    // Measured: at a 1,024-token window a 300-word corrective instruction
+    // took the whole budget and all 40 history turns were dropped. The
+    // instruction is the least important thing in the prompt to keep whole —
+    // a model with no memory of the conversation cannot follow it anyway.
+    const system = { role: "system", content: `You are Ash. ${"s".repeat(1_000)}` };
+    const history = Array.from({ length: 40 }, (_v, index) =>
+      turn(index % 2 === 0 ? "assistant" : "user", `turn ${index} ${"x".repeat(400)}`),
+    );
+    const instruction = turn("user", Array.from({ length: 300 }, () => "again").join(" "));
+    const budgeted = budgetChatMessages({
+      messages: [system, pinnedTask, ...history, instruction],
+      pinnedLeading: 2,
+      pinnedTrailing: 1,
+      contextLength: 1_024,
+    });
+    const kept = budgeted.messages.slice(2, -1);
+    expect(kept.length).toBeGreaterThanOrEqual(2);
+    expect(kept[kept.length - 1]).toEqual(history[history.length - 1]);
+    // The instruction survives, shortened, and says that it was.
+    const last = budgeted.messages[budgeted.messages.length - 1]!;
+    expect(last.role).toBe("user");
+    expect(last.content.startsWith("again again")).toBe(true);
+    expect(last.content).toContain(SHORTENED_INSTRUCTION_MARKER);
+    expect(estimatePromptTokens(budgeted.messages)).toBeLessThanOrEqual(promptBudgetTokens(1_024));
+  });
+
+  it("leaves a turn instruction whole when there is no conversation to protect", () => {
+    const instruction = turn("user", Array.from({ length: 300 }, () => "again").join(" "));
+    const budgeted = budgetChatMessages({
+      messages: [{ role: "system", content: "S".repeat(4_000) }, pinnedTask, instruction],
+      pinnedLeading: 2,
+      pinnedTrailing: 1,
+      contextLength: 1_024,
+    });
+    expect(budgeted.messages[budgeted.messages.length - 1]).toEqual(instruction);
   });
 
   it("keeps a pinned trailing instruction whatever else goes", () => {

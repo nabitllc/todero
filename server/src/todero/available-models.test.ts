@@ -6,6 +6,7 @@ vi.mock("./local-llm-detect.js", () => ({ detectLocalLlms: mockDetectLocalLlms }
 const {
   detectAvailableModelIds,
   detectContextLength,
+  detectContextLengthReading,
   readStoredAvailableModelIds,
   readStoredContextLength,
   resolveAvailableModelIdsForRun,
@@ -212,6 +213,31 @@ describe("context length", () => {
     expect(await detectContextLength("http://127.0.0.1:11434", "qwen2.5-coder:14b", fetcher)).toBe(32_768);
   });
 
+  it("says whether the capability endpoint answered, not just what it read", async () => {
+    // /api/ps answers about this load, /api/show about the model. Only the
+    // second is an answer about capability, and a caller that records a
+    // reading forever has to be able to tell them apart.
+    const capabilityDown = (async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/ps")) {
+        return new Response(JSON.stringify({ models: [{ name: "qwen2.5-coder:14b", context_length: 4096 }] }), {
+          status: 200,
+        });
+      }
+      throw new Error("connection reset");
+    }) as unknown as typeof fetch;
+    await expect(
+      detectContextLengthReading("http://127.0.0.1:11434", "qwen2.5-coder:14b", capabilityDown),
+    ).resolves.toEqual({ contextLength: 4096, capabilityAnswered: false });
+
+    const healthy = (async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/ps")) return new Response(JSON.stringify({ models: [] }), { status: 200 });
+      return new Response(JSON.stringify({ model_info: { "qwen2.context_length": 32_768 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await expect(
+      detectContextLengthReading("http://127.0.0.1:11434", "qwen2.5-coder:14b", healthy),
+    ).resolves.toEqual({ contextLength: 32_768, capabilityAnswered: true });
+  });
+
   it("answers null when the runtime does not say or is down", async () => {
     const silent = (async () => new Response(JSON.stringify({ models: [] }), { status: 200 })) as unknown as typeof fetch;
     expect(await detectContextLength("http://127.0.0.1:11434", "x", silent)).toBeNull();
@@ -250,7 +276,7 @@ describe("resolveContextLengthForRun", () => {
       resolveContextLengthForRun(db, "company-1", {
         baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
         modelId: "qwen2.5-coder:14b",
-        detect: async () => 4096,
+        detect: async () => ({ contextLength: 4096, capabilityAnswered: true }),
       }),
     ).resolves.toBe(16_384);
     expect(updates).toHaveLength(1);
@@ -270,7 +296,7 @@ describe("resolveContextLengthForRun", () => {
       resolveContextLengthForRun(db, "company-1", {
         baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
         modelId: "qwen2.5-coder:14b",
-        detect: async () => 32_768,
+        detect: async () => ({ contextLength: 32_768, capabilityAnswered: true }),
       }),
     ).resolves.toBe(32_768);
     expect(updates).toHaveLength(1);
@@ -283,7 +309,7 @@ describe("resolveContextLengthForRun", () => {
     // A model that holds 8,192 is below anything Todero would ask for, and
     // must still stop costing two HTTP calls a turn once it has been asked.
     const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 8_192 } });
-    const detect = vi.fn(async () => 8_192);
+    const detect = vi.fn(async () => ({ contextLength: 8_192, capabilityAnswered: true }));
     await expect(
       resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
     ).resolves.toBe(8_192);
@@ -298,7 +324,7 @@ describe("resolveContextLengthForRun", () => {
 
   it("asks again next turn when the runtime was down for the re-check", async () => {
     const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 4096 } });
-    const detect = vi.fn(async () => null);
+    const detect = vi.fn(async () => ({ contextLength: null, capabilityAnswered: false }));
     await expect(
       resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
     ).resolves.toBe(4096);
@@ -315,7 +341,7 @@ describe("resolveContextLengthForRun", () => {
       resolveContextLengthForRun(db, "company-1", {
         baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
         modelId: "qwen2.5-coder:14b",
-        detect: async () => 8_192,
+        detect: async () => ({ contextLength: 8_192, capabilityAnswered: true }),
       }),
     ).resolves.toBe(8_192);
     expect(updates).toHaveLength(1);
@@ -330,9 +356,72 @@ describe("resolveContextLengthForRun", () => {
       resolveContextLengthForRun(db, "company-1", {
         baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
         modelId: "qwen2.5-coder:14b",
-        detect: async () => null,
+        detect: async () => ({ contextLength: null, capabilityAnswered: false }),
       }),
     ).resolves.toBeNull();
+    expect(updates).toEqual([]);
+  });
+
+  it("does not lock the organization to a reading the capability endpoint never gave", async () => {
+    // The round-one bug wearing a hat: with the model warm, /api/ps reports
+    // Ollama's 4,096 default. One failed /api/show used to record 4,096 AND
+    // mark the organization re-checked, so every later turn answered 4,096
+    // and never asked again.
+    const { db, updates } = fakeDb({ governance: {} });
+    const hurt = vi.fn(async () => ({ contextLength: 4096, capabilityAnswered: false }));
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: hurt,
+      }),
+    ).resolves.toBe(4096);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.interactionResolverGovernance).not.toHaveProperty("toderoLocalLlmContextLengthRechecked");
+
+    // A healthy turn afterwards repairs the wrong stored value by itself.
+    const healthy = vi.fn(async () => ({ contextLength: 32_768, capabilityAnswered: true }));
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: healthy,
+      }),
+    ).resolves.toBe(32_768);
+    expect(healthy).toHaveBeenCalledTimes(1);
+    expect(updates[1]).toMatchObject({
+      interactionResolverGovernance: {
+        toderoLocalLlmContextLength: 32_768,
+        toderoLocalLlmContextLengthRechecked: true,
+      },
+    });
+
+    // And now it stops asking.
+    const after = vi.fn(async () => ({ contextLength: 32_768, capabilityAnswered: true }));
+    await expect(
+      resolveContextLengthForRun(db, "company-1", {
+        baseUrl: "http://127.0.0.1:11434/v1/chat/completions",
+        modelId: "qwen2.5-coder:14b",
+        detect: after,
+      }),
+    ).resolves.toBe(32_768);
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it("keeps asking while only the loaded-state endpoint answers", async () => {
+    const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 4096 } });
+    const loadedOnly = vi.fn(async () => ({ contextLength: 4096, capabilityAnswered: false }));
+    for (const _turn of [1, 2, 3]) {
+      await expect(
+        resolveContextLengthForRun(db, "company-1", {
+          baseUrl: "http://127.0.0.1:11434",
+          modelId: "m",
+          detect: loadedOnly,
+        }),
+      ).resolves.toBe(4096);
+    }
+    expect(loadedOnly).toHaveBeenCalledTimes(3);
+    // Nothing new was learned any of those times, so nothing was written.
     expect(updates).toEqual([]);
   });
 
