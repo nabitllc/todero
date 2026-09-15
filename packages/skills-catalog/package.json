@@ -52,7 +52,7 @@
     "@todero/shared": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.13.4"
   },
   "engines": {
     "node": ">=24.11.0"
