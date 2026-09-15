@@ -17544,8 +17544,13 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               await applyMissingPlanRecovery(
                 {
                   updateIssue: (id, patch) => issuesSvc.update(id, { ...patch, actorAgentId: agent.id }),
-                  addComment: (id, body) =>
-                    issuesSvc.addComment(id, body, { agentId: agent.id, runId: livenessRun.id }),
+                  addComment: (id, body, presentation) =>
+                    issuesSvc.addComment(
+                      id,
+                      body,
+                      { agentId: agent.id, runId: livenessRun.id },
+                      { presentation },
+                    ),
                   wakeAgent: ({ issueId: wakeIssueId, agentId: wakeAgentId }) =>
                     enqueueWakeup(wakeAgentId, {
                       source: "assignment",

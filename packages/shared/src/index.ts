@@ -2733,6 +2733,7 @@ export {
   TODERO_PLAN_MAX_FEATURES,
   TODERO_PLAN_MAX_TASKS,
   TODERO_PLAN_TASK_TYPE_MARKER,
+  spellsOutToderoPlanBlock,
   parseToderoPlanBlock,
   formatToderoPlanBlock,
   buildToderoPlanTaskDescription,

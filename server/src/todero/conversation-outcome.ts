@@ -1,5 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
-import { TODERO_PLAN_BLOCK_INSTRUCTIONS } from "@todero/shared";
+import { TODERO_PLAN_BLOCK_INSTRUCTIONS, spellsOutToderoPlanBlock } from "@todero/shared";
+import type { IssueCommentPresentation } from "@todero/shared";
 import type { Db } from "@todero/db";
 import { issues } from "@todero/db";
 import {
@@ -270,7 +271,6 @@ const HANDS_OVER_RES: RegExp[] = [
   /\breview\s+(?:the|this|that|my|our|its)?\s*(?:above\s+|proposed\s+|attached\s+)*(?:plan|proposal)\b/i,
   /\blet\s+me\s+know\s+if\s+(?:you\s+(?:need|want|require|have)|any|there\s+(?:are|is))\b[^.?!\n]{0,40}\b(?:changes?|adjustments?|additions?|additional|feedback|thoughts?|tweaks?|edits?|revisions?|modifications?)\b/i,
 ];
-const PLAN_FENCE_ASKED_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*todero-plan\b/i;
 /** How much of the tail of a reply counts as "the closing lines". */
 const CLOSING_LINES = 8;
 
@@ -301,7 +301,7 @@ export function asksToApproveAPlan(reply: string): boolean {
 
 /** The task was told to write a plan in the one shape Todero can read. */
 export function taskAsksForPlanBlock(description: string | null | undefined): boolean {
-  return PLAN_FENCE_ASKED_RE.test(description ?? "");
+  return spellsOutToderoPlanBlock(description);
 }
 
 /** What Todero tells the model when the plan it claimed did not arrive. */
@@ -404,10 +404,38 @@ export function planMissingPlanRecovery(input: {
   return { kind: "hand-back", ...handBack };
 }
 
+/**
+ * Todero's own words on a task, marked as Todero's.
+ *
+ * This is not decoration. `loadConversationThread` drops every comment that
+ * carries a presentation block, because those are Todero talking about the
+ * run rather than a turn of the conversation. Without it the hand-back below
+ * is stored under the agent's own id with no marking, comes back as the
+ * agent's last turn on the next wake, and the model — a 14B, live — reads
+ * Todero's "this agent is stuck on the plan" as something it said and says it
+ * again to the person, still asking for a plan review. The machinery had
+ * already stopped; only the words kept going.
+ */
+export const SYSTEM_NOTICE_PRESENTATION: IssueCommentPresentation = {
+  kind: "system_notice",
+  tone: "warning",
+  title: "Todero",
+  detailsDefaultOpen: false,
+  density: "compact",
+};
+
 export type MissingPlanRecoveryDeps = {
   updateIssue: (issueId: string, patch: { status?: string; description?: string }) => Promise<unknown>;
-  /** Post the one thing the person reads, on the task. */
-  addComment: (issueId: string, body: string) => Promise<unknown>;
+  /**
+   * Post the one thing the person reads, on the task. `presentation` is
+   * always Todero's own marking: the caller must pass it through so the
+   * comment never returns to the model as conversation.
+   */
+  addComment: (
+    issueId: string,
+    body: string,
+    presentation: IssueCommentPresentation,
+  ) => Promise<unknown>;
   /** Bring the agent back for the corrective turn. */
   wakeAgent: (input: { issueId: string; agentId: string }) => Promise<unknown>;
   log: (message: string) => unknown;
@@ -430,14 +458,14 @@ export async function applyMissingPlanRecovery(
         `[todero] It could not be started again to rewrite the plan: ${err instanceof Error ? err.message : String(err)}\n`,
       );
       await deps.updateIssue(input.issueId, { status: "blocked", description: recovery.fallback.description });
-      await deps.addComment(input.issueId, recovery.fallback.comment);
+      await deps.addComment(input.issueId, recovery.fallback.comment, SYSTEM_NOTICE_PRESENTATION);
       return "hand-back";
     }
     deps.log("[todero] It asked to have a plan approved but wrote none; asking it once more.\n");
     return "retry";
   }
   await deps.updateIssue(input.issueId, { status: "blocked", description: recovery.description });
-  await deps.addComment(input.issueId, recovery.comment);
+  await deps.addComment(input.issueId, recovery.comment, SYSTEM_NOTICE_PRESENTATION);
   deps.log("[todero] No plan came back the second time either; the task is over to the person.\n");
   return "hand-back";
 }

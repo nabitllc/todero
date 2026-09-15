@@ -9,6 +9,7 @@ import {
   parseChatCompletionsReply,
   parseChatCompletionsText,
 } from "./chat-completions.js";
+import { estimatePromptTokens, promptBudgetTokens } from "./prompt-budget.js";
 
 const MISSION = "Ship the marketplace";
 const TASK_MARKDOWN = `Todero task context:
@@ -466,12 +467,20 @@ describe("budgeting the prompt against the window", () => {
     expect(joined).not.toMatch(/left out/i);
   });
 
-  it("keeps Todero's own turn instruction last even when the thread is trimmed", () => {
+  /**
+   * The turn instruction is pinned at the back of the budget, not stapled on
+   * after it. Appended afterwards its tokens are free, and a long instruction
+   * (the corrective "write the plan again, here is the shape") pushes the
+   * prompt past the window it was just trimmed to fit — which drops the front
+   * of it, which is the system prompt this whole file exists to protect.
+   */
+  it("keeps Todero's own turn instruction last and counts it against the window", () => {
+    const instruction = `Write the plan block now, nothing else. ${"shape detail ".repeat(300)}`;
     const messages = buildChatCompletionsMessages(
       {
         toderoTaskMarkdown: TASK_MARKDOWN,
         toderoThread: longThread(40),
-        toderoTurnInstruction: "Write the plan block now, nothing else.",
+        toderoTurnInstruction: instruction,
         toderoContextLength: 4096,
       },
       { agentName: "Ash" },
@@ -479,5 +488,7 @@ describe("budgeting the prompt against the window", () => {
     const last = messages[messages.length - 1]!;
     expect(last.role).toBe("user");
     expect(last.content).toContain("Write the plan block now, nothing else.");
+    expect(messages[0]!.content).toContain("You are Ash");
+    expect(estimatePromptTokens(messages)).toBeLessThanOrEqual(promptBudgetTokens(4096));
   });
 });

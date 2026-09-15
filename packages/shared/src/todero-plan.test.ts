@@ -4,6 +4,7 @@ import {
   formatToderoPlanBlock,
   parseToderoPlanBlock,
   resolveToderoPlanTaskDependencies,
+  spellsOutToderoPlanBlock,
   TODERO_PLAN_BLOCK_INSTRUCTIONS,
   TODERO_PLAN_TASK_TYPE_MARKER,
 } from "./todero-plan.js";
@@ -283,5 +284,30 @@ describe("resolveToderoPlanTaskDependencies", () => {
     expect(result).toHaveLength(2);
     expect(result[0]!.after).toEqual([]);
     expect(result[1]!.after).toEqual([result[0]!.title === "A" ? "t1" : "t2"]);
+  });
+});
+
+/**
+ * One definition, used by both the turn that carries a schema and the task
+ * that was told to write a plan. Two copies of this test were two copies of
+ * the regex: change the wording of the instructions in one place and the
+ * structured-output path stops firing with nothing failing.
+ */
+describe("spellsOutToderoPlanBlock", () => {
+  it("fires on the instructions Todero actually sends", () => {
+    expect(spellsOutToderoPlanBlock(TODERO_PLAN_BLOCK_INSTRUCTIONS)).toBe(true);
+  });
+
+  it("fires on a tilde fence and an indented one, the way small models write them", () => {
+    expect(spellsOutToderoPlanBlock(["Write it like this:", "  ~~~todero-plan", "goal: x", "~~~"].join("\n"))).toBe(
+      true,
+    );
+  });
+
+  it("does not fire on prose that merely says the words", () => {
+    expect(spellsOutToderoPlanBlock("Send me the todero-plan when you have it.")).toBe(false);
+    expect(spellsOutToderoPlanBlock(["```yaml", "goal: x", "```"].join("\n"))).toBe(false);
+    expect(spellsOutToderoPlanBlock("")).toBe(false);
+    expect(spellsOutToderoPlanBlock(null)).toBe(false);
   });
 });

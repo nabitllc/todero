@@ -22,7 +22,7 @@
  * And the prose path stays: if the runtime ignores the schema, or answers
  * with a fenced block anyway, the reply is read the way it always was.
  */
-import { formatToderoPlanBlock } from "@todero/shared";
+import { formatToderoPlanBlock, spellsOutToderoPlanBlock } from "@todero/shared";
 import {
   TODERO_PLAN_JSON_SCHEMA,
   TODERO_PLAN_JSON_SCHEMA_NAME,
@@ -37,9 +37,6 @@ import {
   parseChatCompletionsReply,
 } from "./chat-completions.js";
 
-/** The fenced plan template, wherever Todero spells it out for the model. */
-const PLAN_FENCE_ASKED_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*todero-plan\b/i;
-
 /**
  * Is this turn one where Todero asked for the plan itself? Only Todero's own
  * turn instruction counts — the task description carries the plan template for
@@ -48,7 +45,7 @@ const PLAN_FENCE_ASKED_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*todero-plan\b/i;
  */
 export function turnAsksForThePlan(context: Record<string, unknown>): boolean {
   const instruction = context.toderoTurnInstruction;
-  return typeof instruction === "string" && PLAN_FENCE_ASKED_RE.test(instruction);
+  return typeof instruction === "string" && spellsOutToderoPlanBlock(instruction);
 }
 
 /** True when this request should carry the schema. */
@@ -71,12 +68,14 @@ export function planResponseFormat(): Record<string, unknown> {
   };
 }
 
-/** Ollama's own way to ask: the bare schema in `format`. */
-export function planNativeFormat(): Record<string, unknown> {
-  return TODERO_PLAN_JSON_SCHEMA as unknown as Record<string, unknown>;
-}
-
-/** The schema inside a `response_format`, or null when that is not what it is. */
+/**
+ * The schema inside a `response_format`, or null when that is not what it is.
+ *
+ * This is the whole of the native path: the adapter builds one OpenAI-shaped
+ * body, and the Ollama-native call lifts the bare schema back out of it for
+ * `format`. There is deliberately no second builder for the native shape —
+ * one body, read two ways.
+ */
 export function readPlanNativeFormat(responseFormat: unknown): Record<string, unknown> | null {
   const record = parseObject(responseFormat);
   if (record.type !== "json_schema") return null;

@@ -13,6 +13,7 @@ import {
   REVIEW_PENDING_MARKER,
   applyMissingPlanRecovery,
   buildStopAskingForPlanInstruction,
+  SYSTEM_NOTICE_PRESENTATION,
   descriptionWithPlanTries,
   hasGivenUpOnPlan,
   planMissingPlanRecovery,
@@ -325,7 +326,7 @@ describe("a reply that asks to approve a plan that is not there", () => {
 describe("applyMissingPlanRecovery", () => {
   type Recorded = {
     updates: Array<{ issueId: string; patch: { status?: string; description?: string } }>;
-    comments: Array<{ issueId: string; body: string }>;
+    comments: Array<{ issueId: string; body: string; presentation: unknown }>;
     wakes: Array<{ issueId: string; agentId: string }>;
     logs: string[];
   };
@@ -338,8 +339,8 @@ describe("applyMissingPlanRecovery", () => {
         updateIssue: async (issueId, patch) => {
           recorded.updates.push({ issueId, patch });
         },
-        addComment: async (issueId, body) => {
-          recorded.comments.push({ issueId, body });
+        addComment: async (issueId, body, presentation) => {
+          recorded.comments.push({ issueId, body, presentation });
         },
         wakeAgent: async (input) => {
           recorded.wakes.push(input);
@@ -374,8 +375,32 @@ describe("applyMissingPlanRecovery", () => {
       recovery: { kind: "hand-back", description: "body", comment: "Nova could not write the plan." },
     });
     expect(recorded.updates).toEqual([{ issueId: "issue-1", patch: { status: "blocked", description: "body" } }]);
-    expect(recorded.comments).toEqual([{ issueId: "issue-1", body: "Nova could not write the plan." }]);
+    expect(recorded.comments).toEqual([
+      {
+        issueId: "issue-1",
+        body: "Nova could not write the plan.",
+        presentation: SYSTEM_NOTICE_PRESENTATION,
+      },
+    ]);
     expect(recorded.wakes).toHaveLength(0);
+  });
+
+  /**
+   * The echo seen live: Todero's own "stuck on the plan" message was posted
+   * under the agent's name with no presentation, so the thread builder fed it
+   * straight back and the 14B read its own hand-back as conversation and said
+   * it again to the person. A system notice is the marking the thread builder
+   * already drops.
+   */
+  it("posts Todero's own hand-back as a system notice, so it never returns as the agent's words", async () => {
+    const { deps: d, recorded } = deps();
+    await applyMissingPlanRecovery(d, {
+      issueId: "issue-1",
+      agentId: "agent-1",
+      recovery: { kind: "hand-back", description: "body", comment: "Nova is stuck on the plan." },
+    });
+    expect(recorded.comments.at(-1)?.presentation).toEqual(SYSTEM_NOTICE_PRESENTATION);
+    expect((recorded.comments.at(-1)?.presentation as { kind?: string } | undefined)?.kind).toBe("system_notice");
   });
 
   it("puts the task in front of the person when the agent cannot be brought back", async () => {
@@ -399,6 +424,12 @@ describe("applyMissingPlanRecovery", () => {
       issueId: "issue-1",
       patch: { status: "blocked", description: "stalled body" },
     });
-    expect(recorded.comments).toEqual([{ issueId: "issue-1", body: "Nova could not be started again." }]);
+    expect(recorded.comments).toEqual([
+      {
+        issueId: "issue-1",
+        body: "Nova could not be started again.",
+        presentation: SYSTEM_NOTICE_PRESENTATION,
+      },
+    ]);
   });
 });

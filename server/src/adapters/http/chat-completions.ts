@@ -283,23 +283,40 @@ export function buildChatCompletionsMessages(
     history.push({ role, content: turn.body });
   }
 
+  // A turn instruction from Todero itself (for example: every task in the
+  // plan is closed, write the wrap-up) is the last thing the model reads, and
+  // it goes into the budget as a pinned trailing message rather than being
+  // stapled on afterwards: the corrective "write the plan again, here is the
+  // shape" instruction is hundreds of tokens, and tokens outside the budget
+  // are tokens the runtime trims off the front, where the system prompt is.
+  const turnInstruction = readNonEmptyString(context.toderoTurnInstruction);
+  const trailing: ChatCompletionsMessage[] = turnInstruction
+    ? [{ role: "user", content: turnInstruction }]
+    : [];
+
   // Everything must fit the window Todero knows this model has. The opening
   // block is pinned; the conversation is trimmed oldest-first, with a marker
   // saying so.
   const messages = budgetChatMessages({
-    messages: [...opening, ...history],
+    messages: [...opening, ...history, ...trailing],
     pinnedLeading: opening.length,
+    pinnedTrailing: trailing.length,
     contextLength: readChatCompletionsContextLength(context),
   }).messages;
   const openingMessageCount = opening.length;
 
-  // A turn instruction from Todero itself (for example: every task in the
-  // plan is closed, write the wrap-up) is the last thing the model reads.
-  const turnInstruction = readNonEmptyString(context.toderoTurnInstruction);
   if (turnInstruction) {
+    // Budgeted as its own message, delivered folded into the turn before it
+    // when that turn is also the person's: chat templates expect strict
+    // alternation. Folding only ever costs fewer tokens than the budget
+    // already counted, never more.
+    const instruction = messages.pop()!;
     const last = messages[messages.length - 1]!;
-    if (last.role === "user" && messages.length > openingMessageCount) last.content = `${last.content}\n\n${turnInstruction}`;
-    else messages.push({ role: "user", content: turnInstruction });
+    if (last.role === "user" && messages.length > openingMessageCount) {
+      last.content = `${last.content}\n\n${instruction.content}`;
+    } else {
+      messages.push(instruction);
+    }
     return messages;
   }
   if (messages[messages.length - 1]!.role === "assistant") {
