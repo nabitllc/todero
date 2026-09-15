@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { MAX_REQUESTED_CONTEXT_LENGTH } from "../adapters/http/prompt-budget.js";
-
 const mockDetectLocalLlms = vi.hoisted(() => vi.fn());
 vi.mock("./local-llm-detect.js", () => ({ detectLocalLlms: mockDetectLocalLlms }));
 
@@ -26,6 +24,11 @@ function fakeDb(input: { governance: unknown; rows?: number }) {
       update: () => ({
         set: (values: Record<string, unknown>) => {
           updates.push(values);
+          // A written row is what the next read sees, so a test can call
+          // twice and watch the second call settle.
+          if (rows[0] && "interactionResolverGovernance" in values) {
+            rows[0].governance = values.interactionResolverGovernance;
+          }
           return { where: async () => undefined };
         },
       }),
@@ -157,6 +160,36 @@ describe("context length", () => {
     expect(calls.sort()).toEqual(["http://127.0.0.1:11434/api/ps", "http://127.0.0.1:11434/api/show"]);
   });
 
+  it("ignores a loaded window that belongs to a different model", async () => {
+    // One Ollama serves eight models here and routing switches model per
+    // turn, so /api/ps routinely holds a row about something else. A 128k
+    // model's row must not become a 4k model's window.
+    const fetcher = (async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/ps")) {
+        return new Response(
+          JSON.stringify({
+            models: [{ name: "nemotron-32k:latest", model: "nemotron-32k:latest", context_length: 131_072 }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ model_info: { "llama.context_length": 4096 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434", "small:1b", fetcher)).toBe(4096);
+  });
+
+  it("answers null when only another model is loaded and the model itself does not say", async () => {
+    const fetcher = (async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/ps")) {
+        return new Response(JSON.stringify({ models: [{ name: "other:70b", context_length: 131_072 }] }), {
+          status: 200,
+        });
+      }
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+    expect(await detectContextLength("http://127.0.0.1:11434", "small:1b", fetcher)).toBeNull();
+  });
+
   it("keeps a window the runtime is already serving above the model's own maximum", async () => {
     const fetcher = (async (url: string | URL | Request) => {
       if (String(url).endsWith("/api/ps")) {
@@ -211,7 +244,7 @@ describe("context length", () => {
 });
 
 describe("resolveContextLengthForRun", () => {
-  it("uses the window the connection test already recorded", async () => {
+  it("keeps the window the connection test recorded when the re-check is smaller", async () => {
     const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 16_384 } });
     await expect(
       resolveContextLengthForRun(db, "company-1", {
@@ -220,7 +253,13 @@ describe("resolveContextLengthForRun", () => {
         detect: async () => 4096,
       }),
     ).resolves.toBe(16_384);
-    expect(updates).toEqual([]);
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      interactionResolverGovernance: {
+        toderoLocalLlmContextLength: 16_384,
+        toderoLocalLlmContextLengthRechecked: true,
+      },
+    });
   });
 
   it("re-checks a recorded window that is smaller than Todero would ask for, and keeps the larger", async () => {
@@ -240,25 +279,34 @@ describe("resolveContextLengthForRun", () => {
     });
   });
 
-  it("keeps the recorded window when a re-check comes back smaller", async () => {
+  it("re-checks a recorded window once, then leaves the runtime alone", async () => {
+    // A model that holds 8,192 is below anything Todero would ask for, and
+    // must still stop costing two HTTP calls a turn once it has been asked.
     const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 8_192 } });
-    await expect(
-      resolveContextLengthForRun(db, "company-1", {
-        baseUrl: "http://127.0.0.1:11434",
-        modelId: "qwen2.5-coder:14b",
-        detect: async () => 4096,
-      }),
-    ).resolves.toBe(8_192);
-    expect(updates).toEqual([]);
-  });
-
-  it("stops re-checking once the recorded window is everything Todero would ask for", async () => {
-    const { db } = fakeDb({ governance: { toderoLocalLlmContextLength: MAX_REQUESTED_CONTEXT_LENGTH } });
-    const detect = vi.fn();
+    const detect = vi.fn(async () => 8_192);
     await expect(
       resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
-    ).resolves.toBe(MAX_REQUESTED_CONTEXT_LENGTH);
-    expect(detect).not.toHaveBeenCalled();
+    ).resolves.toBe(8_192);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveLength(1);
+    await expect(
+      resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
+    ).resolves.toBe(8_192);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveLength(1);
+  });
+
+  it("asks again next turn when the runtime was down for the re-check", async () => {
+    const { db, updates } = fakeDb({ governance: { toderoLocalLlmContextLength: 4096 } });
+    const detect = vi.fn(async () => null);
+    await expect(
+      resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
+    ).resolves.toBe(4096);
+    expect(updates).toEqual([]);
+    await expect(
+      resolveContextLengthForRun(db, "company-1", { baseUrl: "http://127.0.0.1:11434", modelId: "m", detect }),
+    ).resolves.toBe(4096);
+    expect(detect).toHaveBeenCalledTimes(2);
   });
 
   it("fills it in for an agent hired before the window was ever recorded", async () => {

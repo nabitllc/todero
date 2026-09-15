@@ -529,21 +529,35 @@ instead of guessing.
   All five organizations in the first live run recorded 4,096 this way.
 - **Decision:**
   1. `detectContextLength` asks both endpoints at once and takes the larger. `/api/show` is the
-     capability and is never lowered by a loaded-state snapshot; `/api/ps` still counts, because a
-     model deliberately loaded above its own reported maximum really is serving that window.
+     capability and is never lowered by a loaded-state snapshot; `/api/ps` still counts, but only
+     for a row naming **the model being asked about**, because a model deliberately loaded above
+     its own reported maximum really is serving that window. There is no "whatever is loaded"
+     fallback: one Ollama here serves eight models and routing switches model per turn, so the row
+     on top is routinely a different model's, and a reading taken from it would be ratcheted in
+     permanently by parts 2 and 3. Observed on this machine with only `ornith:9b` loaded at 65,536:
+     the fallback recorded 65,536 for `qwen2.5-coder:14b`; without it, 32,768.
   2. `storeContextLength` only ever moves upward. A reading can be an understatement, and an
      understatement that overwrites a known capability is permanent.
-  3. `resolveContextLengthForRun` does not trust a recorded window below
-     `MAX_REQUESTED_CONTEXT_LENGTH` forever: it re-checks the runtime and keeps the larger number,
-     which repairs every organization already holding 4,096 on its next turn, with no migration.
-     At or above the ceiling there is nothing to gain, so the runtime is left alone.
+  3. `resolveContextLengthForRun` does not trust a recorded window on sight: the first run that
+     can reach the runtime re-checks it and keeps the larger number, which repairs every
+     organization already holding 4,096 on its next turn, with no migration. That check happens
+     **once**, marked by `toderoLocalLlmContextLengthRechecked`; the model's own maximum does not
+     change between turns, and the earlier rule — re-check anything below the ceiling — meant an
+     8k or 4k model paid two localhost requests every turn forever. A run that reaches nothing
+     records nothing and asks again next turn. A later connection test still raises the number.
+     This is also why the domain layer no longer imports the ceiling from the http adapter: "when
+     to stop re-probing" and "the largest window we request" are different questions.
   4. `MAX_REQUESTED_CONTEXT_LENGTH` rises from 16,384 to 32,768. 16,384 was the wizard's comfort
      recommendation, not a hardware limit, and it would have capped the model Todero is actually
-     run with to half of what it holds. 32k of KV cache on a 14B is roughly two gigabytes; 128k —
-     what `/api/show` reports for some models — is not affordable, so a ceiling stays.
+     run with to half of what it holds. What 32k costs was then measured rather than assumed: at
+     `num_ctx` 32768 this machine's Ollama reports `qwen2.5-coder:14b` at 15.7 GB with 10.5 GB
+     resident on a 12 GB card, so roughly five gigabytes spill to system RAM. That price is
+     accepted knowingly — the alternative on the table was every organization running at 4,096,
+     which is not slower but broken — while 128k, what `/api/show` reports for some models, would
+     spill several times as much, so a ceiling stays.
 - **Consequences:**
   - An organization recorded at 4,096 repairs itself on the next turn: one extra pair of localhost
-    requests per run until the recorded window reaches the ceiling, then none.
+    requests, once, and none after that.
   - Todero can now ask a machine for 32,768 tokens where it previously asked for 16,384. Someone
     serving a window larger than 32k is still trimmed to 32k and loses room, not capability.
   - The number Todero acts on is the same one it records, so the request and the prompt budget

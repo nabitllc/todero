@@ -36,8 +36,15 @@ import type { ChatCompletionsMessage } from "./chat-completions.js";
  * 16,384 was chosen as "enough for the skill pack, the task and a long
  * thread", which is a comfort number, not a hardware limit: it would have
  * capped qwen2.5-coder:14b — the model this is actually run with — to half of
- * what it holds. 32k of KV cache on a 14B is roughly two gigabytes, which the
- * machines Todero targets can pay; 128k is not, so the ceiling stays.
+ * what it holds.
+ *
+ * What 32k costs was measured, not assumed. Loaded at num_ctx 32768 on this
+ * machine's 12 GB card, Ollama reports qwen2.5-coder:14b at 15.7 GB with only
+ * 10.5 GB resident in VRAM: about five gigabytes spill to system RAM. That is
+ * a real price and it is the price this ceiling pays, knowingly — the
+ * alternative on the table was every organization on the machine running at
+ * 4,096 tokens, which is not slower, it is broken. 128k would spill several
+ * times as much, so the ceiling stays where it is.
  *
  * Above it Todero does trim, deliberately: it has to name a number in the
  * request, and 32k already carries the whole pack, the task and a long

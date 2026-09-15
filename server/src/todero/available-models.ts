@@ -11,13 +11,19 @@
  */
 import { companies, type Db } from "@todero/db";
 import { eq } from "drizzle-orm";
-import { MAX_REQUESTED_CONTEXT_LENGTH } from "../adapters/http/prompt-budget.js";
 import { detectLocalLlms } from "./local-llm-detect.js";
 
 /** The key inside `interactionResolverGovernance`. Mirrored in @todero/shared. */
 export const AVAILABLE_MODEL_IDS_KEY = "toderoLocalLlmAvailableModelIds";
 /** The context window, in tokens, the runtime served the organization's model with. */
 export const CONTEXT_LENGTH_KEY = "toderoLocalLlmContextLength";
+/**
+ * Set once the recorded window has been checked against the runtime by a run,
+ * rather than only written by a connection test. Every organization created
+ * before that check existed holds a number that may be an understatement, so
+ * the first run re-asks; this is how the second run knows not to.
+ */
+export const CONTEXT_LENGTH_RECHECKED_KEY = "toderoLocalLlmContextLengthRechecked";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -126,10 +132,13 @@ export function readStoredContextLength(governance: unknown): number | null {
  * the same machine minutes apart.
  *
  * The capability is the answer, so this takes the larger of the two and never
- * lets a loaded-state snapshot lower it. /api/ps is still worth asking: when
- * someone has deliberately loaded a model above its own reported maximum,
- * that window is real and already paid for. Any other runtime, or a runtime
- * that does not say, answers null.
+ * lets a loaded-state snapshot lower it. /api/ps is still worth asking, but
+ * only about the model being asked about: when someone has deliberately
+ * loaded *that* model above its own reported maximum, the window is real and
+ * already paid for. A row about some other model says nothing here — one
+ * Ollama serves many models and routing switches between them per turn, so
+ * the row on top is routinely a different model's. Any other runtime, or a
+ * runtime that does not say, answers null.
  */
 export async function detectContextLength(
   baseUrl: string,
@@ -164,7 +173,12 @@ async function readLoadedContextLength(
       models?: Array<{ name?: string; model?: string; context_length?: number }>;
     };
     const models = Array.isArray(body.models) ? body.models : [];
-    const match = models.find((m) => m.name === modelId || m.model === modelId) ?? models[0];
+    // Only the row for this model counts. There is no "whatever is loaded"
+    // fallback: a reading taken from another model would be raised into this
+    // organization's window and, because the record only ever rises, stay.
+    const wanted = modelId.trim();
+    if (!wanted) return null;
+    const match = models.find((m) => m.name === wanted || m.model === wanted);
     return asContextLength(match?.context_length);
   } catch {
     return null;
@@ -228,12 +242,24 @@ export async function storeContextLength(db: Db, companyId: string, contextLengt
   const governance = asRecord(rows[0]?.governance);
   const stored = readStoredContextLength(governance);
   if (stored !== null && stored >= contextLength) return;
+  await writeContextLength(db, companyId, governance, contextLength, false);
+}
+
+/** The one place the two context-window keys are written. */
+async function writeContextLength(
+  db: Db,
+  companyId: string,
+  governance: Record<string, unknown>,
+  contextLength: number,
+  rechecked: boolean,
+): Promise<void> {
   await db
     .update(companies)
     .set({
       interactionResolverGovernance: {
         ...governance,
         [CONTEXT_LENGTH_KEY]: contextLength,
+        ...(rechecked ? { [CONTEXT_LENGTH_RECHECKED_KEY]: true } : {}),
       } as unknown as (typeof companies.$inferInsert)["interactionResolverGovernance"],
     })
     .where(eq(companies.id, companyId));
@@ -245,11 +271,15 @@ export async function storeContextLength(db: Db, companyId: string, contextLengt
  * before the organization existed — a fresh look at the runtime, remembered
  * for next time. Null when nothing can say; the caller must not invent one.
  *
- * A recorded window is not trusted forever. Anything below the ceiling may be
- * an understatement written by an earlier, worse reading (every organization
- * backfilled while the model was warm holds 4,096), so it is re-checked and
- * the larger number wins. At the ceiling there is nothing left to gain, so
- * the runtime is left alone.
+ * A recorded window is not trusted on sight: it may be an understatement
+ * written by an earlier, worse reading — every organization backfilled while
+ * the model was warm holds 4,096 — so the first run that can reach the
+ * runtime asks again and the larger number wins. That check happens once.
+ * Once it has happened the answer is the model's own maximum, which does not
+ * change between turns, and re-asking every turn would spend two HTTP calls a
+ * turn forever on any model smaller than whatever ceiling we compared to. A
+ * later connection test (a new model, a new machine) still raises it through
+ * `storeContextLength`.
  */
 export async function resolveContextLengthForRun(
   db: Db,
@@ -266,14 +296,17 @@ export async function resolveContextLengthForRun(
     .where(eq(companies.id, companyId))
     .limit(1);
   if (rows.length === 0) return null;
-  const stored = readStoredContextLength(rows[0]?.governance);
-  if (stored !== null && stored >= MAX_REQUESTED_CONTEXT_LENGTH) return stored;
+  const governance = asRecord(rows[0]?.governance);
+  const stored = readStoredContextLength(governance);
+  if (stored !== null && governance[CONTEXT_LENGTH_RECHECKED_KEY] === true) return stored;
   const baseUrl = typeof options.baseUrl === "string" ? options.baseUrl.trim() : "";
   if (!baseUrl) return stored;
   const detect = options.detect ?? ((url: string, model: string) => detectContextLength(url, model));
   const detected = await detect(baseUrl, typeof options.modelId === "string" ? options.modelId.trim() : "");
-  const best = largerContextLength(stored, detected ?? null);
-  if (best === null) return null;
-  if (best !== stored) await storeContextLength(db, companyId, best);
+  // Nothing answered — the runtime may be down. Nothing was learned, so
+  // nothing is recorded and the next run asks again.
+  if (detected === null) return stored;
+  const best = largerContextLength(stored, detected) ?? detected;
+  await writeContextLength(db, companyId, governance, best, true);
   return best;
 }

@@ -9,7 +9,6 @@ import {
   parseChatCompletionsReply,
   parseChatCompletionsText,
 } from "./chat-completions.js";
-import { MAX_REQUESTED_CONTEXT_LENGTH } from "./prompt-budget.js";
 
 const MISSION = "Ship the marketplace";
 const TASK_MARKDOWN = `Todero task context:
@@ -401,7 +400,7 @@ describe("the window Todero sets for the model", () => {
       context: { toderoTaskMarkdown: TASK_MARKDOWN, toderoContextLength: 131_072 },
       payloadTemplate: {},
     });
-    expect(body.options).toEqual({ num_ctx: MAX_REQUESTED_CONTEXT_LENGTH });
+    expect(body.options).toEqual({ num_ctx: 32_768 });
   });
 
   it("asks for the whole window of a model that holds 32k", () => {
