@@ -126,3 +126,72 @@ describe("a reply the schema did not hold and no plan can be read from", () => {
     ).toBeNull();
   });
 });
+
+/**
+ * A usable plan with other JSON in the same reply. Rewriting the reply around
+ * the plan is not enough: every other object the model left behind is JSON a
+ * person would be shown. The plan is rendered, the rest goes.
+ */
+const PLAN_JSON = JSON.stringify({
+  message: "Here is the plan.",
+  goal: "Seat neighbors at monthly dinners",
+  features: [{ name: "Sign-ups", why: "People need a way in", done_when: "A form is live" }],
+  tasks: [{ title: "Draft the sign-up spec", feature: "Sign-ups", output: "A one-page spec", after: "" }],
+});
+
+describe("a usable plan with other machine-readable blobs around it", () => {
+  function expectPlanWithoutJson(shown: string | null): void {
+    expect(shown).not.toBeNull();
+    expect(shown).toContain("```todero-plan");
+    expect(shown).toContain("goal: Seat neighbors at monthly dinners");
+    expect(shown).toContain("Here is the plan.");
+    expect(shown).toContain("STATUS: waiting");
+    expect(shown).not.toContain("{");
+    expect(shown).not.toContain("}");
+  }
+
+  it("drops a scratch object the model wrote in front of the plan", () => {
+    const shown = replyFromStructuredPlan(['{"note": "scratch pad, ignore"}', "", PLAN_JSON].join("\n"));
+
+    expectPlanWithoutJson(shown);
+    expect(shown).not.toContain("scratch pad");
+  });
+
+  it("drops a debug object the model wrote after the plan", () => {
+    const shown = replyFromStructuredPlan([PLAN_JSON, "", '{"debug": "tokens used 812"}'].join("\n"));
+
+    expectPlanWithoutJson(shown);
+    expect(shown).not.toContain("tokens used");
+  });
+
+  it("drops a fenced json block in front of the plan, fence and all", () => {
+    const shown = replyFromStructuredPlan(
+      ["Working on it.", "", "```json", '{"note": "scratch pad, ignore"}', "```", "", PLAN_JSON].join("\n"),
+    );
+
+    expectPlanWithoutJson(shown);
+    expect(shown).toContain("Working on it.");
+    expect(shown).not.toContain("scratch pad");
+    expect(shown).not.toContain("```json");
+  });
+});
+
+describe("a reply with more blobs than the scanner will read", () => {
+  const TEN_BLOBS = Array.from({ length: 10 }, (_, n) => `{"n": ${n}}`).join("\n\n");
+
+  it("falls back to the plain sentence instead of posting what it never scanned", () => {
+    const shown = replyWhenStructuredPlanUnreadable(TEN_BLOBS);
+
+    expect(shown).toBe(STRUCTURED_PLAN_UNREADABLE_NOTE);
+  });
+
+  it("still renders a plan hidden among them, and none of the blobs", () => {
+    const shown = replyFromStructuredPlan([PLAN_JSON, "", TEN_BLOBS].join("\n\n"));
+
+    expect(shown).not.toBeNull();
+    expect(shown).toContain("```todero-plan");
+    expect(shown).toContain("goal: Seat neighbors at monthly dinners");
+    expect(shown).not.toContain("{");
+    expect(shown).not.toContain("}");
+  });
+});

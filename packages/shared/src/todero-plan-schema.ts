@@ -157,14 +157,28 @@ function spanOverFence(text: string, start: number, end: number): { start: numbe
 }
 
 /**
- * Every piece of JSON in a reply, in the order it appears — wherever it sits,
- * fenced or bare, object or array, closed or cut off.
+ * Every piece of JSON in a reply, and whether that is all of them.
+ *
+ * `scannedAll` is false when the reply carried more blobs than the cap: the
+ * blobs are still the ones that were read, but there is text past the last of
+ * them that nobody has looked at. A caller whose job is to keep JSON away
+ * from a person cannot post that text, because the cap is exactly where the
+ * unread JSON begins.
  */
-export function findToderoPlanJsonBlobs(text: string): ToderoPlanJsonBlob[] {
+export type ToderoPlanJsonScan = { blobs: ToderoPlanJsonBlob[]; scannedAll: boolean };
+
+/**
+ * Every piece of JSON in a reply, in the order it appears — wherever it sits,
+ * fenced or bare, object or array, closed or cut off — and whether the scan
+ * reached the end of the text before it hit the cap.
+ */
+export function scanToderoPlanJsonBlobs(text: string): ToderoPlanJsonScan {
   const blobs: ToderoPlanJsonBlob[] = [];
-  if (typeof text !== "string" || !text.trim()) return blobs;
+  if (typeof text !== "string" || !text.trim()) return { blobs, scannedAll: true };
   let i = 0;
-  while (i < text.length && blobs.length < MAX_JSON_BLOBS) {
+  // One past the cap: finding a ninth blob is how the scan knows it stopped
+  // short, and that one is dropped again before anyone sees it.
+  while (i < text.length && blobs.length <= MAX_JSON_BLOBS) {
     const ch = text[i]!;
     if ((ch === "{" || ch === "[") && looksLikeJsonStart(text, i)) {
       const { end, complete } = scanJsonValue(text, i);
@@ -183,7 +197,17 @@ export function findToderoPlanJsonBlobs(text: string): ToderoPlanJsonBlob[] {
     }
     i++;
   }
-  return blobs;
+  if (blobs.length > MAX_JSON_BLOBS) return { blobs: blobs.slice(0, MAX_JSON_BLOBS), scannedAll: false };
+  return { blobs, scannedAll: true };
+}
+
+/**
+ * Every piece of JSON in a reply, up to the cap. Callers that have to account
+ * for the whole text — not just the blobs in it — want
+ * `scanToderoPlanJsonBlobs` instead.
+ */
+export function findToderoPlanJsonBlobs(text: string): ToderoPlanJsonBlob[] {
+  return scanToderoPlanJsonBlobs(text).blobs;
 }
 
 /**

@@ -26,9 +26,9 @@ import { formatToderoPlanBlock, spellsOutToderoPlanBlock } from "@todero/shared"
 import {
   TODERO_PLAN_JSON_SCHEMA,
   TODERO_PLAN_JSON_SCHEMA_NAME,
-  findToderoPlanJsonBlobs,
   parseToderoPlanJson,
   readToderoPlanJsonAttempt,
+  scanToderoPlanJsonBlobs,
 } from "@todero/shared/todero-plan-schema";
 import { parseObject } from "../utils.js";
 import {
@@ -97,24 +97,42 @@ function wordsBetween(text: string, from: number, to: number): string {
 /**
  * A reply the runtime shaped, rewritten as the reply the rest of Todero
  * already knows how to read: the words for the person, the canonical fenced
- * block, and the status line a plan waits on. Words the model wrote around
- * the object are kept — the object is replaced, not the reply. Null when no
- * JSON in the reply reads as a plan — the caller then reads it as prose,
- * unchanged.
+ * block, and the status line a plan waits on.
+ *
+ * Words the model wrote around the JSON are kept; every blob it wrote is
+ * spliced out, not just the one the plan was read from. A model that puts a
+ * scratch object in front of the plan, a token count after it, or a fenced
+ * `json` block beside it is writing machine-readable text a person must
+ * never be handed — only the plan itself earns a place in the reply, as the
+ * canonical block.
+ *
+ * Null when no JSON in the reply reads as a plan — the caller then reads it
+ * as prose, unchanged.
  */
 export function replyFromStructuredPlan(text: string): string | null {
-  for (const blob of findToderoPlanJsonBlobs(text)) {
-    const read = parseToderoPlanJson(blob.source);
-    if (!read) continue;
-    const words = [wordsBetween(text, 0, blob.start), read.body, wordsBetween(text, blob.end, text.length)]
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .join("\n\n");
-    return [words, formatToderoPlanBlock(read.plan), CHAT_COMPLETIONS_STATUS_WAITING]
-      .filter((part) => part.trim())
-      .join("\n\n");
-  }
-  return null;
+  const { blobs, scannedAll } = scanToderoPlanJsonBlobs(text);
+  const plans = blobs.map((blob) => parseToderoPlanJson(blob.source));
+  const planIndex = plans.findIndex((plan) => plan !== null);
+  const read = planIndex < 0 ? null : plans[planIndex]!;
+  if (!read) return null;
+  // Past the cap there is text nobody scanned, and the reason the scan
+  // stopped is that it was still finding JSON. The plan survives; the words
+  // around it do not, because some of them are the blobs that were never read.
+  const parts: string[] = [];
+  let cursor = 0;
+  blobs.forEach((blob, index) => {
+    if (scannedAll) parts.push(wordsBetween(text, cursor, blob.start));
+    if (index === planIndex) parts.push(read.body);
+    cursor = blob.end;
+  });
+  if (scannedAll) parts.push(wordsBetween(text, cursor, text.length));
+  const words = parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  return [words, formatToderoPlanBlock(read.plan), CHAT_COMPLETIONS_STATUS_WAITING]
+    .filter((part) => part.trim())
+    .join("\n\n");
 }
 
 /** What a person is told when the shaped reply carried no words of its own. */
@@ -131,10 +149,16 @@ export const STRUCTURED_PLAN_UNREADABLE_NOTE =
  * sentence the model wrote next to it. One plain sentence when there were no
  * words anywhere. Null when the reply holds no JSON at all, which is the
  * prose path, unchanged.
+ *
+ * A reply with more blobs than the scanner reads gets that one plain
+ * sentence and nothing else. The cap bounds a pathological reply; handing
+ * back the part of it nobody scanned would make the cap the one thing that
+ * shows a person the JSON.
  */
 export function replyWhenStructuredPlanUnreadable(text: string): string | null {
-  const blobs = findToderoPlanJsonBlobs(text);
+  const { blobs, scannedAll } = scanToderoPlanJsonBlobs(text);
   if (blobs.length === 0) return null;
+  if (!scannedAll) return STRUCTURED_PLAN_UNREADABLE_NOTE;
   const parts: string[] = [];
   let cursor = 0;
   for (const blob of blobs) {
