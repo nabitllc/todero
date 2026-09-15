@@ -493,10 +493,58 @@ describe("what the person is shown when the shaped reply is not a plan", () => {
     expect(result.summary).not.toContain("\"goal\"");
     const resultJson = result.resultJson as Record<string, unknown>;
     expect(resultJson.toderoStructuredPlan).toBe("unreadable");
-    // No plan came back, so the turn hands back to the person rather than
-    // closing the task on an empty shape.
-    expect(resultJson.toderoDisposition).toBe("waiting");
     expect(resultJson).not.toHaveProperty("toderoPlanBlock");
+  });
+
+  it("hands the turn back rather than closing the task on a status line beside the blob", async () => {
+    const reply = [JSON.stringify({ message: "All set.", features: [], tasks: [] }), "", "STATUS: done"].join("\n");
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(reply)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe("All set.");
+    const resultJson = result.resultJson as Record<string, unknown>;
+    // No plan came back, so the turn goes to the person. A `STATUS: done` the
+    // model wrote around an unusable object must not close the task.
+    expect(resultJson.toderoDisposition).toBe("waiting");
+    expect(resultJson.toderoStructuredPlan).toBe("unreadable");
+  });
+
+  it("keeps the sentence in front of the blob and still posts no JSON", async () => {
+    const reply = [
+      "Sure, here is the plan:",
+      JSON.stringify({ message: "Tell me which features matter most.", features: [], tasks: [] }),
+    ].join("\n");
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(reply)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toContain("Sure, here is the plan:");
+    expect(result.summary).toContain("Tell me which features matter most.");
+    expect(result.summary).not.toContain("{");
+    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe("unreadable");
+  });
+
+  it("recovers the plan out of the reply the Zz Recover organization actually got", async () => {
+    // Run 6752efd3, copied out of the dev database: the words are under
+    // `body` and the plan one level down under `plan`. The person was shown
+    // this blob verbatim.
+    const reply =
+      '{"body": "Here is the plan.", "plan": {"goal": "A weekly dinner table of five strangers in Tampa.",' +
+      ' "features": [{"name": "One-page concept", "why": "Everyone needs the same picture of the idea",' +
+      ' "done_when": "A one-page document exists and reads well"}]}}';
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(reply)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe("Here is the plan.");
+    expect(result.summary).not.toContain("{");
+    const resultJson = result.resultJson as Record<string, unknown>;
+    expect(resultJson.toderoStructuredPlan).toBe("held");
+    expect(String(resultJson.toderoPlanBlock)).toContain(
+      "goal: A weekly dinner table of five strangers in Tampa.",
+    );
+    expect(String(resultJson.toderoPlanBlock)).toContain("One-page concept");
   });
 
   it("posts the words it got to before the runtime ran out of room, not the half object", async () => {

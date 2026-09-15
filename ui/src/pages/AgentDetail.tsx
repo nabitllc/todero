@@ -59,6 +59,7 @@ import { ScrollToBottom } from "../components/ScrollToBottom";
 import { SourceResolvedFoldCallout } from "../components/SourceResolvedFoldCallout";
 import { SourceResolvedFoldBadge } from "../components/SourceResolvedFoldBadge";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
+import { RunStructuredPlanNote } from "../components/RunStructuredPlanNote";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
@@ -4274,6 +4275,11 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         )}
         <div ref={logEndRef} />
       </div>
+
+      {/* Which path produced this run's plan. The turn finishes successfully
+          even when the shape did not hold, so the failure panel below never
+          shows it. */}
+      <RunStructuredPlanNote resultJson={run.resultJson} />
 
       {(run.status === "failed" || run.status === "timed_out") && (
         <div className="rounded-lg border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-950/20 p-3 space-y-2">

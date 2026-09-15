@@ -600,3 +600,45 @@ instead of guessing.
     now see a truthy string. Only the http adapter writes it, and only this branch read it.
 - **Source:** `server/src/adapters/http/structured-plan.ts`,
   `packages/shared/src/todero-plan-schema.ts`, `server/src/services/heartbeat.ts`.
+
+## ADR-020 — The JSON is removed from the reply, not the reply from the person
+
+- **Date:** 2026-09-14
+- **Status:** Accepted (amends ADR-019)
+- **Context:** ADR-019 decided that a shaped reply which is not a usable plan is answered in
+  words. It carried that out by asking whether the *whole* reply was an attempt at the object —
+  the trimmed text had to start with `{`. Three things that actually happen fall outside that
+  test, and review caught all three. A reply with a sentence in front of the object
+  (`Sure, here is the plan:` then the object) and a reply that is a top-level array both fell
+  through to the prose path, which posts what it was given: the blob, verbatim, exactly the
+  outcome ADR-019 exists to prevent. Its consequence line "It can no longer be a JSON blob in a
+  person's thread" was therefore false. Worse, the same test threw prose away: a fence check that
+  was not anchored classed any prose *containing* a ```json block as unreadable and replaced the
+  model's own words with the canned sentence. And the live reply that motivated ADR-019 (run
+  `6752efd3`, "Zz Recover") was read by neither path: its words are under `body` and a complete,
+  recoverable plan sits under `plan`, so the person got the canned sentence and the loop the work
+  exists to break repeated. That reply also violates the strict schema it was sent with, which is
+  the evidence that this runtime does not hard-enforce output on this path — so "the reply starts
+  with `{`" was never a safe assumption.
+- **Decision:**
+  1. Find the JSON *anywhere in the reply* — the reader walks the text, honouring strings and
+     escapes, and returns every blob with its span: bare or fenced, object or array, closed or
+     cut off. This is the shape the sibling reader already documented as one that happens.
+  2. Replace the blob, not the reply. Each blob becomes its own words; everything the model
+     wrote around it is kept. A status line in that kept prose is dropped — Todero appends the
+     one status a plan turn is entitled to, and a stray `STATUS: done` beside an unusable object
+     must not close the task. One plain sentence only when there were no words anywhere.
+  3. Read `body` as well as `message`, and a plan filed one level down under `plan`, so the
+     "Zz Recover" reply yields the model's own sentence and its recoverable plan.
+  4. A person sees the path in Mission Control: `RunStructuredPlanNote` renders
+     `resultJson.toderoStructuredPlan` on the run detail. ADR-019 claimed the run-detail panel
+     already printed `resultJson`; it prints it only for a failed or timed-out run, and a turn
+     whose shape did not hold exits 0.
+- **Consequences:**
+  - The reader is deliberately greedy on a turn that asked for the shape: `{"` or `[{` in such a
+     reply is treated as JSON and hidden, even if the model meant it as prose. That trade only
+     applies to the corrective plan turn; every other turn is untouched.
+  - The three-word value from ADR-019 stands. "unreadable" now means "the object did not hold",
+    not "the whole reply was an object".
+- **Source:** `server/src/adapters/http/structured-plan.ts`,
+  `packages/shared/src/todero-plan-schema.ts`, `ui/src/components/RunStructuredPlanNote.tsx`.

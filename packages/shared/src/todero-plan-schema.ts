@@ -82,29 +82,133 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
- * The JSON object in the reply. Usually the whole reply, because that is what
- * the schema forces; a runtime that only half-honours it wraps the object in a
- * fence or puts a sentence in front, so the first `{` to the last `}` is tried
- * as well.
+ * A piece of JSON the model wrote into a reply, and where it sits in the
+ * text. Usually the whole reply, because that is what the schema forces; a
+ * runtime that only half-honours it puts a sentence in front, wraps the
+ * object in a fence, hands back an array, or runs out of room mid-object.
+ * All four still have to be found, because the caller's job is to make sure
+ * no part of one is ever shown to a person.
  */
-function findJsonObject(text: string): Record<string, unknown> | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const candidates = [trimmed];
-  const fenced = trimmed.match(/(?:`{3,}|~{3,})[ \t]*[A-Za-z0-9_-]*[ \t]*\n([\s\S]*?)\n\s*(?:`{3,}|~{3,})/);
-  if (fenced) candidates.push(fenced[1]!);
-  const first = trimmed.indexOf("{");
-  const last = trimmed.lastIndexOf("}");
-  if (first !== -1 && last > first) candidates.push(trimmed.slice(first, last + 1));
-  for (const candidate of candidates) {
-    try {
-      const parsed = asRecord(JSON.parse(candidate) as unknown);
-      if (parsed) return parsed;
-    } catch {
-      // Not this candidate; try the next shape.
+export type ToderoPlanJsonBlob = {
+  /** Where the blob starts, taking in a fence the model wrapped it in. */
+  start: number;
+  /** Just past the blob, and past that fence. */
+  end: number;
+  /** The JSON text itself, without the fence around it. */
+  source: string;
+  /** What it parses to, or null when it never closed or never parsed. */
+  value: unknown;
+};
+
+/** Enough for any real reply, and a bound on a pathological one. */
+const MAX_JSON_BLOBS = 8;
+
+/** A fence line the model opened right before the blob. */
+const FENCE_BEFORE_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*[A-Za-z0-9_-]*[ \t]*\r?\n$/;
+/** The fence line that closes it, on the blob's heels. */
+const FENCE_AFTER_RE = /^[ \t]*\r?\n?[ \t]*(?:`{3,}|~{3,})[ \t]*[A-Za-z0-9_-]*[ \t]*/;
+
+/**
+ * Where the JSON value opened at `start` ends — the matching brace, honouring
+ * strings and escapes, or the end of the text when it never closes.
+ */
+function scanJsonValue(text: string, start: number): { end: number; complete: boolean } {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") depth++;
+    else if (ch === "}" || ch === "]") {
+      depth--;
+      if (depth === 0) return { end: i + 1, complete: true };
     }
   }
-  return null;
+  return { end: text.length, complete: false };
+}
+
+/** A brace in ordinary prose is not an attempt at JSON; `{"` or `[{` is. */
+function looksLikeJsonStart(text: string, index: number): boolean {
+  // Wide enough for any amount of pretty-printed indentation before the
+  // first key, narrow enough that a stray brace in prose stays prose.
+  const rest = text.slice(index + 1, index + 400).trimStart();
+  if (text[index] === "{") return rest.startsWith('"');
+  return rest.startsWith("{") || rest.startsWith('"');
+}
+
+/** The blob's span, widened over a fence the model wrapped it in. */
+function spanOverFence(text: string, start: number, end: number): { start: number; end: number } {
+  const before = text.slice(0, start).match(FENCE_BEFORE_RE);
+  const after = text.slice(end).match(FENCE_AFTER_RE);
+  return {
+    start: before ? start - before[0].length + (before[0].startsWith("\n") ? 1 : 0) : start,
+    end: after ? end + after[0].length : end,
+  };
+}
+
+/**
+ * Every piece of JSON in a reply, in the order it appears — wherever it sits,
+ * fenced or bare, object or array, closed or cut off.
+ */
+export function findToderoPlanJsonBlobs(text: string): ToderoPlanJsonBlob[] {
+  const blobs: ToderoPlanJsonBlob[] = [];
+  if (typeof text !== "string" || !text.trim()) return blobs;
+  let i = 0;
+  while (i < text.length && blobs.length < MAX_JSON_BLOBS) {
+    const ch = text[i]!;
+    if ((ch === "{" || ch === "[") && looksLikeJsonStart(text, i)) {
+      const { end, complete } = scanJsonValue(text, i);
+      const source = text.slice(i, end);
+      let value: unknown = null;
+      if (complete) {
+        try {
+          value = JSON.parse(source) as unknown;
+        } catch {
+          // Close enough to JSON to hide from a person, too broken to read.
+        }
+      }
+      blobs.push({ ...spanOverFence(text, i, end), source, value });
+      i = end;
+      continue;
+    }
+    i++;
+  }
+  return blobs;
+}
+
+/**
+ * The records worth reading a plan out of: the object itself, and the entries
+ * of an array when the model answered with one.
+ */
+function planRecordsFrom(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_JSON_BLOBS).flatMap((entry) => {
+      const record = asRecord(entry);
+      return record ? [record] : [];
+    });
+  }
+  const record = asRecord(value);
+  return record ? [record] : [];
+}
+
+/**
+ * The words for the person in a record. A model told to write `message`
+ * writes `body` about as often, and the live reply that forced this file to
+ * be rewritten used `body`.
+ */
+function readWords(record: Record<string, unknown> | null): string {
+  if (!record) return "";
+  return readString(record.message) || readString(record.body);
 }
 
 function readFeatures(value: unknown): ToderoPlanFeature[] {
@@ -151,57 +255,74 @@ function readTasks(value: unknown): ToderoPlanTask[] {
  * block somewhere in it.
  */
 export function parseToderoPlanJson(text: string): { plan: ToderoPlan; body: string } | null {
-  const record = findJsonObject(typeof text === "string" ? text : "");
-  if (!record) return null;
-  const goal = readString(record.goal);
+  for (const blob of findToderoPlanJsonBlobs(typeof text === "string" ? text : "")) {
+    for (const record of planRecordsFrom(blob.value)) {
+      const read = readPlanFromRecord(record);
+      if (read) return read;
+    }
+  }
+  return null;
+}
+
+/**
+ * One record read as a plan. The fields may be at the top, or one level down
+ * under `plan` — a model that half-honours the schema files them there and
+ * keeps its words at the top, and a plan filed that way is still a plan.
+ */
+function readPlanFromRecord(record: Record<string, unknown>): { plan: ToderoPlan; body: string } | null {
+  const nested = asRecord(record.plan);
+  const source = readString(record.goal) ? record : (nested ?? record);
+  const goal = readString(source.goal);
   if (!goal) return null;
-  const features = readFeatures(record.features);
-  const tasks = readTasks(record.tasks);
+  const features = readFeatures(source.features);
+  const tasks = readTasks(source.tasks);
   // The same rule the fenced parser uses: features and no tasks is still a
   // plan — one task per feature, handing in what its done_when asks for.
   const plannedTasks = tasks.length > 0 ? tasks : tasksFromFeatures(features);
   if (plannedTasks.length === 0) return null;
-  return { plan: { goal, features, tasks: plannedTasks }, body: readString(record.message) };
+  return { plan: { goal, features, tasks: plannedTasks }, body: readWords(record) || readWords(source) };
 }
 
 /**
- * The part of a reply that is trying to be the JSON object — the whole reply,
- * or the inside of a fence the runtime wrapped it in. Null when the reply is
- * not an attempt at the object at all, so prose (with or without a fenced
- * `todero-plan` block) is left alone.
+ * A complete JSON string value for the words, even inside an object that
+ * never closes.
  */
-function jsonObjectAttempt(text: string): string | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const fenced = trimmed.match(/(?:`{3,}|~{3,})[ \t]*[A-Za-z0-9_-]*[ \t]*\n([\s\S]*?)(?:\n[ \t]*(?:`{3,}|~{3,})|$)/);
-  const inner = (fenced ? fenced[1]! : trimmed).trim();
-  return inner.startsWith("{") ? inner : null;
+const PLAN_JSON_WORDS_RE = /"(?:message|body)"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+
+/** The words in one blob, without ever handing back any of the JSON around them. */
+function readBlobWords(blob: ToderoPlanJsonBlob): string {
+  for (const record of planRecordsFrom(blob.value)) {
+    const words = readWords(record) || readWords(asRecord(record.plan));
+    if (words) return words;
+  }
+  if (blob.value !== null) return "";
+  // Nothing parses when the object never closes. The words are the first
+  // field the schema asks for, so they are usually written before the room
+  // runs out.
+  const match = blob.source.match(PLAN_JSON_WORDS_RE);
+  if (!match) return "";
+  try {
+    return readString(JSON.parse(`"${match[1]!}"`) as unknown);
+  } catch {
+    return "";
+  }
 }
 
-/** A complete JSON string value for `message`, even inside an object that never closes. */
-const PLAN_JSON_MESSAGE_RE = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/;
-
 /**
- * The words for the person out of a shaped reply that is *not* a usable plan:
- * the wrong shape, no features or tasks, or cut off mid-object when the
- * runtime ran out of room. Null when the reply was never an attempt at the
- * object — the caller reads that as prose, unchanged.
+ * The words for the person out of a reply that is *not* a usable plan: the
+ * wrong shape, no features or tasks, an array instead of an object, or cut
+ * off mid-object when the runtime ran out of room. Null when the reply holds
+ * no JSON at all — the caller reads that as prose, unchanged.
  *
- * `message` is empty when the attempt carries no words of its own. It is
- * never the JSON itself: a person must not be shown the blob.
+ * `message` is empty when the JSON carries no words of its own. It is never
+ * the JSON itself: a person must not be shown the blob.
  */
 export function readToderoPlanJsonAttempt(text: string): { message: string } | null {
-  const attempt = jsonObjectAttempt(typeof text === "string" ? text : "");
-  if (attempt === null) return null;
-  const record = findJsonObject(attempt);
-  if (record) return { message: readString(record.message) };
-  // Nothing parses when the object never closes. `message` is the first field
-  // the schema asks for, so it is usually written before the room runs out.
-  const match = attempt.match(PLAN_JSON_MESSAGE_RE);
-  if (!match) return { message: "" };
-  try {
-    return { message: readString(JSON.parse(`"${match[1]!}"`) as unknown) };
-  } catch {
-    return { message: "" };
+  const blobs = findToderoPlanJsonBlobs(typeof text === "string" ? text : "");
+  if (blobs.length === 0) return null;
+  for (const blob of blobs) {
+    const words = readBlobWords(blob);
+    if (words) return { message: words };
   }
+  return { message: "" };
 }

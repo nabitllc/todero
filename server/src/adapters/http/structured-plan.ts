@@ -26,11 +26,16 @@ import { formatToderoPlanBlock } from "@todero/shared";
 import {
   TODERO_PLAN_JSON_SCHEMA,
   TODERO_PLAN_JSON_SCHEMA_NAME,
+  findToderoPlanJsonBlobs,
   parseToderoPlanJson,
   readToderoPlanJsonAttempt,
 } from "@todero/shared/todero-plan-schema";
 import { parseObject } from "../utils.js";
-import { CHAT_COMPLETIONS_STATUS_WAITING, isOllamaChatCompletionsConfig } from "./chat-completions.js";
+import {
+  CHAT_COMPLETIONS_STATUS_WAITING,
+  isOllamaChatCompletionsConfig,
+  parseChatCompletionsReply,
+} from "./chat-completions.js";
 
 /** The fenced plan template, wherever Todero spells it out for the model. */
 const PLAN_FENCE_ASKED_RE = /(?:^|\n)[ \t]*(?:`{3,}|~{3,})[ \t]*todero-plan\b/i;
@@ -80,17 +85,37 @@ export function readPlanNativeFormat(responseFormat: unknown): Record<string, un
 }
 
 /**
+ * The model's own words in one stretch of the reply. A status line it wrote
+ * around the JSON goes: Todero appends the one status the turn is entitled
+ * to, and a stray `STATUS: done` in kept prose would close a task on a plan
+ * nobody has approved.
+ */
+function wordsBetween(text: string, from: number, to: number): string {
+  if (to <= from) return "";
+  return parseChatCompletionsReply(text.slice(from, to)).body.trim();
+}
+
+/**
  * A reply the runtime shaped, rewritten as the reply the rest of Todero
  * already knows how to read: the words for the person, the canonical fenced
- * block, and the status line a plan waits on. Null when the reply is not a
- * plan object — the caller then reads it as prose, unchanged.
+ * block, and the status line a plan waits on. Words the model wrote around
+ * the object are kept — the object is replaced, not the reply. Null when no
+ * JSON in the reply reads as a plan — the caller then reads it as prose,
+ * unchanged.
  */
 export function replyFromStructuredPlan(text: string): string | null {
-  const read = parseToderoPlanJson(text);
-  if (!read) return null;
-  return [read.body, formatToderoPlanBlock(read.plan), CHAT_COMPLETIONS_STATUS_WAITING]
-    .filter((part) => part.trim())
-    .join("\n\n");
+  for (const blob of findToderoPlanJsonBlobs(text)) {
+    const read = parseToderoPlanJson(blob.source);
+    if (!read) continue;
+    const words = [wordsBetween(text, 0, blob.start), read.body, wordsBetween(text, blob.end, text.length)]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join("\n\n");
+    return [words, formatToderoPlanBlock(read.plan), CHAT_COMPLETIONS_STATUS_WAITING]
+      .filter((part) => part.trim())
+      .join("\n\n");
+  }
+  return null;
 }
 
 /** What a person is told when the shaped reply carried no words of its own. */
@@ -98,17 +123,30 @@ export const STRUCTURED_PLAN_UNREADABLE_NOTE =
   "I could not write the plan in a shape Todero could read. Ask me for it again and I will write it out.";
 
 /**
- * The reply to post when the runtime honoured the schema but what came back
- * is not a plan Todero can use — the wrong shape, no features or tasks, or
- * cut off mid-object when the room ran out.
+ * The reply to post when what came back carries JSON that is not a plan
+ * Todero can use — the wrong shape, no features or tasks, an array instead
+ * of an object, or cut off mid-object when the room ran out.
  *
- * The person gets the object's own `message`, or one plain sentence. They are
- * never shown the JSON: a raw blob in the thread reads as a broken agent, and
- * before the schema this same turn produced prose. Null when the reply was
- * never an attempt at the object, which is the prose path, unchanged.
+ * Every blob is replaced by its own words, and everything the model wrote
+ * around them is kept: a person is never shown JSON, and never loses the
+ * sentence the model wrote next to it. One plain sentence when there were no
+ * words anywhere. Null when the reply holds no JSON at all, which is the
+ * prose path, unchanged.
  */
 export function replyWhenStructuredPlanUnreadable(text: string): string | null {
-  const attempt = readToderoPlanJsonAttempt(text);
-  if (!attempt) return null;
-  return attempt.message.trim() || STRUCTURED_PLAN_UNREADABLE_NOTE;
+  const blobs = findToderoPlanJsonBlobs(text);
+  if (blobs.length === 0) return null;
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const blob of blobs) {
+    parts.push(wordsBetween(text, cursor, blob.start));
+    parts.push(readToderoPlanJsonAttempt(blob.source)?.message ?? "");
+    cursor = blob.end;
+  }
+  parts.push(wordsBetween(text, cursor, text.length));
+  const shown = parts
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  return shown || STRUCTURED_PLAN_UNREADABLE_NOTE;
 }
