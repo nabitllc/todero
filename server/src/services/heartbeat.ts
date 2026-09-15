@@ -2571,6 +2571,11 @@ const heartbeatRunListResultColumns = {
   resultTotalCostUsd: sql<string | null>`${heartbeatRuns.resultJson} ->> 'total_cost_usd'`.as("resultTotalCostUsd"),
   resultCostUsd: sql<string | null>`${heartbeatRuns.resultJson} ->> 'cost_usd'`.as("resultCostUsd"),
   resultCostUsdCamel: sql<string | null>`${heartbeatRuns.resultJson} ->> 'costUsd'`.as("resultCostUsdCamel"),
+  // Which path produced a plan on this run. Without it the run list drops the
+  // fact and a person cannot tell an enforced plan from a hand-written one.
+  resultToderoStructuredPlan: sql<string | null>`${heartbeatRuns.resultJson} ->> 'toderoStructuredPlan'`.as(
+    "resultToderoStructuredPlan",
+  ),
 } as const;
 
 const heartbeatRunSafeResultJsonColumn = sql<Record<string, unknown> | null>`
@@ -4043,6 +4048,9 @@ export function summarizeHeartbeatRunContextSnapshot(
   return Object.keys(summary).length > 0 ? summary : null;
 }
 
+/** The values the http adapter records for which path produced a plan. */
+const HEARTBEAT_RUN_STRUCTURED_PLAN_VALUES = ["held", "prose", "unreadable"] as const;
+
 export function summarizeHeartbeatRunListResultJson(input: {
   summary?: string | null;
   result?: string | null;
@@ -4051,6 +4059,7 @@ export function summarizeHeartbeatRunListResultJson(input: {
   totalCostUsd?: string | null;
   costUsd?: string | null;
   costUsdCamel?: string | null;
+  toderoStructuredPlan?: string | null;
 }): Record<string, unknown> | null {
   const summary: Record<string, unknown> = {};
   for (const [key, value] of [
@@ -4072,6 +4081,17 @@ export function summarizeHeartbeatRunListResultJson(input: {
     if (!normalized) continue;
     const parsed = Number(normalized);
     if (Number.isFinite(parsed)) summary[key] = parsed;
+  }
+
+  // Which path produced this run's plan travels with the run, the way the
+  // cost and summary fields do, so the run list can say so without a caller
+  // fetching the whole run.
+  const structuredPlan = readNonEmptyString(input.toderoStructuredPlan);
+  if (
+    structuredPlan &&
+    (HEARTBEAT_RUN_STRUCTURED_PLAN_VALUES as readonly string[]).includes(structuredPlan)
+  ) {
+    summary.toderoStructuredPlan = structuredPlan;
   }
 
   return Object.keys(summary).length > 0 ? summary : null;
@@ -20754,6 +20774,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           resultTotalCostUsd,
           resultCostUsd,
           resultCostUsdCamel,
+          resultToderoStructuredPlan,
           ...rest
         } = row as typeof row & {
           resultSummary?: string | null;
@@ -20763,6 +20784,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           resultTotalCostUsd?: string | null;
           resultCostUsd?: string | null;
           resultCostUsdCamel?: string | null;
+          resultToderoStructuredPlan?: string | null;
         };
 
         return {
@@ -20787,6 +20809,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 totalCostUsd: resultTotalCostUsd,
                 costUsd: resultCostUsd,
                 costUsdCamel: resultCostUsdCamel,
+                toderoStructuredPlan: resultToderoStructuredPlan,
               }),
         };
       });

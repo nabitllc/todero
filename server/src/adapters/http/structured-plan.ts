@@ -27,6 +27,7 @@ import {
   TODERO_PLAN_JSON_SCHEMA,
   TODERO_PLAN_JSON_SCHEMA_NAME,
   parseToderoPlanJson,
+  readToderoPlanJsonAttempt,
 } from "@todero/shared/todero-plan-schema";
 import { parseObject } from "../utils.js";
 import { CHAT_COMPLETIONS_STATUS_WAITING, isOllamaChatCompletionsConfig } from "./chat-completions.js";
@@ -90,4 +91,24 @@ export function replyFromStructuredPlan(text: string): string | null {
   return [read.body, formatToderoPlanBlock(read.plan), CHAT_COMPLETIONS_STATUS_WAITING]
     .filter((part) => part.trim())
     .join("\n\n");
+}
+
+/** What a person is told when the shaped reply carried no words of its own. */
+export const STRUCTURED_PLAN_UNREADABLE_NOTE =
+  "I could not write the plan in a shape Todero could read. Ask me for it again and I will write it out.";
+
+/**
+ * The reply to post when the runtime honoured the schema but what came back
+ * is not a plan Todero can use — the wrong shape, no features or tasks, or
+ * cut off mid-object when the room ran out.
+ *
+ * The person gets the object's own `message`, or one plain sentence. They are
+ * never shown the JSON: a raw blob in the thread reads as a broken agent, and
+ * before the schema this same turn produced prose. Null when the reply was
+ * never an attempt at the object, which is the prose path, unchanged.
+ */
+export function replyWhenStructuredPlanUnreadable(text: string): string | null {
+  const attempt = readToderoPlanJsonAttempt(text);
+  if (!attempt) return null;
+  return attempt.message.trim() || STRUCTURED_PLAN_UNREADABLE_NOTE;
 }

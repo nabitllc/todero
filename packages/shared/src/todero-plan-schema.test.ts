@@ -4,6 +4,7 @@ import {
   TODERO_PLAN_JSON_SCHEMA,
   TODERO_PLAN_JSON_SCHEMA_NAME,
   parseToderoPlanJson,
+  readToderoPlanJsonAttempt,
 } from "./todero-plan-schema.js";
 
 describe("the plan shape a runtime can enforce", () => {
@@ -80,5 +81,45 @@ describe("reading a plan the runtime shaped", () => {
   it("is null for an object that is not a plan", () => {
     expect(parseToderoPlanJson('{"message":"Do you approve this plan?"}')).toBeNull();
     expect(parseToderoPlanJson('{"goal":"Ship it"}')).toBeNull();
+  });
+});
+
+describe("readToderoPlanJsonAttempt", () => {
+  it("hands back the words when the object is not a plan", () => {
+    expect(
+      readToderoPlanJsonAttempt(
+        JSON.stringify({ message: "Here is what I have.", goal: "Ship it", features: [], tasks: [] }),
+      ),
+    ).toEqual({ message: "Here is what I have." });
+  });
+
+  it("hands back the words written before the object was cut off", () => {
+    const truncated = '{"message": "Here is the plan so far.", "goal": "Ship it", "features": [{"name": "Chec';
+
+    expect(readToderoPlanJsonAttempt(truncated)).toEqual({ message: "Here is the plan so far." });
+  });
+
+  it("reads the words out of an escaped string, and never the JSON around them", () => {
+    const truncated = '{"message": "She said \\"go\\", so we go.", "goal": "Ship';
+
+    expect(readToderoPlanJsonAttempt(truncated)).toEqual({ message: 'She said "go", so we go.' });
+  });
+
+  it("is empty-worded when the attempt carries no message at all", () => {
+    expect(readToderoPlanJsonAttempt('{"goal": "Ship it", "features": [')).toEqual({ message: "" });
+  });
+
+  it("is null for prose, including prose with a fenced plan block", () => {
+    expect(readToderoPlanJsonAttempt("Do you approve this plan?")).toBeNull();
+    expect(readToderoPlanJsonAttempt("")).toBeNull();
+    expect(
+      readToderoPlanJsonAttempt(["Here it is.", "```todero-plan", "goal: Ship it", "```"].join("\n")),
+    ).toBeNull();
+  });
+
+  it("sees the object inside a fence the runtime wrapped it in", () => {
+    expect(
+      readToderoPlanJsonAttempt(["```json", '{"message": "Half a plan.", "features": [', "```"].join("\n")),
+    ).toEqual({ message: "Half a plan." });
   });
 });

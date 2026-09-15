@@ -564,3 +564,39 @@ instead of guessing.
     still cannot disagree.
 - **Source:** `server/src/todero/available-models.ts`,
   `server/src/adapters/http/prompt-budget.ts`.
+
+## ADR-019 — A shaped reply that is not a plan is answered in words, and the path is on the run
+
+- **Date:** 2026-09-14
+- **Status:** Accepted (amends ADR-017)
+- **Context:** ADR-017 asks Ollama to hold the corrective turn to the plan's schema and reads the
+  object back out. A runtime can honour the schema and still return something
+  `parseToderoPlanJson` rejects: the wrong shape, an empty `features`/`tasks`, or an object cut
+  off mid-write when `num_predict` ran out. The reply then fell through to the prose path, and the
+  prose path posts whatever it was given — so the person got the raw JSON blob as the agent's
+  message. Reproduced live in a "Zz Recover" organization: the ticket comment was a literal JSON
+  string. Before ADR-017 that same turn produced prose. ADR-017 also said the run records which
+  path produced the plan, but `toderoStructuredPlan` only reached `resultJson`, and the run-list
+  projection keeps a whitelist, so the fact never left the run log.
+- **Decision:**
+  1. When the turn asked for the shape and the reply is an attempt at the object but not a usable
+     plan, the person is shown the object's own `message`, or one plain sentence when it carries
+     no words. Never the JSON. A truncated object never parses, so the words are lifted out of
+     the `message` field directly — it is the first field the schema asks for, so it is usually
+     written before the room runs out. A reply that was never an attempt at the object (prose,
+     with or without a fenced block) is untouched and reads exactly as before.
+  2. `resultJson.toderoStructuredPlan` is one of three words rather than a boolean: `held` (the
+     runtime held the shape), `prose` (it answered in prose and the fenced parser read it), or
+     `unreadable` (the shape came back and did not hold). The third is the case this ADR is
+     about, and a boolean could not say it.
+  3. That value travels with the run the way the summary and cost fields do — a projected column
+     in `heartbeatRunListResultColumns` and a field in `summarizeHeartbeatRunListResultJson` — so
+     `GET /api/companies/:companyId/heartbeat-runs` carries it, not just the single-run fetch.
+     No new mechanism: this is the same whitelist every other per-run fact goes through.
+- **Consequences:**
+  - The worst outcome of asking for a schema is now a plain sentence, which is what the turn
+    produced before ADR-017. It can no longer be a JSON blob in a person's thread.
+  - A three-word value is a contract: anything reading `toderoStructuredPlan` as a boolean would
+    now see a truthy string. Only the http adapter writes it, and only this branch read it.
+- **Source:** `server/src/adapters/http/structured-plan.ts`,
+  `packages/shared/src/todero-plan-schema.ts`, `server/src/services/heartbeat.ts`.

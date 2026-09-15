@@ -287,6 +287,31 @@ describe("summarizeHeartbeatRunListResultJson", () => {
     });
   });
 
+  it("keeps which path produced the plan, so a run list can say so", () => {
+    expect(
+      summarizeHeartbeatRunListResultJson({
+        summary: "Here is the plan.",
+        toderoStructuredPlan: "held",
+      }),
+    ).toEqual({ summary: "Here is the plan.", toderoStructuredPlan: "held" });
+
+    expect(
+      summarizeHeartbeatRunListResultJson({
+        summary: "Here is what I have so far.",
+        toderoStructuredPlan: "unreadable",
+      }),
+    ).toEqual({ summary: "Here is what I have so far.", toderoStructuredPlan: "unreadable" });
+  });
+
+  it("drops a structured-plan value it does not recognise", () => {
+    expect(
+      summarizeHeartbeatRunListResultJson({
+        summary: "Here is the plan.",
+        toderoStructuredPlan: "something else",
+      }),
+    ).toEqual({ summary: "Here is the plan." });
+  });
+
   it("returns null when projected fields are empty", () => {
     expect(
       summarizeHeartbeatRunListResultJson({

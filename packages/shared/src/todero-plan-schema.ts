@@ -163,3 +163,45 @@ export function parseToderoPlanJson(text: string): { plan: ToderoPlan; body: str
   if (plannedTasks.length === 0) return null;
   return { plan: { goal, features, tasks: plannedTasks }, body: readString(record.message) };
 }
+
+/**
+ * The part of a reply that is trying to be the JSON object — the whole reply,
+ * or the inside of a fence the runtime wrapped it in. Null when the reply is
+ * not an attempt at the object at all, so prose (with or without a fenced
+ * `todero-plan` block) is left alone.
+ */
+function jsonObjectAttempt(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const fenced = trimmed.match(/(?:`{3,}|~{3,})[ \t]*[A-Za-z0-9_-]*[ \t]*\n([\s\S]*?)(?:\n[ \t]*(?:`{3,}|~{3,})|$)/);
+  const inner = (fenced ? fenced[1]! : trimmed).trim();
+  return inner.startsWith("{") ? inner : null;
+}
+
+/** A complete JSON string value for `message`, even inside an object that never closes. */
+const PLAN_JSON_MESSAGE_RE = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+
+/**
+ * The words for the person out of a shaped reply that is *not* a usable plan:
+ * the wrong shape, no features or tasks, or cut off mid-object when the
+ * runtime ran out of room. Null when the reply was never an attempt at the
+ * object — the caller reads that as prose, unchanged.
+ *
+ * `message` is empty when the attempt carries no words of its own. It is
+ * never the JSON itself: a person must not be shown the blob.
+ */
+export function readToderoPlanJsonAttempt(text: string): { message: string } | null {
+  const attempt = jsonObjectAttempt(typeof text === "string" ? text : "");
+  if (attempt === null) return null;
+  const record = findJsonObject(attempt);
+  if (record) return { message: readString(record.message) };
+  // Nothing parses when the object never closes. `message` is the first field
+  // the schema asks for, so it is usually written before the room runs out.
+  const match = attempt.match(PLAN_JSON_MESSAGE_RE);
+  if (!match) return { message: "" };
+  try {
+    return { message: readString(JSON.parse(`"${match[1]!}"`) as unknown) };
+  } catch {
+    return { message: "" };
+  }
+}

@@ -22,7 +22,12 @@ import {
   parseOllamaNativeFinishReason,
   parseOllamaNativeText,
 } from "./ollama-native.js";
-import { planResponseFormat, replyFromStructuredPlan, shouldAskForStructuredPlan } from "./structured-plan.js";
+import {
+  planResponseFormat,
+  replyFromStructuredPlan,
+  replyWhenStructuredPlanUnreadable,
+  shouldAskForStructuredPlan,
+} from "./structured-plan.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -112,14 +117,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // A plan the runtime shaped is rewritten into the reply the rest of Todero
     // already reads: the words for the person, the canonical fenced block, the
     // status line. A runtime that ignored the schema falls through untouched
-    // and the prose parser has it, exactly as before.
-    let structuredPlanUsed = false;
+    // and the prose parser has it, exactly as before. And an object that came
+    // back but is not a usable plan is answered in words — never with the raw
+    // JSON, which is what a person would otherwise be shown in the thread.
+    const structuredPlan: { outcome: "held" | "prose" | "unreadable" } = { outcome: "prose" };
     const asReplyText = (text: string): string => {
       if (!structuredPlanAsked) return text;
       const rewritten = replyFromStructuredPlan(text);
-      if (!rewritten) return text;
-      structuredPlanUsed = true;
-      return rewritten;
+      if (rewritten) {
+        structuredPlan.outcome = "held";
+        return rewritten;
+      }
+      const words = replyWhenStructuredPlanUnreadable(text);
+      if (words !== null) {
+        structuredPlan.outcome = "unreadable";
+        return words;
+      }
+      structuredPlan.outcome = "prose";
+      return text;
     };
     completion = asReplyText(completion);
     await ctx.onLog("stdout", completion.endsWith("\n") ? completion : `${completion}\n`);
@@ -168,10 +183,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const planned = parseToderoPlanBlock(reply.body);
     if (structuredPlanAsked) {
       await ctx.onLog(
-        "stdout",
-        structuredPlanUsed
+        structuredPlan.outcome === "unreadable" ? "stderr" : "stdout",
+        structuredPlan.outcome === "held"
           ? "[todero] The plan came back in the shape Todero asked the runtime to hold it to.\n"
-          : "[todero] Todero asked the runtime to hold the reply to the plan's shape; it came back as prose and was read the usual way.\n",
+          : structuredPlan.outcome === "unreadable"
+            ? "[todero] The runtime answered in the plan's shape but the object was not a plan Todero can use; the person got the words, not the JSON.\n"
+            : "[todero] Todero asked the runtime to hold the reply to the plan's shape; it came back as prose and was read the usual way.\n",
       );
     }
     // Never post the bare status line as if it were the reply.
@@ -190,10 +207,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         toderoDisposition: reply.disposition,
         ...(chosenModel ? { toderoModel: chosenModel } : {}),
         ...(cutOff ? { toderoCutOff: true } : {}),
-        // Which path produced the plan, recorded on the run itself, so a
-        // person can tell whether the runtime enforced the shape or the
-        // model wrote it by hand.
-        ...(structuredPlanAsked ? { toderoStructuredPlan: structuredPlanUsed } : {}),
+        // Which path produced the plan, recorded on the run itself and
+        // carried through the run list, so a person can tell whether the
+        // runtime held the shape ("held"), the model wrote the block by hand
+        // ("prose"), or the shape came back and did not hold ("unreadable").
+        ...(structuredPlanAsked ? { toderoStructuredPlan: structuredPlan.outcome } : {}),
         ...(planned ? { toderoPlanBlock: formatToderoPlanBlock(planned.plan) } : {}),
       },
     };

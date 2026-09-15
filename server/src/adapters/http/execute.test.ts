@@ -9,6 +9,7 @@ import {
   FALLBACK_COMMENT_CONTINUED_MARKER,
 } from "../../services/heartbeat-run-summary.js";
 import { execute } from "./execute.js";
+import { STRUCTURED_PLAN_UNREADABLE_NOTE } from "./structured-plan.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -386,7 +387,7 @@ describe("asking the runtime for the plan in a shape it cannot get wrong", () =>
     expect(result.summary).toBe("Here is the plan.");
     const resultJson = result.resultJson as Record<string, unknown>;
     expect(resultJson.toderoDisposition).toBe("waiting");
-    expect(resultJson.toderoStructuredPlan).toBe(true);
+    expect(resultJson.toderoStructuredPlan).toBe("held");
     expect(String(resultJson.toderoPlanBlock)).toContain("goal: Seat neighbors at monthly dinners");
     expect(String(resultJson.toderoPlanBlock)).toContain("- title: Draft the sign-up spec");
   });
@@ -409,7 +410,7 @@ describe("asking the runtime for the plan in a shape it cannot get wrong", () =>
     expect(calls[0]!.url).toBe("http://127.0.0.1:11434/api/chat");
     expect(calls[0]!.body.format).toEqual(TODERO_PLAN_JSON_SCHEMA);
     expect(calls[0]!.body.response_format).toBeUndefined();
-    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe(true);
+    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe("held");
   });
 
   it("still takes a fenced plan when the runtime ignored the schema", async () => {
@@ -430,7 +431,7 @@ describe("asking the runtime for the plan in a shape it cannot get wrong", () =>
 
     expect(result.summary).toBe("Here is my proposal.");
     const resultJson = result.resultJson as Record<string, unknown>;
-    expect(resultJson.toderoStructuredPlan).toBe(false);
+    expect(resultJson.toderoStructuredPlan).toBe("prose");
     expect(String(resultJson.toderoPlanBlock)).toContain("goal: Seat neighbors at dinners");
   });
 
@@ -465,5 +466,68 @@ describe("asking the runtime for the plan in a shape it cannot get wrong", () =>
 
     expect(calls[0]!.response_format).toBeUndefined();
     expect(result.resultJson).not.toHaveProperty("toderoStructuredPlan");
+  });
+});
+
+describe("what the person is shown when the shaped reply is not a plan", () => {
+  function planRetryArgs() {
+    const args = localLlmExecuteArgs();
+    args.config.url = "http://127.0.0.1:11434/v1/chat/completions";
+    args.context = { ...args.context, toderoTurnInstruction: buildMissingPlanRetryInstruction() };
+    return args;
+  }
+
+  it("posts the object's own words, not the JSON, when the shape came back empty", async () => {
+    const emptyPlan = JSON.stringify({
+      message: "Here is what I have so far.",
+      goal: "Seat neighbors at monthly dinners",
+      features: [],
+      tasks: [],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(emptyPlan)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe("Here is what I have so far.");
+    expect(result.summary).not.toContain("{");
+    expect(result.summary).not.toContain("\"goal\"");
+    const resultJson = result.resultJson as Record<string, unknown>;
+    expect(resultJson.toderoStructuredPlan).toBe("unreadable");
+    // No plan came back, so the turn hands back to the person rather than
+    // closing the task on an empty shape.
+    expect(resultJson.toderoDisposition).toBe("waiting");
+    expect(resultJson).not.toHaveProperty("toderoPlanBlock");
+  });
+
+  it("posts the words it got to before the runtime ran out of room, not the half object", async () => {
+    const truncated =
+      '{"message": "Here is the plan so far.", "goal": "Seat neighbors at monthly dinners", "features": [{"name": "Sign';
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(truncated)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe("Here is the plan so far.");
+    expect(result.summary).not.toContain("{");
+    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe("unreadable");
+  });
+
+  it("posts a plain sentence when the object has no words for the person either", async () => {
+    const noMessage = JSON.stringify({ message: "", goal: "", features: [], tasks: [] });
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(noMessage)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe(STRUCTURED_PLAN_UNREADABLE_NOTE);
+    expect(result.summary).not.toContain("{");
+    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe("unreadable");
+  });
+
+  it("leaves a prose reply alone — it is not an attempt at the object", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => chatCompletionsResponse(LOCAL_LLM_COMPLETION)));
+
+    const result = await execute(planRetryArgs());
+
+    expect(result.summary).toBe(LOCAL_LLM_COMPLETION);
+    expect((result.resultJson as Record<string, unknown>).toderoStructuredPlan).toBe("prose");
   });
 });
