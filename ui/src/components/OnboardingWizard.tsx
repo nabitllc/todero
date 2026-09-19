@@ -2388,6 +2388,20 @@ function OnboardingWizardInner({
                       You can always change your mission later in settings.
                     </p>
                   )}
+
+                  {/* The way out of a path picked by mistake lives on whichever
+                      screen is the first question. That is this one when the
+                      mission is asked first; a run sent straight to the mission
+                      for a company that already exists has no front door to go
+                      back to. */}
+                  {missionStep === 1 && (
+                    <button
+                      className="text-(length:--text-micro) text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => { setOnboardingPath(null); setStep(0); }}
+                    >
+                      ← Back to start
+                    </button>
+                  )}
                 </div>
               )}
 

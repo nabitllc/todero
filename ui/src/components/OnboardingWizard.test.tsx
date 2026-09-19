@@ -397,6 +397,20 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
     });
 
+    it("keeps a way back to the front door on the first question", async () => {
+      // The escape from a path picked by mistake used to sit on the name
+      // screen, which was step 1. The mission is step 1 now, so the way out
+      // had to move with it or the front door became unreachable.
+      const { root } = await openStepOne("create");
+      expect(document.body.textContent).toContain("Define your mission");
+
+      await clickByText((t) => t.includes("Back to start"));
+
+      expect(document.body.textContent).not.toContain("Define your mission");
+
+      await act(async () => root.unmount());
+    });
+
     it("creates the company with that mission before the lead is hired", async () => {
       mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
       const { root } = await openStepOne("create");
