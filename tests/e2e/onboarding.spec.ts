@@ -6,13 +6,13 @@ import { test, expect } from "@playwright/test";
  * The wizard now opens on a front door (path picker) and the "Create a new
  * company" path runs:
  *   Step 0  — Front door (Create a new company / Level up existing)
- *   Step 1a — Name your organization
- *   Step 2  — Define your mission (creates the company with that mission)
+ *   Step 1  — Define your mission
+ *   Step 2  — Name your organization (creates the company with that mission)
  *   Step 3  — Hire your team lead (adapter picker)
  *   Step 4+ — Launch celebration → CEO chat → hiring plan → orientation
  *
  * This test covers the deterministic, LLM-free core: it drives the front door
- * through company naming and a plain-text mission, and verifies the company
+ * through a plain-text mission and company naming, and verifies the company
  * is created with that mission before the team-lead step.
  *
  * The tail (CEO chat at step 4, hiring-plan generation at step 5, final
@@ -52,16 +52,17 @@ test.describe("Onboarding wizard", () => {
       await createCard.first().click();
     }
 
-    // Step 1 — Name your organization.
+    // Step 1 — Define your mission.
+    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
+    await page.getByRole("button", { name: /^Continue/ }).click();
+
+    // Step 2 — Name your organization, which creates it with that mission.
     await expect(
       page.getByRole("heading", { name: "What is the name of your organization?" }),
     ).toBeVisible({ timeout: 15_000 });
     await page.getByPlaceholder("e.g. Northwind Labs").fill(COMPANY_NAME);
-    await page.getByRole("button", { name: /^Continue/ }).click();
-
-    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
-    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
-    await page.getByRole("button", { name: /Confirm mission/ }).click();
+    await page.getByRole("button", { name: /Create organization/ }).click();
 
     await page.waitForSelector("#onboarding-agent-name", {
       timeout: 30_000,
@@ -205,15 +206,15 @@ test.describe("Onboarding wizard", () => {
       await createCard.first().click();
     }
 
+    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
+    await page.getByRole("button", { name: /^Continue/ }).click();
+
     await expect(
       page.getByRole("heading", { name: "What is the name of your organization?" }),
     ).toBeVisible({ timeout: 15_000 });
     await page.getByPlaceholder("e.g. Northwind Labs").fill(`${COMPANY_NAME}-auth-signal`);
-    await page.getByRole("button", { name: /^Continue/ }).click();
-
-    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
-    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
-    await page.getByRole("button", { name: /Confirm mission/ }).click();
+    await page.getByRole("button", { name: /Create organization/ }).click();
 
     await page.waitForSelector("#onboarding-agent-name", { timeout: 30_000 });
     await page.locator("#onboarding-agent-name").fill("Ada");

@@ -57,7 +57,7 @@ test.describe("NUX Phase 4 visual QA", () => {
     const baseUrl =
       "http://127.0.0.1:" + (process.env.PAPERCLIP_E2E_PORT ?? "3199");
 
-    // ── Section A: create-company path (name → mission → hire) ────────────
+    // ── Section A: create-company path (mission → name → hire) ────────────
     await openWizard(page);
     // Front door shows when the wizard doesn't open directly on the create
     // path (e.g. another spec already created a company on this instance).
@@ -65,17 +65,17 @@ test.describe("NUX Phase 4 visual QA", () => {
     if (await createCard.count()) {
       await createCard.first().click();
     }
+    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
+    await page.screenshot({ path: shot("02-create-mission.png") });
+    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
+
+    await page.getByRole("button", { name: /^Continue/ }).click();
     await expect(
       page.getByRole("heading", { name: "What is the name of your organization?" }),
     ).toBeVisible({ timeout: 15_000 });
     await page.getByPlaceholder("e.g. Northwind Labs").fill("QA Robotics");
-    await page.screenshot({ path: shot("02-create-name.png") });
-
-    await page.getByRole("button", { name: /^Continue/ }).click();
-    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
-    await page.screenshot({ path: shot("03-create-mission.png") });
-    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
-    await page.getByRole("button", { name: /Confirm mission/ }).click();
+    await page.screenshot({ path: shot("03-create-name.png") });
+    await page.getByRole("button", { name: /Create organization/ }).click();
     await page.waitForSelector("#onboarding-agent-name", {
       timeout: 30_000,
     });
@@ -147,8 +147,8 @@ test.describe("NUX Phase 4 visual QA", () => {
 
     for (const f of [
       "01-front-door.png",
-      "02-create-name.png",
-      "03-create-mission.png",
+      "02-create-mission.png",
+      "03-create-name.png",
       "04-hire-team-lead.png",
       "05-growth-intake.png",
       "06-board-chat.png",

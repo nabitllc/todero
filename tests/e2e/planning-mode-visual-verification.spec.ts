@@ -62,16 +62,16 @@ test("captures planning mode UI for desktop and mobile", async ({ page }) => {
   const createCard = page.getByRole("button", { name: /Build a new organization/ });
   if (await createCard.count()) await createCard.first().click();
 
-  await expect(page.getByRole("heading", { name: "What is the name of your organization?" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
 
-  await page.locator('input[placeholder="e.g. Northwind Labs"]').fill(companyName);
+  await page.getByPlaceholder("What is your team trying to achieve?").fill(MISSION);
   await page.getByRole("button", { name: /^Continue/ }).click();
 
-  // Naming the company creates it and opens the mission step; confirming
-  // the mission goes on to the agent step.
-  await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
-  await page.getByPlaceholder("What is your team trying to achieve?").fill(MISSION);
-  await page.getByRole("button", { name: /Confirm mission/ }).click();
+  // The mission is asked for first; naming the organization is what creates
+  // it with that mission, and goes on to the agent step.
+  await expect(page.getByRole("heading", { name: "What is the name of your organization?" })).toBeVisible({ timeout: 15_000 });
+  await page.locator('input[placeholder="e.g. Northwind Labs"]').fill(companyName);
+  await page.getByRole("button", { name: /Create organization/ }).click();
 
   // The agent step asks for a name and nothing else; the name is what gates
   // "Next", and the hire is filed under the neutral `general` role.
