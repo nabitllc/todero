@@ -277,6 +277,8 @@ export {
   SKILL_PACK_FULL_CHARS,
   SKILL_PACK_COMFORTABLE_CONTEXT_LENGTH,
   skillPackFitsContext,
+  CONTEXT_CHARS_PER_TOKEN,
+  estimateContextTokens,
 } from "./skill-pack-utils.js";
 export {
   TRUST_PRESETS,
@@ -2731,6 +2733,7 @@ export {
   TODERO_PLAN_MAX_FEATURES,
   TODERO_PLAN_MAX_TASKS,
   TODERO_PLAN_TASK_TYPE_MARKER,
+  spellsOutToderoPlanBlock,
   parseToderoPlanBlock,
   formatToderoPlanBlock,
   buildToderoPlanTaskDescription,

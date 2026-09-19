@@ -57,6 +57,24 @@ tasks:
 
 Three to seven features. Four to twelve tasks, each naming one of the features. Use \`after\` only when a task truly cannot start until another one is handed in — tasks without it run side by side with the other features. Put any words for the person before the block, not inside it.`;
 
+/**
+ * Todero spelled the fenced plan template out in this text.
+ *
+ * Two places ask it, and they must never drift apart: the task description
+ * (was this agent ever told to write a plan?) and the turn instruction (is
+ * this the turn where the runtime should hold the reply to the plan's shape?).
+ * Two copies of the pattern meant the wording could change in one of them and
+ * the structured-output path would quietly stop firing.
+ */
+const PLAN_FENCE_SPELLED_OUT_RE = new RegExp(
+  String.raw`(?:^|\n)[ \t]*(?:\`{3,}|~{3,})[ \t]*${TODERO_PLAN_FENCE}\b`,
+  "i",
+);
+
+export function spellsOutToderoPlanBlock(text: string | null | undefined): boolean {
+  return typeof text === "string" && PLAN_FENCE_SPELLED_OUT_RE.test(text);
+}
+
 type Section = "none" | "features" | "tasks";
 
 const FENCE_OPEN_RE = /^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_-]*)\s*$/;
@@ -262,7 +280,7 @@ function parsePlanInner(inner: string): ToderoPlan | null {
 }
 
 /** One task per feature, for a plan that named its features but no tasks. */
-function tasksFromFeatures(features: ToderoPlanFeature[]): ToderoPlanTask[] {
+export function tasksFromFeatures(features: ToderoPlanFeature[]): ToderoPlanTask[] {
   return features.slice(0, TODERO_PLAN_MAX_TASKS).map((feature, index) => ({
     id: `t${index + 1}`,
     title: feature.name,

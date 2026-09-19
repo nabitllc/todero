@@ -11,9 +11,23 @@ import {
   parseChatCompletionsFinishReason,
   chatCompletionsReplyWasCutOff,
   CHAT_COMPLETIONS_CUT_OFF_NOTE,
+  isOllamaChatCompletionsConfig,
+  readChatCompletionsContextLength,
   type ChatCompletionsMessage,
 } from "./chat-completions.js";
 import { resolveHttpAdapterTimeoutMs } from "./local-model-timeout.js";
+import {
+  buildOllamaNativeBody,
+  ollamaNativeChatUrl,
+  parseOllamaNativeFinishReason,
+  parseOllamaNativeText,
+} from "./ollama-native.js";
+import {
+  planResponseFormat,
+  replyFromStructuredPlan,
+  replyWhenStructuredPlanUnreadable,
+  shouldAskForStructuredPlan,
+} from "./structured-plan.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { config, runId, agent, context } = ctx;
@@ -25,8 +39,33 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const headers = parseObject(config.headers) as Record<string, string>;
   const payloadTemplate = parseObject(config.payloadTemplate);
   const chatCompletions = isChatCompletionsUrl(url);
-  const body = chatCompletions
-    ? buildChatCompletionsBody({ config, context, payloadTemplate, agentName: agent.name })
+  // Ollama ignores the window on its OpenAI-shaped endpoint and honours it on
+  // its own; when a connection test recorded one, the request goes there.
+  const recordedContextLength = chatCompletions ? readChatCompletionsContextLength(context) : null;
+  const nativeUrl =
+    recordedContextLength && isOllamaChatCompletionsConfig(config as Record<string, unknown>)
+      ? ollamaNativeChatUrl(url)
+      : null;
+  // On the one turn that asks for a plan, and only against a runtime Todero
+  // knows can enforce it, the shape is asked for rather than described.
+  const structuredPlanAsked =
+    chatCompletions && shouldAskForStructuredPlan({ config: config as Record<string, unknown>, context });
+  const openAiBody = chatCompletions
+    ? buildChatCompletionsBody({
+        config,
+        context,
+        payloadTemplate,
+        agentName: agent.name,
+        ...(structuredPlanAsked ? { responseFormat: planResponseFormat() } : {}),
+      })
+    : null;
+  const requestUrl = nativeUrl ?? url;
+  const readReplyText = nativeUrl ? parseOllamaNativeText : parseChatCompletionsText;
+  const readFinishReason = nativeUrl ? parseOllamaNativeFinishReason : parseChatCompletionsFinishReason;
+  const body = openAiBody
+    ? nativeUrl
+      ? buildOllamaNativeBody({ body: openAiBody, contextLength: recordedContextLength! })
+      : openAiBody
     : {
         ...payloadTemplate,
         agentId: agent.id,
@@ -43,7 +82,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // before starting the remote request so dispatch gates can release without
     // waiting for the endpoint to respond.
     ctx.onDispatch?.();
-    const res = await fetch(url, {
+    const res = await fetch(requestUrl, {
       method,
       headers: {
         "content-type": "application/json",
@@ -70,11 +109,34 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // via buildHeartbeatRunIssueComment. Discarding a 2xx body used to count as
     // success with nothing on the ticket.
     const raw = await res.text();
-    let completion = parseChatCompletionsText(raw);
-    let finishReason = parseChatCompletionsFinishReason(raw);
+    let completion = readReplyText(raw);
+    let finishReason = readFinishReason(raw);
     if (!completion) {
       throw new Error("HTTP chat completions returned empty assistant text");
     }
+    // A plan the runtime shaped is rewritten into the reply the rest of Todero
+    // already reads: the words for the person, the canonical fenced block, the
+    // status line. A runtime that ignored the schema falls through untouched
+    // and the prose parser has it, exactly as before. And an object that came
+    // back but is not a usable plan is answered in words — never with the raw
+    // JSON, which is what a person would otherwise be shown in the thread.
+    const structuredPlan: { outcome: "held" | "prose" | "unreadable" } = { outcome: "prose" };
+    const asReplyText = (text: string): string => {
+      if (!structuredPlanAsked) return text;
+      const rewritten = replyFromStructuredPlan(text);
+      if (rewritten) {
+        structuredPlan.outcome = "held";
+        return rewritten;
+      }
+      const words = replyWhenStructuredPlanUnreadable(text);
+      if (words !== null) {
+        structuredPlan.outcome = "unreadable";
+        return words;
+      }
+      structuredPlan.outcome = "prose";
+      return text;
+    };
+    completion = asReplyText(completion);
     await ctx.onLog("stdout", completion.endsWith("\n") ? completion : `${completion}\n`);
     // The trailing status line is for Todero, not the user: it tells the
     // heartbeat whether to close the task or hand the turn back.
@@ -91,7 +153,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           { role: "user", content: CHAT_COMPLETIONS_EMPTY_REPLY_NUDGE },
         ],
       };
-      const retry = await fetch(url, {
+      const retry = await fetch(requestUrl, {
         method,
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(retryBody),
@@ -99,12 +161,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       });
       if (retry.ok) {
         const retriedRaw = await retry.text();
-        const retried = parseChatCompletionsText(retriedRaw);
+        const retried = readReplyText(retriedRaw);
         if (retried) {
           await ctx.onLog("stdout", `[todero] Empty reply; asked once more.\n${retried}\n`);
-          completion = retried;
-          reply = parseChatCompletionsReply(retried);
-          finishReason = parseChatCompletionsFinishReason(retriedRaw);
+          completion = asReplyText(retried);
+          reply = parseChatCompletionsReply(completion);
+          finishReason = readFinishReason(retriedRaw);
         }
       }
     }
@@ -119,6 +181,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // A plan block is for Todero too: it becomes the task's Plan document and
     // the approval card, and the person reads the words around it.
     const planned = parseToderoPlanBlock(reply.body);
+    if (structuredPlanAsked) {
+      await ctx.onLog(
+        structuredPlan.outcome === "unreadable" ? "stderr" : "stdout",
+        structuredPlan.outcome === "held"
+          ? "[todero] The plan came back in the shape Todero asked the runtime to hold it to.\n"
+          : structuredPlan.outcome === "unreadable"
+            ? "[todero] The runtime answered in the plan's shape but the object was not a plan Todero can use; the person got the words, not the JSON.\n"
+            : "[todero] Todero asked the runtime to hold the reply to the plan's shape; it came back as prose and was read the usual way.\n",
+      );
+    }
     // Never post the bare status line as if it were the reply.
     const summary = (planned ? planned.body : reply.body) || CHAT_COMPLETIONS_NO_TEXT_FALLBACK;
     // The routing choice (server/src/todero/model-routing.ts) already landed
@@ -135,6 +207,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         toderoDisposition: reply.disposition,
         ...(chosenModel ? { toderoModel: chosenModel } : {}),
         ...(cutOff ? { toderoCutOff: true } : {}),
+        // Which path produced the plan, recorded on the run itself and
+        // carried through the run list, so a person can tell whether the
+        // runtime held the shape ("held"), the model wrote the block by hand
+        // ("prose"), or the shape came back and did not hold ("unreadable").
+        ...(structuredPlanAsked ? { toderoStructuredPlan: structuredPlan.outcome } : {}),
         ...(planned ? { toderoPlanBlock: formatToderoPlanBlock(planned.plan) } : {}),
       },
     };

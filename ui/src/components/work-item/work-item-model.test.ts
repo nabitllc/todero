@@ -75,6 +75,14 @@ describe("work-item model", () => {
     expect(parsed.body).toBe("Write the sign up words.");
   });
 
+  it("keeps the count of tries at the plan out of the body", () => {
+    const parsed = parseWorkItemDescription(
+      "<!-- todero-type: Task -->\n<!-- todero-plan-tries: 2 -->\nWrite the sign up words.",
+    );
+    expect(parsed.type).toBe("Task");
+    expect(parsed.body).toBe("Write the sign up words.");
+  });
+
   it("keeps the manager's own notes out of the body", () => {
     const parsed = parseWorkItemDescription(
       [
@@ -177,6 +185,19 @@ describe("review and plan markers", () => {
     const again = serializeWorkItemDescription({ ...parsed, waitingOnYou: true });
     expect(again).toContain("<!-- todero-review: pending -->");
     expect(again).not.toContain("todero-plan");
+  });
+
+  it("keeps Todero's own tally of plan tries through an edit", () => {
+    const description =
+      "<!-- todero-type: Task -->\n<!-- todero-plan-tries: 2 -->\nGoal: x\n";
+    const parsed = parseWorkItemDescription(description);
+    // The person never sees the tally.
+    expect(parsed.body).toBe("Goal: x");
+    const again = serializeWorkItemDescription({ ...parsed, body: "Goal: y" });
+    // But editing the task must not wipe it and let the same loop start over.
+    expect(again).toContain("<!-- todero-plan-tries: 2 -->");
+    expect(parseWorkItemDescription(again).planTries).toBe(2);
+    expect(serializeWorkItemDescription({ ...parsed, planTries: 0 })).not.toContain("todero-plan-tries");
   });
 
   it("labels queued rows", () => {

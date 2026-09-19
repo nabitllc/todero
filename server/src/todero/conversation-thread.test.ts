@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { Db } from "@todero/db";
+import { SYSTEM_NOTICE_PRESENTATION } from "./conversation-outcome.js";
 import {
   conversationTurnRole,
+  loadConversationThread,
   descriptionWithWaitingMarker,
   isConversationalHttpAgent,
   planConversationDisposition,
@@ -97,5 +100,57 @@ describe("conversationTurnRole", () => {
   it("keeps the single-agent reading when there is no reader", () => {
     expect(conversationTurnRole(fromAgent("judge-1"))).toBe("agent");
     expect(conversationTurnRole(fromPerson)).toBe("user");
+  });
+});
+
+/**
+ * The other half of the echo fix. `applyMissingPlanRecovery` marks Todero's
+ * own hand-back as a system notice; this is the reason that marking matters —
+ * the thread the model reads leaves it out. Posted unmarked under the agent's
+ * id it came back as the agent's own last turn, and a 14B repeated Todero's
+ * "stuck on the plan" sentence to the person as if it were its own.
+ */
+describe("what Todero's own notices do to the thread the model reads", () => {
+  type Row = {
+    body: string;
+    authorType: string | null;
+    authorAgentId: string | null;
+    derivedAuthorAgentId: string | null;
+    presentation: unknown;
+  };
+
+  function dbOf(rowsNewestFirst: Row[]): Db {
+    const chain = {
+      select: () => chain,
+      from: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: async () => rowsNewestFirst,
+    };
+    return chain as unknown as Db;
+  }
+
+  const handBack: Row = {
+    body: "Nova is stuck on the plan. Tell it what the first few pieces of work should be.",
+    authorType: "agent",
+    authorAgentId: "agent-1",
+    derivedAuthorAgentId: null,
+    presentation: SYSTEM_NOTICE_PRESENTATION,
+  };
+  const question: Row = {
+    body: "Would you like me to proceed with this plan?",
+    authorType: "agent",
+    authorAgentId: "agent-1",
+    derivedAuthorAgentId: null,
+    presentation: null,
+  };
+
+  it("leaves Todero's hand-back out, and keeps what the agent really said", async () => {
+    const turns = await loadConversationThread(dbOf([handBack, question]), {
+      companyId: "company-1",
+      issueId: "issue-1",
+      readerAgentId: "agent-1",
+    });
+    expect(turns.map((turn) => turn.body)).toEqual(["Would you like me to proceed with this plan?"]);
   });
 });

@@ -424,3 +424,275 @@ instead of guessing.
     describes for an outlier file, with its own PR — not a side effect of a feature wave.
 - **Source:** `ui/src/components/KanbanBoard.tsx`, `ui/src/pages/Board.tsx`,
   `ui/src/components/board/`, `ui/src/lib/board-model.ts`.
+
+## ADR-016 — Todero sets the local model's window and budgets the prompt against it
+
+- **Date:** 2026-09-14
+- **Status:** Accepted
+- **Context:** A local model is served with a fixed context window. When the prompt is longer than
+  the window the runtime drops the front of it — exactly where the system prompt and the format
+  instructions sit. That is the mechanism behind the observed failure: an agent on
+  `qwen2.5-coder:14b` produced a fenced `todero-plan` block early in a thread and, by comment 40,
+  only produced "Do you approve this plan?" with no block at all. Two earlier organizations the
+  same day, same model, same prompts, did produce it. Nothing on Todero's side knew the window:
+  `toderoLocalLlmContextLength` was recorded only when a connection test happened to name an
+  organization, was read only to size the skill pack, and no request ever asked for a window, so
+  Ollama's 4,096-token default applied whatever the model could hold.
+- **Decision:** Three parts, all on the local-model path only.
+  1. The window is resolved per run (`resolveContextLengthForRun`): the recorded value, or — for an
+     organization hired before it was kept, or whose connection test ran before the organization
+     existed — one look at the runtime, remembered for next time. `detectContextLength` now falls
+     back from `/api/ps` (which lists only loaded models) to `/api/show`, so a cold runtime can
+     still answer. The heartbeat puts the result on the run context as `toderoContextLength`.
+  2. The request asks for that window. Measured against Ollama 0.34.0, the OpenAI-shaped endpoint
+     at `/v1/chat/completions` **ignores** `options.num_ctx` — a request carrying 16,384 still
+     loaded the model at 4,096 — while Ollama's own `/api/chat` honours it (the model loaded at
+     16,384). So when, and only when, a window is known and the endpoint is Ollama, the http
+     adapter posts the same conversation to `/api/chat` with `options.num_ctx` and reads the native
+     reply. With no recorded window nothing changes: the request stays OpenAI-shaped and the
+     runtime keeps deciding. Todero never invents a window, and never asks for more than 16,384
+     tokens (`MAX_REQUESTED_CONTEXT_LENGTH`, the window the wizard already recommends): what a
+     model was built with — 128k for some, which is what `/api/show` reports — is not what the
+     machine can serve.
+  3. The prompt is budgeted against the window before it is sent
+     (`server/src/adapters/http/prompt-budget.ts`). The opening block — who the agent is, what it
+     knows, and the task, which is where the format instructions live — is pinned and always
+     survives, as does Todero's instruction for the turn. The conversation in the middle is trimmed
+     oldest-first and the pinned block says how many messages were left out.
+- **Consequences:**
+  - Format instructions can no longer lose a fight with old chat history: the trim is Todero's,
+    not the runtime's, and it takes from the end that matters least.
+  - Local Ollama agents with a recorded window talk to a different endpoint than before. The reply
+    shape (`message.content`, `done_reason`) is translated in one small module; a runtime that is
+    not Ollama, and any agent with no recorded window, is untouched.
+  - Raising `OLLAMA_CONTEXT_LENGTH` is no longer the only way to give an agent a bigger window,
+    but a recorded window still comes from what the runtime reports, so the wizard's hint stands.
+  - The chars-per-token estimate is one number (`CONTEXT_CHARS_PER_TOKEN` in `@todero/shared`),
+    shared by the skill-pack ceiling and the prompt budget.
+- **Source:** `server/src/adapters/http/prompt-budget.ts`, `server/src/adapters/http/ollama-native.ts`,
+  `server/src/adapters/http/chat-completions.ts`, `server/src/adapters/http/execute.ts`,
+  `server/src/todero/available-models.ts`, `server/src/services/heartbeat.ts`,
+  `packages/shared/src/skill-pack-utils.ts`.
+
+## ADR-017 — Where a runtime can enforce the plan's shape, Todero makes it, instead of asking
+
+- **Date:** 2026-09-14
+- **Status:** Accepted
+- **Context:** `TODERO_PLAN_BLOCK_INSTRUCTIONS` describes the fenced `todero-plan` block in words
+  and hopes the model writes one. Observed on this machine (company `abb1b283`, issue `d12f7298`):
+  `qwen2.5-coder:14b` on Ollama answered "Do you approve this plan?" fifteen times in four minutes
+  and never wrote a block, so `parseToderoPlanBlock` found nothing, the description never got the
+  pending marker, the app never offered Approve, and the task dead-ended. Two earlier organizations
+  the same day, same model, same prompts, wrote the block. Words are not a mechanism; a schema is.
+  ADR-016 gave the model a window big enough to still see the instructions. This makes the shape
+  something it cannot miss.
+- **Decision:** On the one turn where Todero itself asks for the plan — the corrective turn from
+  `buildMissingPlanRetryInstruction` — and only against Ollama, the request carries a JSON schema
+  for the plan (`TODERO_PLAN_JSON_SCHEMA`): `response_format: { type: "json_schema" }` on the
+  OpenAI-shaped endpoint, the bare schema in `format` on Ollama's own `/api/chat`. What comes back
+  is rewritten into the reply Todero already reads — the words for the person, the canonical fenced
+  block, the status line — so nothing downstream changes. Scope is deliberately narrow on two axes:
+  1. **Only that turn.** A schema constrains the whole reply, so a conversational turn carrying one
+     would answer the person in JSON. The signal is Todero's own turn instruction naming the fence,
+     never the task description, which carries the template for the life of the conversation.
+  2. **Only Ollama.** It is the endpoint Todero can be sure reads a schema. Everywhere else the
+     request goes out exactly as it does today.
+  The prose path stays the fallback: if the runtime ignores the schema or answers with a fenced
+  block anyway, `parseToderoPlanBlock` reads it as before. The run records which path produced the
+  plan — `resultJson.toderoStructuredPlan`, plus a line in the run log.
+- **Consequences:**
+  - The loop this branch is about now has an end: a model that will not write a block is made to.
+    Measured against Ollama 0.34.0 with `qwen2.5-coder:14b`, both endpoints honoured the schema and
+    returned a usable plan.
+  - The two organizations that already worked are untouched: they never reach the corrective turn,
+    and an ordinary turn carries no schema.
+  - The plan shape now has two statements — the prose template and the schema. They must be changed
+    together; both live next to each other in `packages/shared/src/todero-plan*.ts`.
+  - Any later endpoint that advertises `response_format` support can be added to the one predicate
+    in `structured-plan.ts` without touching anything else.
+- **Source:** `packages/shared/src/todero-plan-schema.ts`,
+  `server/src/adapters/http/structured-plan.ts`, `server/src/adapters/http/execute.ts`,
+  `server/src/adapters/http/chat-completions.ts`, `server/src/adapters/http/ollama-native.ts`.
+
+## ADR-018 — The recorded window is what the model can hold, not what it is loaded at
+
+- **Date:** 2026-09-14
+- **Status:** Accepted (amends ADR-016, parts 1 and 2)
+- **Context:** ADR-016 read the window by asking Ollama's `/api/ps` first and only falling back to
+  `/api/show`. The two endpoints answer different questions: `/api/ps` reports the window the model
+  is **loaded** at — Ollama's 4,096 default unless someone set otherwise — while `/api/show`
+  reports what the model can **hold**, 32,768 for `qwen2.5-coder:14b`. Both were observed on this
+  machine minutes apart for that model. Because ADR-016 preferred the loaded reading, any
+  organization whose window was filled in while the model happened to be warm recorded 4,096 —
+  and, now that Todero actively sets `num_ctx` and trims the prompt, went on to force the model to
+  one eighth of what it holds, for good. That is worse than the pre-ADR-016 behaviour it replaced.
+  All five organizations in the first live run recorded 4,096 this way.
+- **Decision:**
+  1. `detectContextLength` asks both endpoints at once and takes the larger. `/api/show` is the
+     capability and is never lowered by a loaded-state snapshot; `/api/ps` still counts, but only
+     for a row naming **the model being asked about**, because a model deliberately loaded above
+     its own reported maximum really is serving that window. There is no "whatever is loaded"
+     fallback: one Ollama here serves eight models and routing switches model per turn, so the row
+     on top is routinely a different model's, and a reading taken from it would be ratcheted in
+     permanently by parts 2 and 3. Observed on this machine with only `ornith:9b` loaded at 65,536:
+     the fallback recorded 65,536 for `qwen2.5-coder:14b`; without it, 32,768.
+  2. `storeContextLength` only ever moves upward. A reading can be an understatement, and an
+     understatement that overwrites a known capability is permanent.
+  3. `resolveContextLengthForRun` does not trust a recorded window on sight: the first run that
+     can reach the runtime re-checks it and keeps the larger number, which repairs every
+     organization already holding 4,096 on its next turn, with no migration. That check happens
+     **once**, marked by `toderoLocalLlmContextLengthRechecked`; the model's own maximum does not
+     change between turns, and the earlier rule — re-check anything below the ceiling — meant an
+     8k or 4k model paid two localhost requests every turn forever. A run that reaches nothing
+     records nothing and asks again next turn. A later connection test still raises the number.
+     This is also why the domain layer no longer imports the ceiling from the http adapter: "when
+     to stop re-probing" and "the largest window we request" are different questions.
+  4. `MAX_REQUESTED_CONTEXT_LENGTH` rises from 16,384 to 32,768. 16,384 was the wizard's comfort
+     recommendation, not a hardware limit, and it would have capped the model Todero is actually
+     run with to half of what it holds. What 32k costs was then measured rather than assumed: at
+     `num_ctx` 32768 this machine's Ollama reports `qwen2.5-coder:14b` at 15.7 GB with 10.5 GB
+     resident on a 12 GB card, so roughly five gigabytes spill to system RAM. That price is
+     accepted knowingly — the alternative on the table was every organization running at 4,096,
+     which is not slower but broken — while 128k, what `/api/show` reports for some models, would
+     spill several times as much, so a ceiling stays.
+- **Consequences:**
+  - An organization recorded at 4,096 repairs itself on the next turn: one extra pair of localhost
+    requests, once, and none after that.
+  - Todero can now ask a machine for 32,768 tokens where it previously asked for 16,384. Someone
+    serving a window larger than 32k is still trimmed to 32k and loses room, not capability.
+  - The number Todero acts on is the same one it records, so the request and the prompt budget
+    still cannot disagree.
+- **Source:** `server/src/todero/available-models.ts`,
+  `server/src/adapters/http/prompt-budget.ts`.
+
+## ADR-019 — A shaped reply that is not a plan is answered in words, and the path is on the run
+
+- **Date:** 2026-09-14
+- **Status:** Accepted (amends ADR-017)
+- **Context:** ADR-017 asks Ollama to hold the corrective turn to the plan's schema and reads the
+  object back out. A runtime can honour the schema and still return something
+  `parseToderoPlanJson` rejects: the wrong shape, an empty `features`/`tasks`, or an object cut
+  off mid-write when `num_predict` ran out. The reply then fell through to the prose path, and the
+  prose path posts whatever it was given — so the person got the raw JSON blob as the agent's
+  message. Reproduced live in a "Zz Recover" organization: the ticket comment was a literal JSON
+  string. Before ADR-017 that same turn produced prose. ADR-017 also said the run records which
+  path produced the plan, but `toderoStructuredPlan` only reached `resultJson`, and the run-list
+  projection keeps a whitelist, so the fact never left the run log.
+- **Decision:**
+  1. When the turn asked for the shape and the reply is an attempt at the object but not a usable
+     plan, the person is shown the object's own `message`, or one plain sentence when it carries
+     no words. Never the JSON. A truncated object never parses, so the words are lifted out of
+     the `message` field directly — it is the first field the schema asks for, so it is usually
+     written before the room runs out. A reply that was never an attempt at the object (prose,
+     with or without a fenced block) is untouched and reads exactly as before.
+  2. `resultJson.toderoStructuredPlan` is one of three words rather than a boolean: `held` (the
+     runtime held the shape), `prose` (it answered in prose and the fenced parser read it), or
+     `unreadable` (the shape came back and did not hold). The third is the case this ADR is
+     about, and a boolean could not say it.
+  3. That value travels with the run the way the summary and cost fields do — a projected column
+     in `heartbeatRunListResultColumns` and a field in `summarizeHeartbeatRunListResultJson` — so
+     `GET /api/companies/:companyId/heartbeat-runs` carries it, not just the single-run fetch.
+     No new mechanism: this is the same whitelist every other per-run fact goes through.
+- **Consequences:**
+  - The worst outcome of asking for a schema is now a plain sentence, which is what the turn
+    produced before ADR-017. It can no longer be a JSON blob in a person's thread.
+  - A three-word value is a contract: anything reading `toderoStructuredPlan` as a boolean would
+    now see a truthy string. Only the http adapter writes it, and only this branch read it.
+- **Source:** `server/src/adapters/http/structured-plan.ts`,
+  `packages/shared/src/todero-plan-schema.ts`, `server/src/services/heartbeat.ts`.
+
+## ADR-020 — The JSON is removed from the reply, not the reply from the person
+
+- **Date:** 2026-09-14
+- **Status:** Accepted (amends ADR-019)
+- **Context:** ADR-019 decided that a shaped reply which is not a usable plan is answered in
+  words. It carried that out by asking whether the *whole* reply was an attempt at the object —
+  the trimmed text had to start with `{`. Three things that actually happen fall outside that
+  test, and review caught all three. A reply with a sentence in front of the object
+  (`Sure, here is the plan:` then the object) and a reply that is a top-level array both fell
+  through to the prose path, which posts what it was given: the blob, verbatim, exactly the
+  outcome ADR-019 exists to prevent. Its consequence line "It can no longer be a JSON blob in a
+  person's thread" was therefore false. Worse, the same test threw prose away: a fence check that
+  was not anchored classed any prose *containing* a ```json block as unreadable and replaced the
+  model's own words with the canned sentence. And the live reply that motivated ADR-019 (run
+  `6752efd3`, "Zz Recover") was read by neither path: its words are under `body` and a complete,
+  recoverable plan sits under `plan`, so the person got the canned sentence and the loop the work
+  exists to break repeated. That reply also violates the strict schema it was sent with, which is
+  the evidence that this runtime does not hard-enforce output on this path — so "the reply starts
+  with `{`" was never a safe assumption.
+- **Decision:**
+  1. Find the JSON *anywhere in the reply* — the reader walks the text, honouring strings and
+     escapes, and returns every blob with its span: bare or fenced, object or array, closed or
+     cut off. This is the shape the sibling reader already documented as one that happens.
+  2. Replace the blob, not the reply. Each blob becomes its own words; everything the model
+     wrote around it is kept. A status line in that kept prose is dropped — Todero appends the
+     one status a plan turn is entitled to, and a stray `STATUS: done` beside an unusable object
+     must not close the task. One plain sentence only when there were no words anywhere.
+  3. Read `body` as well as `message`, and a plan filed one level down under `plan`, so the
+     "Zz Recover" reply yields the model's own sentence and its recoverable plan.
+  4. A person sees the path in Mission Control: `RunStructuredPlanNote` renders
+     `resultJson.toderoStructuredPlan` on the run detail. ADR-019 claimed the run-detail panel
+     already printed `resultJson`; it prints it only for a failed or timed-out run, and a turn
+     whose shape did not hold exits 0.
+- **Consequences:**
+  - The reader is deliberately greedy on a turn that asked for the shape: `{"` or `[{` in such a
+     reply is treated as JSON and hidden, even if the model meant it as prose. That trade only
+     applies to the corrective plan turn; every other turn is untouched.
+  - The three-word value from ADR-019 stands. "unreadable" now means "the object did not hold",
+    not "the whole reply was an object".
+- **Source:** `server/src/adapters/http/structured-plan.ts`,
+  `packages/shared/src/todero-plan-schema.ts`, `ui/src/components/RunStructuredPlanNote.tsx`.
+
+## ADR-021 — The window is settled by the capability endpoint, and the default is 16,384
+
+- **Date:** 2026-09-15
+- **Status:** Accepted (amends ADR-018, parts 3 and 4)
+- **Context:** Three things measured on this machine after ADR-018 landed.
+
+  1. ADR-018 part 3 re-checks a recorded window **once** and marks the organization with
+     `toderoLocalLlmContextLengthRechecked`. It set that mark for *any* reading. With the model
+     warm and `/api/ps` reporting Ollama's 4,096 default, a single failed `/api/show` recorded
+     4,096 and closed the question: every later turn answered 4,096 and never asked again, and a
+     fully healthy runtime afterwards did not repair it — only a person re-running a connection
+     test could. Reproduced: turn one with one `/api/show` throw wrote
+     `{contextLength: 4096, rechecked: true}`; turn two against a healthy runtime answering 32,768
+     still returned 4,096 and did not call detection at all. This is ADR-018's own bug — a
+     loaded-state snapshot treated as the answer — moved from the reading into the mark.
+  2. ADR-018 part 4 raised the requested window to 32,768 on an argument about what the model can
+     hold, with only a VRAM figure to price it. Timed properly on a 12 GB card with
+     `qwen2.5-coder:14b`, two planning turns each against a padded thread: 4,096 → 21.1 tok/s,
+     24.4 s a turn, nothing spilled; 16,384 → 21.3 tok/s, 25.7 s a turn, 2.2 GB spilled;
+     32,768 → 16.0 tok/s, 33.5 s a turn, 5.3 GB spilled.
+  3. ADR-016 put Todero's turn instruction inside the budget, which was right — outside it, the
+     runtime trimmed the system prompt off the front. But nothing capped it: at a 1,024-token
+     window a 300-word corrective instruction took the whole budget and all 40 turns of history
+     were dropped. A model told to try again, with no memory of what it did the first time, is
+     being set up to fail.
+- **Decision:**
+  1. Detection reports **which endpoint answered**. `detectContextLengthReading` returns
+     `{ contextLength, capabilityAnswered }`, where `capabilityAnswered` is true only for
+     `/api/show`. `detectContextLength` stays as the number-only form for the connection test,
+     which stores upward and cannot lock anything.
+  2. `resolveContextLengthForRun` sets the re-checked mark only when the capability endpoint
+     answered. A run that heard only from `/api/ps` stores whatever that raised — upward only, as
+     before — and asks again next turn, so a later healthy turn repairs a wrong stored value by
+     itself. A reading that raises nothing and settles nothing is not written at all.
+  3. `MAX_REQUESTED_CONTEXT_LENGTH` is **16,384**, from the measurement above: four times the
+     broken default for no measurable cost, where the next step up costs about a quarter of the
+     speed for room the prompt does not use. The number is this machine's, not a law — a 24 GB
+     card would take 32,768 without spilling — which is why sizing the window to the machine is
+     queued in `doc/plans/2026-09-14-any-llm-independence.md`.
+  4. While there is a conversation to protect, the pinned turn instruction may take at most
+     `TURN_INSTRUCTION_MAX_BUDGET_SHARE` (a quarter) of the prompt budget and is cut to fit, with
+     a marker saying so. With no conversation in the prompt it is left exactly as it came.
+- **Consequences:**
+  - An organization can no longer be pinned to a load-time default by one failed request. The
+     cost is that a runtime whose `/api/show` is permanently unreachable pays the detection pair
+     every turn — it is the honest price of never locking in a wrong number.
+  - Todero asks for 16,384 where ADR-018 asked for 32,768. A model that holds more is trimmed to
+     16,384 and loses room, not capability; the `/api/show` capability is still recorded in full,
+     so raising the ceiling later needs no re-detection.
+  - At 16,384 the instruction cap is around 3,000 tokens and no instruction Todero writes comes
+     near it, so it only ever bites on small windows — which is where it was needed.
+- **Source:** `server/src/todero/available-models.ts`,
+  `server/src/adapters/http/prompt-budget.ts`.

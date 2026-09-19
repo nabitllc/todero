@@ -133,13 +133,19 @@ import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js
 import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
 import {
   allPlanChildrenClosed,
+  applyMissingPlanRecovery,
+  buildMissingPlanRetryInstruction,
   buildPlanSummaryTurnInstruction,
+  buildStopAskingForPlanInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
   descriptionWithoutConversationMarkers,
+  hasGivenUpOnPlan,
   loadPlanChildren,
+  MISSING_PLAN_RETRY_WAKE_REASON,
   NEXT_PROJECT_DOCUMENT_KEY,
   parseNextProjectLine,
   planConversationOutcome,
+  planMissingPlanRecovery,
   planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
 import {
@@ -2565,6 +2571,11 @@ const heartbeatRunListResultColumns = {
   resultTotalCostUsd: sql<string | null>`${heartbeatRuns.resultJson} ->> 'total_cost_usd'`.as("resultTotalCostUsd"),
   resultCostUsd: sql<string | null>`${heartbeatRuns.resultJson} ->> 'cost_usd'`.as("resultCostUsd"),
   resultCostUsdCamel: sql<string | null>`${heartbeatRuns.resultJson} ->> 'costUsd'`.as("resultCostUsdCamel"),
+  // Which path produced a plan on this run. Without it the run list drops the
+  // fact and a person cannot tell an enforced plan from a hand-written one.
+  resultToderoStructuredPlan: sql<string | null>`${heartbeatRuns.resultJson} ->> 'toderoStructuredPlan'`.as(
+    "resultToderoStructuredPlan",
+  ),
 } as const;
 
 const heartbeatRunSafeResultJsonColumn = sql<Record<string, unknown> | null>`
@@ -4037,6 +4048,9 @@ export function summarizeHeartbeatRunContextSnapshot(
   return Object.keys(summary).length > 0 ? summary : null;
 }
 
+/** The values the http adapter records for which path produced a plan. */
+const HEARTBEAT_RUN_STRUCTURED_PLAN_VALUES = ["held", "prose", "unreadable"] as const;
+
 export function summarizeHeartbeatRunListResultJson(input: {
   summary?: string | null;
   result?: string | null;
@@ -4045,6 +4059,7 @@ export function summarizeHeartbeatRunListResultJson(input: {
   totalCostUsd?: string | null;
   costUsd?: string | null;
   costUsdCamel?: string | null;
+  toderoStructuredPlan?: string | null;
 }): Record<string, unknown> | null {
   const summary: Record<string, unknown> = {};
   for (const [key, value] of [
@@ -4066,6 +4081,17 @@ export function summarizeHeartbeatRunListResultJson(input: {
     if (!normalized) continue;
     const parsed = Number(normalized);
     if (Number.isFinite(parsed)) summary[key] = parsed;
+  }
+
+  // Which path produced this run's plan travels with the run, the way the
+  // cost and summary fields do, so the run list can say so without a caller
+  // fetching the whole run.
+  const structuredPlan = readNonEmptyString(input.toderoStructuredPlan);
+  if (
+    structuredPlan &&
+    (HEARTBEAT_RUN_STRUCTURED_PLAN_VALUES as readonly string[]).includes(structuredPlan)
+  ) {
+    summary.toderoStructuredPlan = structuredPlan;
   }
 
   return Object.keys(summary).length > 0 ? summary : null;
@@ -14979,13 +15005,39 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         hasParentIssue: Boolean(issueContext?.parentId),
       });
       context.toderoTaskKind = toderoTaskKind;
+      // A plan that was claimed and never written (conversation-outcome.ts).
+      // Set after the routing kind so a corrective turn is still routed as the
+      // planning turn it is.
+      if (hasGivenUpOnPlan(issueRef.description) && !readNonEmptyString(context.toderoTurnInstruction)) {
+        // Only when Todero has nothing else to say this turn: a wrap-up or a
+        // manager assignment set just above is the more specific instruction
+        // and must not be thrown away.
+        context.toderoTurnInstruction = buildStopAskingForPlanInstruction();
+      } else if (conversationWakeReason === MISSING_PLAN_RETRY_WAKE_REASON) {
+        context.toderoTurnInstruction = buildMissingPlanRetryInstruction();
+      }
       // What this agent knows for this kind of turn. The rows are the
       // organization's own copies, so a person's edit takes effect on the
       // next turn without a restart.
       const skillPackSkills = await companySkills.listFull(agent.companyId).catch(() => [] as CompanySkill[]);
-      // The runtime's window bounds how much of the pack a turn can carry;
-      // recorded by the connection test, null (a 4,096-token default) before.
-      const skillPackContextLength = await resolveContextLengthForRun(db, agent.companyId).catch(() => null);
+      // The runtime's window bounds how much of the pack a turn can carry, and
+      // how much of the thread the prompt may hold; recorded by the connection
+      // test, and filled in from the runtime for an agent hired before that was
+      // kept. Null (a 4,096-token default) when nothing can say.
+      const localModelBaseUrl = readNonEmptyString(parseObject(agent.adapterConfig).url);
+      const skillPackContextLength = await resolveContextLengthForRun(db, agent.companyId, {
+        baseUrl: localModelBaseUrl,
+        modelId:
+          readNonEmptyString(parseObject(parseObject(agent.adapterConfig).localLlm).modelId) ||
+          readNonEmptyString(parseObject(agent.adapterConfig).model),
+      }).catch(() => null);
+      // The http adapter reads this to set the runtime's window for the
+      // request and to budget the prompt against it.
+      if (skillPackContextLength) {
+        context.toderoContextLength = skillPackContextLength;
+      } else {
+        delete context.toderoContextLength;
+      }
       const skillPack = loadAgentSkillText({
         agent,
         kind: toderoTaskKind,
@@ -15021,7 +15073,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // the runtime for an organization hired before that was kept.
       const availableModels = await resolveAvailableModelIdsForRun(db, {
         companyId: agent.companyId,
-        baseUrl: readNonEmptyString(parseObject(agent.adapterConfig).url),
+        baseUrl: localModelBaseUrl,
       }).catch(() => [] as string[]);
       if (availableModels.length > 0) {
         context.toderoAvailableModels = availableModels;
@@ -15035,6 +15087,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       delete context.toderoTaskKind;
       delete context.toderoSkillText;
       delete context.toderoAvailableModels;
+      delete context.toderoContextLength;
     }
     if (issueRef) {
       context.toderoIssue = {
@@ -17461,7 +17514,95 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         // successful-run handoff below does not raise a second wake for a turn
         // that already reached its end state.
         let conversationDispositionApplied = managerWaveHandled;
+        // A reply that asks to have a plan approved and carries no plan is a
+        // question nobody can answer: there is nothing on the task to approve,
+        // and answering it only produces the same question again. Todero asks
+        // the model once more with the shape spelled out, and if that comes
+        // back empty too the task goes to the person with one plain message
+        // and the plan step closed. The decision is pure and lives in
+        // conversation-outcome.ts; this only carries it out.
+        let missingPlanHandled = false;
         if (issueId && outcome === "succeeded" && conversationDisposition && !managerWaveHandled) {
+          try {
+            const planTurnIssue = await issuesSvc.getById(issueId);
+            const planTurnWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
+            // A conversation whose tasks exist is past the planning turn:
+            // nothing it says can be a plan that never arrived. The Plan
+            // document is no use here — it is written the moment the agent
+            // proposes a plan, so from the second planning round on it would
+            // silence the rescue on exactly the conversations that need it.
+            // Only the children mean the plan was taken up.
+            const planTurnChildren = planTurnIssue
+              ? await loadPlanChildren(db, { companyId: agent.companyId, issueId }).catch(() => [])
+              : [];
+            const missingPlan = planTurnIssue
+              ? planMissingPlanRecovery({
+                  issue: planTurnIssue,
+                  disposition: conversationDisposition,
+                  reply: readNonEmptyString(parseObject(persistedResultJson).summary) ?? "",
+                  planBlock: conversationPlanBlock,
+                  conversationHasPlan: planTurnChildren.length > 0,
+                  steeredTurn:
+                    planTurnWakeReason === ISSUE_BLOCKERS_RESOLVED_WAKE_REASON ||
+                    planTurnWakeReason === "issue_children_completed" ||
+                    planTurnWakeReason === MANAGER_ASSIGNMENT_WAKE_REASON ||
+                    planTurnWakeReason === MANAGER_SENDBACK_WAKE_REASON,
+                  agentName: agent.name,
+                })
+              : null;
+            if (missingPlan) {
+              await applyMissingPlanRecovery(
+                {
+                  updateIssue: (id, patch) => issuesSvc.update(id, { ...patch, actorAgentId: agent.id }),
+                  addComment: (id, body, presentation) =>
+                    issuesSvc.addComment(
+                      id,
+                      body,
+                      { agentId: agent.id, runId: livenessRun.id },
+                      { presentation },
+                    ),
+                  wakeAgent: ({ issueId: wakeIssueId, agentId: wakeAgentId }) =>
+                    enqueueWakeup(wakeAgentId, {
+                      source: "assignment",
+                      triggerDetail: "system",
+                      reason: MISSING_PLAN_RETRY_WAKE_REASON,
+                      payload: { issueId: wakeIssueId, mutation: "update" },
+                      requestedByActorType: "agent",
+                      requestedByActorId: agent.id,
+                      contextSnapshot: {
+                        issueId: wakeIssueId,
+                        taskId: wakeIssueId,
+                        source: "issue.plan_not_written",
+                        wakeReason: MISSING_PLAN_RETRY_WAKE_REASON,
+                      },
+                      // No .catch here: if the agent cannot be brought back,
+                      // applyMissingPlanRecovery puts the task in front of the
+                      // person instead of leaving it in todo with nobody told.
+                    }),
+                  log: (message) => {
+                    void onLog("stdout", message);
+                  },
+                },
+                { issueId, agentId: agent.id, recovery: missingPlan },
+              );
+              missingPlanHandled = true;
+              conversationDispositionApplied = true;
+              await recordConversationDispositionApplied(db, livenessRun.id, onLog);
+            }
+          } catch (err) {
+            await onLog(
+              "stderr",
+              `[todero] Could not act on the plan that never arrived: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
+        }
+        if (
+          issueId &&
+          outcome === "succeeded" &&
+          conversationDisposition &&
+          !managerWaveHandled &&
+          !missingPlanHandled
+        ) {
           try {
             const currentIssue = await issuesSvc.getById(issueId);
             const conversationRunWakeReason = readNonEmptyString(parseObject(livenessRun.contextSnapshot).wakeReason);
@@ -20648,6 +20789,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           resultTotalCostUsd,
           resultCostUsd,
           resultCostUsdCamel,
+          resultToderoStructuredPlan,
           ...rest
         } = row as typeof row & {
           resultSummary?: string | null;
@@ -20657,6 +20799,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           resultTotalCostUsd?: string | null;
           resultCostUsd?: string | null;
           resultCostUsdCamel?: string | null;
+          resultToderoStructuredPlan?: string | null;
         };
 
         return {
@@ -20681,6 +20824,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 totalCostUsd: resultTotalCostUsd,
                 costUsd: resultCostUsd,
                 costUsdCamel: resultCostUsdCamel,
+                toderoStructuredPlan: resultToderoStructuredPlan,
               }),
         };
       });

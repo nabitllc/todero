@@ -1,5 +1,6 @@
 import { asString, parseObject } from "../utils.js";
 import { pickModelForKind, type ModelRoutingTaskKind } from "../../todero/model-routing.js";
+import { budgetChatMessages, effectiveContextLength } from "./prompt-budget.js";
 
 export type ChatCompletionsMessage = {
   role: string;
@@ -231,11 +232,26 @@ export const CHAT_COMPLETIONS_NO_TEXT_FALLBACK =
 export const CHAT_COMPLETIONS_CONTINUE_NUDGE =
   "(No reply from the person yet. Pick up where you left off in one short message, or restate the one question you most need answered.)";
 
+/**
+ * The window this run's model is served with, recorded by the connection test
+ * and put on the run context by the heartbeat, and never more than Todero asks
+ * any machine for. Null when nothing recorded one: the budget then sizes for
+ * the runtime default rather than inventing a number.
+ */
+export function readChatCompletionsContextLength(context: Record<string, unknown>): number | null {
+  const raw = context.toderoContextLength;
+  return effectiveContextLength(typeof raw === "number" ? raw : null);
+}
+
 export function buildChatCompletionsMessages(
   context: Record<string, unknown>,
   options: { agentName?: string } = {},
 ): ChatCompletionsMessage[] {
-  const messages: ChatCompletionsMessage[] = [
+  // The opening block: the identity, what the agent knows when it knows
+  // anything, and the task. Nothing from the conversation is ever folded into
+  // it, and the prompt budget never drops any of it — these are the messages
+  // that carry the format instructions.
+  const opening: ChatCompletionsMessage[] = [
     {
       role: "system",
       content: buildChatCompletionsSystemPrompt(
@@ -249,32 +265,58 @@ export function buildChatCompletionsMessages(
   // with nothing turned on sends exactly the messages it sent before.
   const skillText = readNonEmptyString(context.toderoSkillText);
   if (skillText) {
-    messages.push({ role: "system", content: skillText });
+    opening.push({ role: "system", content: skillText });
   }
 
-  messages.push({ role: "user", content: buildChatCompletionsPrompt(context) });
-  // Everything above is the opening block: the identity, what the agent knows
-  // when it knows anything, and the task. Nothing from the conversation is
-  // ever folded into it, so the count is taken here rather than assumed.
-  const openingMessageCount = messages.length;
+  opening.push({ role: "user", content: buildChatCompletionsPrompt(context) });
+
   // Consecutive turns from the same side collapse into one message: chat
   // templates expect strict alternation and some models go silent otherwise.
+  const history: ChatCompletionsMessage[] = [];
   for (const turn of readChatCompletionsThread(context)) {
     const role = turn.role === "agent" ? "assistant" : "user";
-    const last = messages[messages.length - 1]!;
-    if (last.role === role && messages.length > openingMessageCount) {
+    const last = history[history.length - 1];
+    if (last && last.role === role) {
       last.content = `${last.content}\n\n${turn.body}`;
       continue;
     }
-    messages.push({ role, content: turn.body });
+    history.push({ role, content: turn.body });
   }
+
   // A turn instruction from Todero itself (for example: every task in the
-  // plan is closed, write the wrap-up) is the last thing the model reads.
+  // plan is closed, write the wrap-up) is the last thing the model reads, and
+  // it goes into the budget as a pinned trailing message rather than being
+  // stapled on afterwards: the corrective "write the plan again, here is the
+  // shape" instruction is hundreds of tokens, and tokens outside the budget
+  // are tokens the runtime trims off the front, where the system prompt is.
   const turnInstruction = readNonEmptyString(context.toderoTurnInstruction);
+  const trailing: ChatCompletionsMessage[] = turnInstruction
+    ? [{ role: "user", content: turnInstruction }]
+    : [];
+
+  // Everything must fit the window Todero knows this model has. The opening
+  // block is pinned; the conversation is trimmed oldest-first, with a marker
+  // saying so.
+  const messages = budgetChatMessages({
+    messages: [...opening, ...history, ...trailing],
+    pinnedLeading: opening.length,
+    pinnedTrailing: trailing.length,
+    contextLength: readChatCompletionsContextLength(context),
+  }).messages;
+  const openingMessageCount = opening.length;
+
   if (turnInstruction) {
+    // Budgeted as its own message, delivered folded into the turn before it
+    // when that turn is also the person's: chat templates expect strict
+    // alternation. Folding only ever costs fewer tokens than the budget
+    // already counted, never more.
+    const instruction = messages.pop()!;
     const last = messages[messages.length - 1]!;
-    if (last.role === "user" && messages.length > openingMessageCount) last.content = `${last.content}\n\n${turnInstruction}`;
-    else messages.push({ role: "user", content: turnInstruction });
+    if (last.role === "user" && messages.length > openingMessageCount) {
+      last.content = `${last.content}\n\n${instruction.content}`;
+    } else {
+      messages.push(instruction);
+    }
     return messages;
   }
   if (messages[messages.length - 1]!.role === "assistant") {
@@ -312,11 +354,35 @@ function readAvailableModels(context: Record<string, unknown>): string[] {
   return raw.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
 }
 
+/**
+ * True when the endpoint on the other end is an Ollama runtime. Only Ollama
+ * reads an `options` object on a chat request, and a hosted OpenAI-compatible
+ * API would reject the unknown field, so the option never leaves this case.
+ * The hire writes `localLlm.runtimeId`; the default port covers an agent
+ * configured by hand.
+ */
+export function isOllamaChatCompletionsConfig(config: Record<string, unknown>): boolean {
+  const localLlm = parseObject(config.localLlm);
+  if (readNonEmptyString(localLlm.runtimeId).toLowerCase().startsWith("ollama")) return true;
+  const url = asString(config.url, "");
+  try {
+    return new URL(url).port === "11434";
+  } catch {
+    return false;
+  }
+}
+
 export function buildChatCompletionsBody(input: {
   config: Record<string, unknown>;
   context: Record<string, unknown>;
   payloadTemplate: Record<string, unknown>;
   agentName?: string;
+  /**
+   * Ask the runtime to hold the reply to the plan's shape (structured-plan.ts).
+   * Off by default, and only ever on for the one turn that asks for a plan:
+   * a schema constrains the whole reply.
+   */
+  responseFormat?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   const configuredModel =
     asString(input.config.model, "") || asString(input.payloadTemplate.model, "");
@@ -327,9 +393,20 @@ export function buildChatCompletionsBody(input: {
   const model = kind
     ? pickModelForKind({ kind, available: readAvailableModels(input.context), defaultModel: configuredModel })
     : configuredModel;
+  // Todero sets the window it recorded for this model rather than leaving the
+  // runtime on its own default; with nothing recorded it asks for nothing, so
+  // the runtime keeps deciding.
+  const contextLength = readChatCompletionsContextLength(input.context);
+  const templateOptions = parseObject(input.payloadTemplate.options);
+  const options =
+    contextLength && isOllamaChatCompletionsConfig(input.config)
+      ? { ...templateOptions, num_ctx: contextLength }
+      : templateOptions;
   return {
     ...input.payloadTemplate,
     ...(model ? { model } : {}),
+    ...(Object.keys(options).length > 0 ? { options } : {}),
+    ...(input.responseFormat ? { response_format: input.responseFormat } : {}),
     messages: buildChatCompletionsMessages(input.context, { agentName: input.agentName }),
   };
 }
