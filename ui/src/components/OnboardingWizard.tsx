@@ -1853,7 +1853,10 @@ function OnboardingWizardInner({
 
   const isAgentArcStep = agentArcStepFor(step) !== null;
   // Which of the first two screens asks which question. See onboarding-steps.
-  const { buildsNewOrganization, missionStep, nameStep } = onboardingQuestionSteps(onboardingPath);
+  const { buildsNewOrganization, missionStep, nameStep } = onboardingQuestionSteps(
+    onboardingPath,
+    entryStep,
+  );
   const showsAgentArcStepper = isAgentArcStep && entryStep >= 3;
 
   const launchStateIncomplete = step === 6 && (!createdCompanyId || !createdAgentId);
@@ -2168,7 +2171,14 @@ function OnboardingWizardInner({
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && companyName.trim()) {
                           e.preventDefault();
-                          setStep(2);
+                          // The grow path asks the name first, so Enter
+                          // advances to the questionnaire. On the create path
+                          // this screen is the last question, so Enter creates
+                          // — and it has to happen here: the preventDefault
+                          // above is exactly what tells the wizard's
+                          // step-level handler to keep its hands off this key.
+                          if (nameStep === 1) setStep(2);
+                          else if (companyGoal.trim() && !loading) handleConfirmMission();
                         }
                       }}
                       autoFocus
@@ -2192,11 +2202,15 @@ function OnboardingWizardInner({
                     </div>
                     <div>
                       <h3 className="font-medium">Define your mission</h3>
-                      {/* The name is asked for on the next screen now, so this
-                          line can no longer print it. */}
+                      {/* The name is asked for on the next screen on a create
+                          run, so this line has none to print. A run sent here
+                          for a company that already exists does, and naming it
+                          is how that customer knows which team they are
+                          writing a mission for. */}
                       <p className="text-xs text-muted-foreground">
                         Your mission guides everything — your lead agent, who you bring on, and the
-                        work the team takes on.
+                        work {companyName.trim() ? <strong>{companyName}</strong> : "the team"} takes
+                        on.
                       </p>
                     </div>
                   </div>

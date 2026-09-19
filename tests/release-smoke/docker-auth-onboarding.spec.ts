@@ -39,11 +39,11 @@ async function getJson<T>(page: Page, url: string): Promise<T> {
 const ONBOARDING_DRAFT_STORAGE_KEY = "todero-onboarding-state";
 
 /**
- * Open the wizard on its first step and hand back the organization-name field.
+ * Open the wizard on its first step and hand back the mission field.
  *
  * `/onboarding` resolves to `{ initialStep: 1 }` on a self-hosted instance
  * (`resolveRouteOnboardingOptions`) and the route keeps the wizard open, so
- * this lands on "name your organization" whether or not the instance already
+ * this lands on "define your mission" whether or not the instance already
  * holds a company. Navigating explicitly is what keeps the spec re-runnable:
  * the release-smoke config retries once in CI, and by the second attempt the
  * instance is no longer company-less, so sign-in lands on a dashboard instead.
@@ -56,9 +56,10 @@ const ONBOARDING_DRAFT_STORAGE_KEY = "todero-onboarding-state";
  * and a fresh release-smoke container never has it.
  *
  * The field is located by role. Step 1 has no id and its `<label>` is not
- * associated with the input, so the alternative is its placeholder copy — the
- * exact coupling that let this spec drift. The wizard's first screen has
- * exactly one text box, and a second one appearing there would fail Playwright's
+ * associated with the control, so the alternative is its placeholder copy — the
+ * exact coupling that let this spec drift. The wizard's first screen — the
+ * mission, since the create path asks for that before the name — has exactly
+ * one text box, and a second one appearing there would fail Playwright's
  * strict mode loudly rather than silently matching the wrong control.
  */
 async function openOnboarding(page: Page) {
@@ -67,9 +68,9 @@ async function openOnboarding(page: Page) {
   }, ONBOARDING_DRAFT_STORAGE_KEY);
   await page.goto("/onboarding");
 
-  const orgNameField = page.getByRole("textbox");
-  await expect(orgNameField).toBeVisible({ timeout: 20_000 });
-  return orgNameField;
+  const missionField = page.getByRole("textbox");
+  await expect(missionField).toBeVisible({ timeout: 20_000 });
+  return missionField;
 }
 
 test.describe("Docker authenticated onboarding smoke", () => {
@@ -92,15 +93,17 @@ test.describe("Docker authenticated onboarding smoke", () => {
       await expect(page).toHaveURL(/\/onboarding$/, { timeout: 20_000 });
     }
 
-    // Step 1: name the organization. Continue asks for a mission; confirming
-    // that creates the company with the mission before the lead is hired.
-    const orgNameField = await openOnboarding(page);
-    await orgNameField.fill(COMPANY_NAME);
+    // Step 1: define the mission. Continue asks for the organization's name;
+    // creating it there persists the mission before the lead is hired.
+    const missionField = await openOnboarding(page);
+    await missionField.fill("Ship the product");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
 
-    await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
-    await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
-    await page.getByRole("button", { name: /Confirm mission/ }).click();
+    await expect(
+      page.getByRole("heading", { name: "What is the name of your organization?" })
+    ).toBeVisible({ timeout: 15_000 });
+    await page.getByPlaceholder("e.g. Northwind Labs").fill(COMPANY_NAME);
+    await page.getByRole("button", { name: /Create organization/ }).click();
 
     // Step 3: name the team lead. The name is the step's only question and it
     // gates the CTA; the role picker is gone, so the hire is filed as `general`.

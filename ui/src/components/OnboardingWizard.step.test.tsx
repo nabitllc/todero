@@ -125,6 +125,46 @@ function missionTextarea(): HTMLTextAreaElement | null {
   return document.body.querySelector("textarea");
 }
 
+/**
+ * The button that ends a create run's questions. The create path asks the
+ * mission first and the name second, so the organization is created from the
+ * name screen — "Confirm mission" is what a run sent straight to the mission
+ * step sees instead.
+ */
+function createOrganizationButton(): HTMLButtonElement | null {
+  return (
+    [...document.body.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Create organization"),
+    ) ?? null
+  );
+}
+
+/** Answer both questions of a create run, in the order the wizard asks them. */
+async function answerCreateQuestions(params: {
+  name: string;
+  mission: string;
+  settle: () => Promise<void>;
+}) {
+  const { name, mission, settle } = params;
+  const clickElement = async (el: Element) => {
+    await act(async () => {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+  };
+
+  setControlledValue(missionTextarea()!, mission);
+  await settle();
+  await clickElement(
+    [...document.body.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Continue",
+    )!,
+  );
+  await settle();
+  setControlledValue(document.body.querySelector("input")! as HTMLInputElement, name);
+  await settle();
+  await clickElement(createOrganizationButton()!);
+}
+
 /** Type into a controlled React input without a full user-event dependency. */
 function setControlledValue(el: HTMLTextAreaElement | HTMLInputElement, value: string) {
   const prototype =
@@ -637,18 +677,7 @@ describe("OnboardingWizard — which step it lands on", () => {
       await render();
       await settle();
 
-      const nameInput = document.body.querySelector("input")! as HTMLInputElement;
-      setControlledValue(nameInput, "Acme");
-      await settle();
-      await click(
-        [...document.body.querySelectorAll("button")].find(
-          (b) => b.textContent?.trim() === "Continue",
-        )!,
-      );
-      await settle();
-      setControlledValue(missionTextarea()!, "Acme's mission");
-      await settle();
-      await click(confirmMissionButton()!);
+      await answerCreateQuestions({ name: "Acme", mission: "Acme's mission", settle });
       await settle();
       await settle();
       expect(mockCompaniesApi.create).toHaveBeenCalled();
@@ -663,8 +692,8 @@ describe("OnboardingWizard — which step it lands on", () => {
       await rerender();
       await settle();
 
-      const nameAfter = document.body.querySelector("input") as HTMLInputElement | null;
-      expect(nameAfter?.value).toBe("");
+      // Back at the first question — the mission now — holding nothing.
+      expect(missionTextarea()?.value ?? "").toBe("");
       expect(document.body.textContent).not.toContain("Acme's mission");
     });
 
@@ -711,22 +740,12 @@ describe("OnboardingWizard — which step it lands on", () => {
     await render();
     await settle();
 
-    // Confirm mission creates the company. Continue from org-name only
-    // advances to that step.
-    const nameInput = document.body.querySelector("input")! as HTMLInputElement;
-    setControlledValue(nameInput, "Initech");
-    await settle();
-    const next = [...document.body.querySelectorAll("button")].find(
-      (b) => b.textContent?.trim() === "Continue",
-    )!;
-    await act(async () => {
-      next.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    await settle();
-    setControlledValue(missionTextarea()!, "Initech's mission");
-    await settle();
-    await act(async () => {
-      confirmMissionButton()!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    // Create organization creates the company. Continue from the mission only
+    // advances to the name screen.
+    await answerCreateQuestions({
+      name: "Initech",
+      mission: "Initech's mission",
+      settle,
     });
 
     // A route supplies an existing company before the create lands.

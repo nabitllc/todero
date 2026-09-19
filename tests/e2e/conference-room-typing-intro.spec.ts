@@ -72,13 +72,14 @@ async function runOnboardingWizard(page: Page, companyName: string) {
   const frontDoor = page.getByText("Build a new organization");
   if (await frontDoor.count()) await frontDoor.first().click();
 
-  // Step 1: company name.
-  await page.getByPlaceholder("e.g. Northwind Labs").fill(companyName);
-  await page.getByRole("button", { name: /^Continue/ }).click();
-
+  // Step 1: the mission, which the create path asks for first.
   await expect(page.getByRole("heading", { name: /Define your mission/ })).toBeVisible({ timeout: 15_000 });
   await page.getByPlaceholder("What is your team trying to achieve?").fill("Ship the product");
-  await page.getByRole("button", { name: /Confirm mission/ }).click();
+  await page.getByRole("button", { name: /^Continue/ }).click();
+
+  // Step 2: the name, asked with the mission in view.
+  await page.getByPlaceholder("e.g. Northwind Labs").fill(companyName);
+  await page.getByRole("button", { name: /Create organization/ }).click();
 
   // Step 3: name the agent. The role picker is gone — the arc asks for a
   // name and hires under the neutral `general` role.
