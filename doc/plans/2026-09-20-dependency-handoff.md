@@ -74,11 +74,14 @@ predecessor finishes; the work it finished never arrives.
 - A repro under `repros/`: a task with one predecessor whose output is present, asserting the
   child's prompt carries it. Runs in every later wave.
 
-## Two questions for Michael
+## Decisions — Michael, 2026-09-20
 
-- **Cap per input.** A quarter of the prompt budget for the whole block, split evenly across
-  predecessors, is my proposal. A guide is a page; four pages fit. Code diffs would not — that is
-  a wave-L problem.
-- **When the predecessor is redone.** Refresh on every wake (proposed) means a dependent that
-  already started sees new inputs mid-task. Alternatively, snapshot at first wake and never
-  change. Refresh is truer; snapshot is calmer. I recommend refresh.
+- **Cap: a quarter of the prompt budget for the whole block, split evenly across predecessors.**
+  At a 16,384 window that is about four pages; the four guides fit. Anything longer is cut with a
+  visible marker pointing at the full text on the predecessor task. Code diffs would not fit —
+  that is a wave-L question, not this one.
+- **Refresh on every wake.** A task always builds on the predecessor's *current* output, so a
+  predecessor sent back and redone is what its dependents see next turn. Truer than a snapshot;
+  a task mid-way may see its inputs change between turns, and that is the correct behaviour.
+
+**Approved to build** as wave 2 of the improvement loop, after wave 1's report is read.
