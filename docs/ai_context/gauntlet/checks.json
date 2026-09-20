@@ -22,6 +22,7 @@
     { "id": "repro_slow_local_model_turn", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts", "timeout": 300 },
     { "id": "repro_plan_without_tasks", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts", "timeout": 300 },
     { "id": "repro_review_window", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-window.gauntlet.ts", "timeout": 300 },
-    { "id": "repro_second_hand_in", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts", "timeout": 300 }
+    { "id": "repro_second_hand_in", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts", "timeout": 300 },
+    { "id": "improvement_loop", "cmd": "python checks/improvement-loop.py", "timeout": 2700 }
   ]
 }
