@@ -131,6 +131,7 @@ import {
 import { isSlowLocalTurnAgent, SLOW_LOCAL_TURN_ERROR_CODE } from "../todero/slow-local-turn.js";
 import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js";
 import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
+import { syncTaskInputs, taskInputsDbDeps, type TaskInput } from "../todero/task-inputs.js";
 import {
   allPlanChildrenClosed,
   applyMissingPlanRecovery,
@@ -15057,6 +15058,32 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           "left some of what the agent knows out of this turn",
         );
       }
+      // The finished work of every task this one waited on, gathered fresh and
+      // written on the task as its own document. A task sent back and redone
+      // is what the tasks after it read on their next turn. The conversation
+      // task itself has nothing before it — its wrap-up reads its children its
+      // own way — so only a task inside a plan gathers anything.
+      const taskInputs = issueContext?.parentId
+        ? await syncTaskInputs(
+            taskInputsDbDeps(db, { companyId: agent.companyId, agentId: agent.id }),
+            issueRef.id,
+          ).catch((error: unknown) => {
+            logger.warn(
+              { err: error, agentId: agent.id, issueId: issueRef.id },
+              "could not gather the work this task builds on",
+            );
+            return [] as TaskInput[];
+          })
+        : [];
+      if (taskInputs.length > 0) {
+        context.toderoInputs = taskInputs.map((input) => ({
+          identifier: input.identifier,
+          title: input.title,
+          body: input.body,
+        }));
+      } else {
+        delete context.toderoInputs;
+      }
       // The agent's own folder: its brief and a copy of everything turned on
       // for it. Written once, and again whenever the set changed.
       await syncAgentSkillFolder({
@@ -15088,6 +15115,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       delete context.toderoSkillText;
       delete context.toderoAvailableModels;
       delete context.toderoContextLength;
+      delete context.toderoInputs;
     }
     if (issueRef) {
       context.toderoIssue = {
@@ -15124,6 +15152,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           toderoWakeComment: context.toderoWakeComment,
           toderoTaskMarkdown: context.toderoTaskMarkdown,
           toderoTaskMarkdownCompact: context.toderoTaskMarkdownCompact,
+          // Somebody else's hand-in can quote a secret this organization
+          // registered just as easily as this task's own description can.
+          toderoInputs: context.toderoInputs,
         },
       );
       context.toderoIssue = redactedWakeContext.toderoIssue;
@@ -15135,6 +15166,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       }
       if (redactedWakeContext.toderoTaskMarkdownCompact) {
         context.toderoTaskMarkdownCompact = redactedWakeContext.toderoTaskMarkdownCompact;
+      }
+      if (redactedWakeContext.toderoInputs) {
+        context.toderoInputs = redactedWakeContext.toderoInputs;
       }
     }
     const requestedExecutionWorkspaceId = readNonEmptyString(issueRef?.executionWorkspaceId);

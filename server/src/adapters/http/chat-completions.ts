@@ -1,6 +1,11 @@
 import { asString, parseObject } from "../utils.js";
 import { pickModelForKind, type ModelRoutingTaskKind } from "../../todero/model-routing.js";
-import { budgetChatMessages, effectiveContextLength } from "./prompt-budget.js";
+import {
+  budgetChatMessages,
+  buildTaskInputsBlock,
+  effectiveContextLength,
+  type TaskInputForPrompt,
+} from "./prompt-budget.js";
 
 export type ChatCompletionsMessage = {
   role: string;
@@ -243,6 +248,31 @@ export function readChatCompletionsContextLength(context: Record<string, unknown
   return effectiveContextLength(typeof raw === "number" ? raw : null);
 }
 
+/**
+ * The finished work of every task this one waited on, ready to be read.
+ *
+ * The heartbeat puts each predecessor's hand-in on the run context; this turns
+ * them into the one block the model reads, cut to its share of the window.
+ * Null when the task waits on nobody — which is most tasks, and which is why a
+ * prompt without inputs is exactly the prompt it was before.
+ */
+export function readChatCompletionsInputs(context: Record<string, unknown>): string | null {
+  const raw = Array.isArray(context.toderoInputs) ? context.toderoInputs : [];
+  const inputs: TaskInputForPrompt[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    const body = readNonEmptyString(record.body);
+    if (!body) continue;
+    inputs.push({
+      identifier: readNonEmptyString(record.identifier) || null,
+      title: readNonEmptyString(record.title) || null,
+      body,
+    });
+  }
+  return buildTaskInputsBlock(inputs, { contextLength: readChatCompletionsContextLength(context) });
+}
+
 export function buildChatCompletionsMessages(
   context: Record<string, unknown>,
   options: { agentName?: string } = {},
@@ -266,6 +296,14 @@ export function buildChatCompletionsMessages(
   const skillText = readNonEmptyString(context.toderoSkillText);
   if (skillText) {
     opening.push({ role: "system", content: skillText });
+  }
+
+  // What the tasks before this one handed in. Pinned like the rest of the
+  // opening block: a task cannot do its job without the work it builds on, so
+  // it outranks old chat when the window is tight.
+  const inputs = readChatCompletionsInputs(context);
+  if (inputs) {
+    opening.push({ role: "system", content: inputs });
   }
 
   opening.push({ role: "user", content: buildChatCompletionsPrompt(context) });

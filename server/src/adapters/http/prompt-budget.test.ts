@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { estimateContextTokens } from "@todero/shared";
 import {
   budgetChatMessages,
+  buildTaskInputsBlock,
+  shortenedInputMarker,
+  TASK_INPUTS_HEADING,
+  TASK_INPUTS_MAX_BUDGET_SHARE,
   effectiveContextLength,
   MAX_REQUESTED_CONTEXT_LENGTH,
   DROPPED_HISTORY_MARKER,
@@ -175,5 +180,74 @@ describe("budgetChatMessages", () => {
     });
     expect(budgeted.messages[budgeted.messages.length - 1]).toEqual(instruction);
     expect(budgeted.dropped).toBeGreaterThan(0);
+  });
+});
+
+describe("the work a task builds on", () => {
+  const drafts = "Draft one: how to sign up.\nDraft two: how to invite a teammate.";
+
+  it("renders nothing when the task waits on nobody", () => {
+    expect(buildTaskInputsBlock([], { contextLength: 16_384 })).toBeNull();
+    expect(
+      buildTaskInputsBlock([{ identifier: "ZZF-3", title: "Write initial drafts", body: "   " }], {
+        contextLength: 16_384,
+      }),
+    ).toBeNull();
+  });
+
+  it("carries each predecessor's hand-in under its identifier and title", () => {
+    const block = buildTaskInputsBlock(
+      [
+        { identifier: "ZZF-3", title: "Write initial drafts", body: drafts },
+        { identifier: "ZZF-2", title: "Pick the four topics", body: "Sign-up, invites, billing, support." },
+      ],
+      { contextLength: 16_384 },
+    );
+    expect(block).not.toBeNull();
+    expect(block!).toContain(TASK_INPUTS_HEADING);
+    expect(block!).toContain("ZZF-3 — Write initial drafts");
+    expect(block!).toContain("ZZF-2 — Pick the four topics");
+    expect(block!).toContain(drafts);
+    expect(block!).toContain("Sign-up, invites, billing, support.");
+    expect(block!).not.toContain("was cut");
+  });
+
+  it("cuts a hand-in that will not fit and says which task holds the rest", () => {
+    const long = `START ${"guide text ".repeat(4_000)} END`;
+    const block = buildTaskInputsBlock(
+      [{ identifier: "ZZF-3", title: "Write initial drafts", body: long }],
+      { contextLength: 4_096 },
+    );
+    expect(block).not.toBeNull();
+    expect(block!).toContain("START");
+    expect(block!).not.toContain("END");
+    expect(block!).toContain(shortenedInputMarker("ZZF-3 — Write initial drafts"));
+    expect(estimateContextTokens(block!)).toBeLessThanOrEqual(
+      promptBudgetTokens(4_096) * TASK_INPUTS_MAX_BUDGET_SHARE,
+    );
+  });
+
+  it("splits the room evenly, so one long hand-in cannot crowd the others out", () => {
+    const long = (word: string) => `${word} ${"filler ".repeat(4_000)}`;
+    const block = buildTaskInputsBlock(
+      [
+        { identifier: "ZZF-2", title: "Pick the four topics", body: long("ALPHA") },
+        { identifier: "ZZF-3", title: "Write initial drafts", body: long("BETA") },
+      ],
+      { contextLength: 4_096 },
+    );
+    expect(block).not.toBeNull();
+    expect(block!).toContain("ALPHA");
+    expect(block!).toContain("BETA");
+    expect(estimateContextTokens(block!)).toBeLessThanOrEqual(
+      promptBudgetTokens(4_096) * TASK_INPUTS_MAX_BUDGET_SHARE,
+    );
+  });
+
+  it("names the task even when it has no identifier yet", () => {
+    const block = buildTaskInputsBlock([{ identifier: null, title: "Write initial drafts", body: drafts }], {
+      contextLength: 16_384,
+    });
+    expect(block!).toContain("Write initial drafts");
   });
 });
