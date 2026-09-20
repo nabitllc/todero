@@ -17671,6 +17671,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 const [companyRow] = await db
                   .select({
                     name: companies.name,
+                    // The reviewer needs it: a paused organization is not
+                    // talked to a model about, and its own call is not a run,
+                    // so the run-start gate never sees it.
+                    status: companies.status,
                     interactionResolverGovernance: companies.interactionResolverGovernance,
                   })
                   .from(companies)
@@ -17687,6 +17691,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                   deliverable,
                   leadAgentId: agent.id,
                   companyName: companyRow?.name ?? null,
+                  companyStatus: companyRow?.status ?? null,
                   autoAcceptWhenJudgePasses: readAutoAcceptWhenJudgePasses(
                     companyRow?.interactionResolverGovernance ?? {},
                   ),
