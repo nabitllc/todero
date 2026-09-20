@@ -41,7 +41,14 @@ This also happens to be the cheapest route to model independence. A weak model i
 when the gate is real, and no amount of configuration makes it safe when the gate is a formality.
 `2026-09-14-any-llm-independence.md` has been reordered so the gate is step 1.
 
-## Recommendation 2 — pick a wedge and say it out loud
+## Recommendation 2 — pick a wedge and say it out loud — **DECIDED 2026-09-20**
+
+**Michael chose the documents wedge**, and it is now written into `doc/GOAL.md` under "Where we
+start": *an AI team that plans and writes your company's documents overnight, on hardware you
+control, where nothing leaves the building.* Governance stays the deeper moat and the
+second-conversation argument. The rest of this section is the reasoning that led there, kept for
+the record.
+
 
 Twenty-plus roadmap milestones shipped is real execution. But "control plane for autonomous
 companies" is a category, and categories are won from a beachhead. Neither `GOAL.md` nor
