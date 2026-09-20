@@ -39,6 +39,16 @@ Every one of these is a script. None is a judge question.
 | `task_has_criteria` | every child task carries ≥ 1 written acceptance criterion | not yet measured |
 | `pipeline_stages` | every task shows written → built → judged → closed | no writer stage exists |
 | `first_pass_rate` | share of hand-ins passing review first time — a trend, not a gate | 4 of 6 |
+| `recovers_previous_org` | last wave's stuck organization, reopened under this wave's Todero, finishes with no human touch | not yet measured |
+
+**Fresh org for the measurement, stuck org for the proof.** A fresh organization proves a fix
+*prevents* a failure. Reopening the previous wave's stuck one proves it *rescues* one — which is
+what every real user gets, because their organization is mid-flight when Todero updates, not new.
+Each wave archives its organization rather than deleting it, and records it as the next wave's
+recovery case (`reports/last-org.json`). Wave 17's case is seeded with `Zz Full 0920-1219`, the
+organization that stalled on the dependency hand-off. A recovery that fails is a finding to
+research like any other, not automatically a verdict on the fix: a stuck organization can be
+stuck for a reason the fix never touched.
 
 **Judge residue** — the only thing that goes to a model verdict: are the four guides any good.
 

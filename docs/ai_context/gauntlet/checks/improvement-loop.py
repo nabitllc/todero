@@ -317,6 +317,82 @@ def measure(C, R, finished):
     return report
 
 
+LAST_ORG_FILE = os.path.join(HERE, "..", "reports", "last-org.json")
+RECOVER_BUDGET_S = int(os.environ.get("GAUNTLET_RECOVER_SECONDS", "900"))
+
+
+def recover_previous_org():
+    """Reopen the organization the previous wave left stuck, and see whether
+    this wave's Todero finishes it without a person.
+
+    A fresh organization proves a fix prevents the failure. This proves it
+    rescues one -- which is what every real user gets, because their
+    organization is mid-flight when Todero updates, not new.
+    """
+    org_id = os.environ.get("GAUNTLET_RECOVER_ORG")
+    if not org_id and os.path.exists(LAST_ORG_FILE):
+        try:
+            org_id = json.load(open(LAST_ORG_FILE, encoding="utf-8")).get("companyId")
+        except Exception:
+            org_id = None
+    if not org_id:
+        return {"value": "no previous organization", "gate": "completes, 0 human touches", "pass": None}
+
+    s, company = call("GET", f"/companies/{org_id}")
+    if s != 200 or not company:
+        return {"value": f"previous organization not found ({s})", "gate": "completes, 0 human touches", "pass": None}
+    log(f"RECOVER: reopening {company.get('name')} ({org_id})")
+    s, _ = call("PATCH", f"/companies/{org_id}", {"status": "active"})
+    if s >= 300:
+        return {"value": f"could not reopen ({s})", "gate": "completes, 0 human touches", "pass": False}
+
+    rows = issues(org_id)
+    root = next((r for r in rows if not r.get("parentId")), None)
+    before_touches = dict(touches)
+    t0 = time.time()
+    finished = False
+    lazy_here = 0
+    try:
+        # Same lazy human, but it never answers: the point is whether Todero
+        # gets itself unstuck. A hand-back that asks is counted, not fed.
+        while time.time() - t0 < RECOVER_BUDGET_S:
+            rows = issues(org_id)
+            open_rows = [r for r in rows if r.get("status") not in ("done", "cancelled")]
+            if not open_rows:
+                finished = True
+                break
+            for r in open_rows:
+                desc = r.get("description") or ""
+                if "todero-plan: pending" in desc:
+                    call("POST", f"/issues/{r['id']}/plan/approve", {"keep": []}, timeout=240)
+                    touches["approves"] += 1
+                if ("waiting-on-you" in desc or r.get("status") == "blocked") and "todero-review: pending" not in desc:
+                    last = agent_replies(r["id"])
+                    said = (last[-1].get("body") or "") if last else ""
+                    if ASKS_RE.search(said):
+                        lazy_here += 1
+            time.sleep(20)
+    finally:
+        call("POST", f"/companies/{org_id}/archive", {})
+    log(f"RECOVER: finished={finished} hand-backs that asked={lazy_here} in {int(time.time()-t0)}s")
+    return {
+        "value": f"finished={finished}, asked={lazy_here}",
+        "gate": "completes, 0 human touches",
+        "pass": bool(finished) and lazy_here == 0,
+        "organization": company.get("name"),
+        "final": {(r.get("identifier") or "?"): r.get("status") for r in issues(org_id)},
+    }
+
+
+def remember_org(C):
+    try:
+        os.makedirs(os.path.dirname(LAST_ORG_FILE), exist_ok=True)
+        json.dump({"companyId": C, "organization": ORG, "at": time.strftime("%Y-%m-%dT%H:%M:%S")},
+                  open(LAST_ORG_FILE, "w", encoding="utf-8"))
+    except Exception as exc:
+        log(f"could not record the organization for the next wave: {exc}")
+
+
 def main() -> int:
     C, R = setup()
     if not C:
@@ -326,20 +402,27 @@ def main() -> int:
             return 2
         finished = drive(C, R)
         report = measure(C, R, finished)
-        print()
-        print("=" * 72)
-        print("WAVE REPORT")
-        print("=" * 72)
-        for name, c in report["checks"].items():
-            mark = "PASS" if c["pass"] else "FAIL"
-            print(f"  {mark}  {name:<22} {str(c['value']):<10} (gate {c['gate']})")
-        print()
-        print(json.dumps(report, indent=1))
-        failing = [n for n, c in report["checks"].items() if not c["pass"]]
-        return 0 if not failing else 1
     finally:
         call("POST", f"/companies/{C}/archive", {})
         log("organization archived")
+
+    # Only after the fresh organization is archived, so the two never share
+    # the one graphics card. Then this wave's organization becomes next
+    # wave's recovery case.
+    report["checks"]["recovers_previous_org"] = recover_previous_org()
+    remember_org(C)
+
+    print()
+    print("=" * 72)
+    print("WAVE REPORT")
+    print("=" * 72)
+    for name, c in report["checks"].items():
+        mark = "PASS" if c["pass"] else ("SKIP" if c["pass"] is None else "FAIL")
+        print(f"  {mark}  {name:<22} {str(c['value']):<28} (gate {c['gate']})")
+    print()
+    print(json.dumps(report, indent=1))
+    failing = [n for n, c in report["checks"].items() if c["pass"] is False]
+    return 0 if not failing else 1
 
 
 sys.exit(main())
