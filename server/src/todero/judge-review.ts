@@ -127,7 +127,7 @@ export type JudgeReviewResult = {
   comment: string | null;
   judgeAgent: JudgeAgentRow | null;
   /** Why no review happened, for the run log. */
-  skipped: "not_a_plan_task" | "no_reviewer" | "no_model" | "no_deliverable" | "no_verdict" | null;
+  skipped: "not_a_plan_task" | "no_reviewer" | "no_model" | "no_deliverable" | "no_verdict" | "paused" | null;
 };
 
 const SKIPPED: Omit<JudgeReviewResult, "skipped"> = {
@@ -165,10 +165,21 @@ export async function reviewConversationHandIn(
     deliverable: string;
     leadAgentId: string;
     companyName?: string | null;
+    /** The organization's status, read by the caller from the same row it already loads. */
+    companyStatus?: string | null;
     autoAcceptWhenJudgePasses: boolean;
     fetcher?: typeof fetch;
   },
 ): Promise<JudgeReviewResult> {
+  // Pause means nothing talks to a model. It is enforced at the run-start
+  // gate, and the reviewer is not a run: it is a direct call to the model from
+  // inside the worker's turn, so it walked straight past that gate and posted
+  // a verdict seconds into a hold. The hand-in is already written by the
+  // caller, so the work is safe; it waits for the person, or for Play.
+  //
+  // Both kinds of pause set this same status: the per-organization switch and
+  // Master Pause, which marks every running organization `paused`.
+  if (input.companyStatus === "paused") return { ...SKIPPED, skipped: "paused" };
   if (!input.issue.parentId) return { ...SKIPPED, skipped: "not_a_plan_task" };
   const deliverable = input.deliverable.trim();
   if (!deliverable) return { ...SKIPPED, skipped: "no_deliverable" };

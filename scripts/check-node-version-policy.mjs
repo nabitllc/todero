@@ -1,10 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  isAllowedTypesNodeSpecifier,
+  TYPES_NODE_POLICY_DESCRIPTION,
+} from "./node-version-policy.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const expectedEngine = ">=24.11.0";
-const expectedTypes = "^24.0.0";
 const failures = [];
 const skippedDirectories = new Set([".git", ".todero", "coverage", "data", "dist", "node_modules"]);
 
@@ -26,8 +29,8 @@ walk(repoRoot, (filePath) => {
   const manifest = JSON.parse(fs.readFileSync(filePath, "utf8"));
   for (const section of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
     const specifier = manifest[section]?.["@types/node"];
-    if (specifier && specifier !== expectedTypes) {
-      failures.push(`${relative(filePath)}: ${section}.@types/node must be ${expectedTypes}, found ${specifier}`);
+    if (specifier && !isAllowedTypesNodeSpecifier(specifier)) {
+      failures.push(`${relative(filePath)}: ${section}.@types/node must be ${TYPES_NODE_POLICY_DESCRIPTION}, found ${specifier}`);
     }
   }
   if (manifest.engines?.node !== expectedEngine) {

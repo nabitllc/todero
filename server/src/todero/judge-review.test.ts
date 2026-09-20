@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readJudgeModelConfig, requestJudgeVerdict } from "./judge-review.js";
+import { readJudgeModelConfig, requestJudgeVerdict, reviewConversationHandIn } from "./judge-review.js";
 import { buildJudgeAgentName, isJudgeAgentMetadataFor, buildJudgeAgentMetadata } from "./judge-agent.js";
 
 function completion(text: string, status = 200): Response {
@@ -109,5 +109,59 @@ describe("the reviewer agent record", () => {
     expect(isJudgeAgentMetadataFor(metadata, "agent-2")).toBe(false);
     expect(isJudgeAgentMetadataFor({}, "agent-1")).toBe(false);
     expect(isJudgeAgentMetadataFor(null, "agent-1")).toBe(false);
+  });
+});
+
+describe("a paused organization is not talked to a model about", () => {
+  // Pause holds new runs at the run-start gate. The reviewer is not a run --
+  // it is a direct call to the model from inside the worker's turn -- so it
+  // walked straight past that gate. Observed live: a verdict posted about
+  // seven seconds into a hold, twice.
+  const issue = {
+    id: "issue-1",
+    companyId: "company-1",
+    title: "Draft the guide",
+    description: "Goal: a guide",
+    parentId: "parent-1",
+  };
+
+  const dbThatMustNotBeTouched = new Proxy({} as never, {
+    get() {
+      throw new Error("the reviewer read the database for a paused organization");
+    },
+  });
+
+  it("skips the review, without reading anything or calling the model", async () => {
+    let called = false;
+    const result = await reviewConversationHandIn(dbThatMustNotBeTouched, {
+      issue,
+      deliverable: "Here is the guide.",
+      leadAgentId: "agent-1",
+      companyStatus: "paused",
+      autoAcceptWhenJudgePasses: true,
+      fetcher: (async () => {
+        called = true;
+        return completion("VERDICT: pass");
+      }) as unknown as typeof fetch,
+    });
+
+    expect(result.skipped).toBe("paused");
+    expect(result.outcome).toEqual({ kind: "skip" });
+    expect(result.comment).toBeNull();
+    expect(called).toBe(false);
+  });
+
+  it("reviews as usual when the organization is running", async () => {
+    // Not paused, so it gets as far as looking for a reviewer -- which is the
+    // first thing that needs the database. Proving it went past the guard.
+    await expect(
+      reviewConversationHandIn(dbThatMustNotBeTouched, {
+        issue,
+        deliverable: "Here is the guide.",
+        leadAgentId: "agent-1",
+        companyStatus: "active",
+        autoAcceptWhenJudgePasses: true,
+      }),
+    ).rejects.toThrow("the reviewer read the database");
   });
 });
