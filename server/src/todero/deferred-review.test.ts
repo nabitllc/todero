@@ -7,12 +7,11 @@ import {
 } from "./conversation-outcome.js";
 import { descriptionWithWaitingMarker } from "./conversation-thread.js";
 import {
-  findDeferredHandIns,
   planDeferredSettlement,
   runDeferredReviews,
-  type DeferredHandIn,
   type DeferredReviewActions,
 } from "./deferred-review.js";
+import { findDeferredHandIns, type DeferredHandIn } from "./deferred-review-find.js";
 import type { JudgeApplyResult } from "./judge-apply.js";
 import type { JudgeReviewResult } from "./judge-review.js";
 
@@ -31,6 +30,7 @@ function task(partial: Partial<DeferredHandIn> = {}): DeferredHandIn {
     deliverable: "Here is the welcome guide.",
     handedInAt: HANDED_IN_AT,
     reviewerSpokeAt: null,
+    saidNobodyCouldLookAt: null,
     ...partial,
   };
 }
@@ -75,6 +75,19 @@ describe("finding the hand-ins a hold left unreviewed", () => {
     expect(findDeferredHandIns([unmarked({ description: "Write the welcome guide." })])).toHaveLength(0);
   });
 
+  it("leaves one Todero has already said nobody could look at", () => {
+    const told = unmarked({ saidNobodyCouldLookAt: new Date(HANDED_IN_AT.getTime() + 1_000) });
+    expect(findDeferredHandIns([told])).toHaveLength(0);
+    // Marked or not: once the person has been told, only new work brings it back.
+    expect(findDeferredHandIns([task({ saidNobodyCouldLookAt: new Date(HANDED_IN_AT.getTime() + 1_000) })]))
+      .toHaveLength(0);
+  });
+
+  it("takes one that was handed in again after Todero said nobody could look at it", () => {
+    const again = unmarked({ saidNobodyCouldLookAt: new Date(HANDED_IN_AT.getTime() - 1_000) });
+    expect(findDeferredHandIns([again])).toHaveLength(1);
+  });
+
   it("leaves one that is being worked on right now", () => {
     expect(findDeferredHandIns([task({ status: "in_progress" })])).toHaveLength(0);
     expect(findDeferredHandIns([task({ status: "done" })])).toHaveLength(0);
@@ -97,10 +110,11 @@ describe("what happens to a task once its deferred review is answered", () => {
     expect(settlement?.description ?? "").toContain(REVIEW_PENDING_MARKER);
   });
 
-  it("takes the promise off even when nobody could review it a second time", () => {
-    const settlement = planDeferredSettlement(task(), "none");
-    expect(hasDeferredReviewMarker(settlement?.description ?? "")).toBe(false);
-    expect(settlement?.description ?? "").toContain(REVIEW_PENDING_MARKER);
+  it("writes nothing when nobody could review it a second time", () => {
+    // Taking the task said everything the task itself can say; the note Todero
+    // leaves on it is what tells the person, and what stops it coming round
+    // again on the next start.
+    expect(planDeferredSettlement(task(), "none")).toBeNull();
   });
 
   it("writes nothing when the reviewer sent it back, because that already did", () => {
@@ -112,14 +126,19 @@ function review(): JudgeReviewResult {
   return { outcome: { kind: "accept" }, verdict: "pass", note: "", comment: null, judgeAgent: null, skipped: null };
 }
 
-type Seen = { reviewed: string[]; applied: string[]; settled: string[]; logs: string[] };
+type Seen = { claimed: string[]; reviewed: string[]; applied: string[]; settled: string[]; logs: string[] };
 
 function recorder(): Seen {
-  return { reviewed: [], applied: [], settled: [], logs: [] };
+  return { claimed: [], reviewed: [], applied: [], settled: [], logs: [] };
 }
 
 function actions(seen: Seen, overrides: Partial<DeferredReviewActions> = {}): DeferredReviewActions {
   return {
+    stillRunning: async () => true,
+    claim: async (t) => {
+      seen.claimed.push(t.id);
+      return t.description ?? "";
+    },
     review: async (t) => {
       seen.reviewed.push(t.id);
       return review();
@@ -143,7 +162,42 @@ describe("running the reviews a hold deferred", () => {
     expect(seen.reviewed).toEqual(["task-2", "task-3"]);
     expect(seen.applied).toEqual(["task-2", "task-3"]);
     expect(seen.settled).toEqual(["task-2", "task-3"]);
-    expect(result).toEqual({ reviewed: 2, failed: 0 });
+    expect(result).toEqual({ reviewed: 2, failed: 0, stopped: false });
+  });
+
+  it("stops the moment the organization is put back on hold, and leaves the rest", async () => {
+    const seen = recorder();
+    let running = true;
+    const result = await runDeferredReviews(
+      actions(seen, {
+        stillRunning: async () => running,
+        review: async (t) => {
+          seen.reviewed.push(t.id);
+          running = false;
+          return review();
+        },
+      }),
+      [task(), task({ id: "task-3", identifier: "ZZG-3" })],
+    );
+    expect(seen.reviewed).toEqual(["task-2"]);
+    expect(seen.claimed).toEqual(["task-2"]);
+    expect(result).toEqual({ reviewed: 1, failed: 0, stopped: true });
+  });
+
+  it("asks nobody about a task somebody else already took", async () => {
+    const seen = recorder();
+    const result = await runDeferredReviews(
+      actions(seen, {
+        claim: async (t) => {
+          seen.claimed.push(t.id);
+          return t.id === "task-2" ? null : (t.description ?? "");
+        },
+      }),
+      [task(), task({ id: "task-3", identifier: "ZZG-3" })],
+    );
+    expect(seen.claimed).toEqual(["task-2", "task-3"]);
+    expect(seen.reviewed).toEqual(["task-3"]);
+    expect(result).toEqual({ reviewed: 1, failed: 0, stopped: false });
   });
 
   it("keeps going when one task throws, and says which one it was", async () => {
@@ -160,7 +214,7 @@ describe("running the reviews a hold deferred", () => {
     );
     expect(seen.reviewed).toEqual(["task-2", "task-3"]);
     expect(seen.settled).toEqual(["task-3"]);
-    expect(result).toEqual({ reviewed: 1, failed: 1 });
+    expect(result).toEqual({ reviewed: 1, failed: 1, stopped: false });
     expect(seen.logs.join("")).toContain("ZZG-2");
     expect(seen.logs.join("")).toContain("the reviewer went away");
   });

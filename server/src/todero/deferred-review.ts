@@ -18,133 +18,43 @@
  * way of waking an agent and its log, and the one composition that knows all
  * three installs it at startup.
  */
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { companies, issueComments, issues, type Db } from "@todero/db";
+import { eq } from "drizzle-orm";
+import { companies, type Db } from "@todero/db";
 import { logger } from "../middleware/logger.js";
-import { documentService } from "../services/documents.js";
 import { issueService } from "../services/issues.js";
 import {
   enqueueWakesForClosedIssue,
   type ClosedIssueWake,
 } from "../services/issue-closed-wakeups.js";
 import {
-  CONVERSATION_OUTPUT_DOCUMENT_KEY,
   descriptionWithDeferredReviewMarker,
   descriptionWithoutConversationMarkers,
-  hasDeferredReviewMarker,
 } from "./conversation-outcome.js";
-import { applyJudgeReview, type JudgeApplyResult } from "./judge-apply.js";
-import { findJudgeAgentForHandIn, reviewConversationHandIn, type JudgeReviewResult } from "./judge-review.js";
+import {
+  claimDeferredHandIn,
+  loadDeferredHandIns,
+  noReviewerNote,
+  type DeferredHandIn,
+} from "./deferred-review-find.js";
+import { applyJudgeReview, skippedReviewReasonText, type JudgeApplyResult } from "./judge-apply.js";
+import { reviewConversationHandIn, type JudgeReviewResult } from "./judge-review.js";
 import { readAutoAcceptWhenJudgePasses } from "./judge.js";
-import { isWaitingOnPersonToAccept } from "./manager-person-comment.js";
 
-/** A task whose hand-in is still owed a reviewer's answer. */
-export type DeferredHandIn = {
-  id: string;
-  companyId: string;
-  identifier: string | null;
-  title: string;
-  description: string | null;
-  parentId: string | null;
-  assigneeAgentId: string | null;
-  status: string;
-  /** The work itself, as the reviewer will read it: the task's Output document. */
-  deliverable: string;
-  /** When that hand-in was last written. */
-  handedInAt: Date | null;
-  /** The last time the reviewer said anything on this task, if it ever did. */
-  reviewerSpokeAt: Date | null;
-};
-
-/**
- * Which of a company's stopped tasks are still owed a review.
- *
- * Two ways in. One is the note judge-apply leaves when a hold skips a review.
- * The other is the observable truth of the same thing, for tasks handed in
- * before that note existed: the work is in front of the person, there is
- * something to look at, and the reviewer has said nothing about it since it
- * arrived. That second one is what lets an organization that is already stuck
- * be rescued rather than only the next one prevented.
- */
-export function findDeferredHandIns(tasks: DeferredHandIn[]): DeferredHandIn[] {
-  return tasks.filter((task) => {
-    if (task.status !== "blocked") return false;
-    if (hasDeferredReviewMarker(task.description)) return true;
-    if (!isWaitingOnPersonToAccept(task.description)) return false;
-    if (!task.deliverable.trim()) return false;
-    if (!task.reviewerSpokeAt || !task.handedInAt) return !task.reviewerSpokeAt;
-    return task.reviewerSpokeAt.getTime() < task.handedInAt.getTime();
-  });
-}
-
-/** The newest thing one agent said on one task. */
-async function lastCommentAt(db: Db, issueId: string, agentId: string): Promise<Date | null> {
-  const row = await db
-    .select({ createdAt: issueComments.createdAt })
-    .from(issueComments)
-    .where(and(
-      eq(issueComments.issueId, issueId),
-      eq(issueComments.authorAgentId, agentId),
-      isNull(issueComments.deletedAt),
-    ))
-    .orderBy(desc(issueComments.createdAt))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-  return row?.createdAt ?? null;
-}
-
-/** Read a company's stopped tasks and keep the ones still owed a review. */
-export async function loadDeferredHandIns(db: Db, companyId: string): Promise<DeferredHandIn[]> {
-  const rows = await db
-    .select({
-      id: issues.id,
-      companyId: issues.companyId,
-      identifier: issues.identifier,
-      title: issues.title,
-      description: issues.description,
-      parentId: issues.parentId,
-      assigneeAgentId: issues.assigneeAgentId,
-      status: issues.status,
-    })
-    .from(issues)
-    .where(and(eq(issues.companyId, companyId), eq(issues.status, "blocked")));
-
-  const documents = documentService(db);
-  const candidates: DeferredHandIn[] = [];
-  for (const row of rows) {
-    // Nobody handed it in, so there is nobody whose reviewer to look up.
-    if (!row.assigneeAgentId) continue;
-    if (!hasDeferredReviewMarker(row.description) && !isWaitingOnPersonToAccept(row.description)) continue;
-    const output = await documents
-      .getIssueDocumentByKey(row.id, CONVERSATION_OUTPUT_DOCUMENT_KEY)
-      .catch(() => null);
-    const reviewer = await findJudgeAgentForHandIn(db, {
-      companyId,
-      leadAgentId: row.assigneeAgentId,
-    }).catch(() => null);
-    candidates.push({
-      ...row,
-      deliverable: output?.body ?? "",
-      handedInAt: output?.updatedAt ?? null,
-      reviewerSpokeAt: reviewer ? await lastCommentAt(db, row.id, reviewer.id) : null,
-    });
-  }
-  return findDeferredHandIns(candidates);
-}
+export type { DeferredHandIn } from "./deferred-review-find.js";
 
 /**
  * What to write on a task once its deferred review has an answer.
  *
- * The promise comes off whatever the answer was, so one hand-in is never
- * reviewed twice. An accept closes the task the same way a person's Accept
- * does. A send-back already rewrote the task on its way back to the worker,
- * so there is nothing left to write.
+ * An accept closes the task the same way a person's Accept does. A send-back
+ * already rewrote the task on its way back to the worker, and an answer nobody
+ * could give is recorded by the note Todero leaves on the task instead - so
+ * both of those write nothing here.
  */
 export function planDeferredSettlement(
   task: { description: string | null },
   applied: JudgeApplyResult,
 ): { status?: string; description: string } | null {
-  if (applied === "revise") return null;
+  if (applied === "revise" || applied === "none") return null;
   if (applied === "accept") {
     return { status: "done", description: descriptionWithoutConversationMarkers(task.description) };
   }
@@ -152,10 +62,21 @@ export function planDeferredSettlement(
 }
 
 export type DeferredReviewActions = {
+  /** Is the organization still running? Asked before every task, not once. */
+  stillRunning: () => Promise<boolean>;
+  /** Take the task, or null when somebody else already has it. */
+  claim: (task: DeferredHandIn) => Promise<string | null>;
   review: (task: DeferredHandIn) => Promise<JudgeReviewResult>;
   apply: (task: DeferredHandIn, review: JudgeReviewResult) => Promise<JudgeApplyResult>;
-  settle: (task: DeferredHandIn, applied: JudgeApplyResult) => Promise<unknown>;
+  settle: (task: DeferredHandIn, applied: JudgeApplyResult, review: JudgeReviewResult) => Promise<unknown>;
   log: (message: string) => unknown;
+};
+
+export type DeferredReviewTally = {
+  reviewed: number;
+  failed: number;
+  /** Put back on hold part-way through; whatever is left waits for the next start. */
+  stopped: boolean;
 };
 
 function messageOf(error: unknown): string {
@@ -165,18 +86,35 @@ function messageOf(error: unknown): string {
 /**
  * Review them one at a time. One task that goes wrong must never cost the
  * others theirs: that is the whole failure this exists to undo.
+ *
+ * Two things are asked before every single task, not once at the top. Whether
+ * the organization is still running, because a person can put it back on hold
+ * while this is half done and each task takes minutes on a small machine. And
+ * whether this pass can take the task at all, because another pass may have
+ * taken it in the meantime.
  */
 export async function runDeferredReviews(
   actions: DeferredReviewActions,
   tasks: DeferredHandIn[],
-): Promise<{ reviewed: number; failed: number }> {
+): Promise<DeferredReviewTally> {
   let reviewed = 0;
   let failed = 0;
   for (const task of tasks) {
+    if (!(await actions.stillRunning())) {
+      actions.log(
+        "[todero] The organization was put on hold again. The work still waiting for an answer"
+          + " will be looked at when it starts once more.\n",
+      );
+      return { reviewed, failed, stopped: true };
+    }
     try {
-      const review = await actions.review(task);
-      const applied = await actions.apply(task, review);
-      await actions.settle(task, applied);
+      const text = await actions.claim(task);
+      // Somebody else is already reviewing this hand-in.
+      if (text === null) continue;
+      const taken = { ...task, description: text };
+      const review = await actions.review(taken);
+      const applied = await actions.apply(taken, review);
+      await actions.settle(taken, applied, review);
       reviewed += 1;
     } catch (error) {
       failed += 1;
@@ -185,7 +123,7 @@ export async function runDeferredReviews(
       );
     }
   }
-  return { reviewed, failed };
+  return { reviewed, failed, stopped: false };
 }
 
 export type DeferredReviewWakeup = (agentId: string, wakeup: ClosedIssueWake) => Promise<unknown>;
@@ -195,20 +133,60 @@ export type DeferredReviewDeps = {
   log?: (message: string) => unknown;
 };
 
+export type DeferredReviewOutcome = DeferredReviewTally & {
+  /** A pass for this organization was already under way, so this call did nothing. */
+  alreadyRunning: boolean;
+};
+
+const NOTHING_TO_DO: DeferredReviewOutcome = { reviewed: 0, failed: 0, stopped: false, alreadyRunning: false };
+
+/** One pass per organization at a time, for as long as that pass is running. */
+const passes = new Map<string, Promise<DeferredReviewOutcome>>();
+
 /**
  * The reviews one organization owes, run now. Everything a hand-in needs is
  * read back off the task: the work from its Output document, the reviewer
  * through the agent who handed it in, the accept-on-pass setting off the
  * organization.
+ *
+ * Only one pass per organization runs at a time. Resume everything starts one
+ * for every organization at once, and a hold and a Play inside the minutes a
+ * pass takes would start a second over the same hand-ins; the second one does
+ * nothing and says so.
  */
-export async function reviewDeferredHandIns(
+export function reviewDeferredHandIns(
   db: Db,
   deps: DeferredReviewDeps,
   input: { companyId: string },
-): Promise<{ reviewed: number; failed: number }> {
+): Promise<DeferredReviewOutcome> {
+  if (passes.has(input.companyId)) {
+    return Promise.resolve({ ...NOTHING_TO_DO, alreadyRunning: true });
+  }
+  const pass = runOneDeferredReviewPass(db, deps, input).finally(() => {
+    passes.delete(input.companyId);
+  });
+  passes.set(input.companyId, pass);
+  return pass;
+}
+
+async function readCompanyStatus(db: Db, companyId: string): Promise<string | null> {
+  const row = await db
+    .select({ status: companies.status })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  return row?.status ?? null;
+}
+
+async function runOneDeferredReviewPass(
+  db: Db,
+  deps: DeferredReviewDeps,
+  input: { companyId: string },
+): Promise<DeferredReviewOutcome> {
   const log = deps.log ?? ((message: string) => logger.info({ companyId: input.companyId }, message.trim()));
   const tasks = await loadDeferredHandIns(db, input.companyId);
-  if (tasks.length === 0) return { reviewed: 0, failed: 0 };
+  if (tasks.length === 0) return NOTHING_TO_DO;
 
   const company = await db
     .select({ name: companies.name, interactionResolverGovernance: companies.interactionResolverGovernance })
@@ -218,10 +196,18 @@ export async function reviewDeferredHandIns(
     .then((rows) => rows[0] ?? null);
   const autoAcceptWhenJudgePasses = readAutoAcceptWhenJudgePasses(company?.interactionResolverGovernance ?? {});
   const issuesSvc = issueService(db);
+  // What the organization was doing, read again immediately before each task
+  // rather than assumed from the fact that something started it a while ago.
+  let statusWhenTaken: string | null = null;
 
-  return runDeferredReviews(
+  const tally = await runDeferredReviews(
     {
       log,
+      stillRunning: async () => {
+        statusWhenTaken = await readCompanyStatus(db, input.companyId);
+        return statusWhenTaken === "active";
+      },
+      claim: (task) => claimDeferredHandIn(db, task),
       review: (task) =>
         reviewConversationHandIn(db, {
           issue: {
@@ -234,9 +220,7 @@ export async function reviewDeferredHandIns(
           deliverable: task.deliverable,
           leadAgentId: task.assigneeAgentId ?? "",
           companyName: company?.name ?? null,
-          // The organization is running again by the time this is called; that
-          // is the whole point of calling it here.
-          companyStatus: "active",
+          companyStatus: statusWhenTaken,
           autoAcceptWhenJudgePasses,
         }),
       apply: (task, review) =>
@@ -268,9 +252,28 @@ export async function reviewDeferredHandIns(
             review,
           },
         ),
-      settle: async (task, applied) => {
+      settle: async (task, applied, review) => {
+        // Nobody could look at it, and nobody will without the person: a team
+        // with no reviewer, a reviewer with no model, a reviewer that said
+        // nothing usable. Say so on the task, once. Without this the same task
+        // is picked up and written to on every single start, for nothing.
+        if (applied === "none" && review.skipped && review.skipped !== "paused") {
+          await issuesSvc.addComment(
+            task.id,
+            noReviewerNote(skippedReviewReasonText(review.skipped)),
+            {},
+            { authorType: "system" },
+          );
+          log(
+            `[todero] Nobody could look at the work handed in on ${task.identifier ?? task.title}:`
+              + ` ${skippedReviewReasonText(review.skipped)}. It is waiting for the person.\n`,
+          );
+        }
         const settlement = planDeferredSettlement(task, applied);
         if (!settlement) return;
+        // Writing back exactly what the task already says costs the person a
+        // change on their board and a line in the task's history for nothing.
+        if (settlement.status === undefined && settlement.description === task.description) return;
         await issuesSvc.update(task.id, {
           ...settlement,
           actorAgentId: task.assigneeAgentId ?? undefined,
@@ -279,7 +282,7 @@ export async function reviewDeferredHandIns(
         // Closing a task through the API wakes whatever was queued behind it
         // and, once it was the last one, the parent for its wrap-up. This
         // close does not go through that route, so the same two wakes are
-        // raised here — without them the tasks this one was blocking stay
+        // raised here - without them the tasks this one was blocking stay
         // blocked, which is exactly what the loop kept seeing.
         await enqueueWakesForClosedIssue(
           {
@@ -301,6 +304,7 @@ export async function reviewDeferredHandIns(
     },
     tasks,
   );
+  return { ...tally, alreadyRunning: false };
 }
 
 /**
