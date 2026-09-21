@@ -32,13 +32,17 @@ const DRAFTS = [
 describe("a task is given the work it builds on", () => {
   const writes: Array<{ issueId: string; body: string }> = [];
 
+  let stored: string | null = null;
+
   const deps: TaskInputsDeps = {
     listDirectPredecessors: async () => [
       { id: "zzf-3", identifier: "ZZF-3", title: "Write initial drafts" },
     ],
     readOutput: async (issueId: string) => (issueId === "zzf-3" ? DRAFTS : null),
+    readCurrentInputs: async () => stored,
     writeInputsDocument: async (write) => {
       writes.push(write);
+      stored = write.body;
     },
   };
 
@@ -67,5 +71,27 @@ describe("a task is given the work it builds on", () => {
     expect(prompt).toContain("ZZF-3 — Write initial drafts");
     expect(prompt).toContain("Guide 1 — Signing up");
     expect(prompt).toContain("Guide 4 — Getting help");
+  });
+
+  it("carries it even when the document on the task cannot be saved", async () => {
+    // A person can lock that document, or save an edit to it at the wrong
+    // moment. That must cost the person the copy they can open, and nothing
+    // more — not the drafts the reviewer is there to read.
+    const failures: unknown[] = [];
+    const inputs = await syncTaskInputs(
+      {
+        ...deps,
+        readCurrentInputs: async () => null,
+        writeInputsDocument: async () => {
+          throw new Error("Document is locked");
+        },
+        onWriteFailed: (error: unknown) => failures.push(error),
+      },
+      "zzf-4",
+    );
+
+    expect(failures).toHaveLength(1);
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.body).toContain("Guide 1 — Signing up");
   });
 });
