@@ -207,7 +207,7 @@ describe("the verdict comment", () => {
     expect(comment).not.toContain("- met — done on");
   });
 
-  it("leaves a line the reviewer met reading met, with nothing added", () => {
+  it("leaves a met line reading met, with the note only where something earlier settled it", () => {
     const comment = buildJudgeComment({
       verdict: "pass",
       note: "The four guides are all there and read well.",

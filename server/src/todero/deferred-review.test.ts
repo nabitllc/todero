@@ -299,9 +299,11 @@ describe("what starting an organization again runs", () => {
     await vi.waitFor(() => expect(reads).toHaveLength(2));
     expect(reads[1]!.joined).toBe(true);
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
-    expect(warn.mock.calls.map((call) => String(call[1])).join(" ")).toContain(
-      "could not review the hand-ins",
-    );
+    // The line the reviews' own catch writes, which is not the line the whole
+    // run's catch writes — so this cannot be satisfied by the outer one.
+    const lines = warn.mock.calls.map((call) => String(call[1]));
+    expect(lines).toContain("could not review the hand-ins this organization's hold deferred");
+    expect(lines).not.toContain("could not look at what this organization's hold left waiting");
   });
 });
 

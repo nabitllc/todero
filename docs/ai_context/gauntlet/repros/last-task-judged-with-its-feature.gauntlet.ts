@@ -29,6 +29,12 @@
 //   out on a page. A chat reply cannot show that at all, so a 14B reviewer
 //   reads plain prose and answers "not formatted" every single time.
 //
+// The verdict comment that comes out of all this says which line an earlier
+// task had already made true, and it says it as a note beside the reviewer's
+// own answer — "not met (already done on ZZGAAAAAAAAAAA-4 and accepted) — ..."
+// — so the tally at the top of the comment never disagrees with the lines
+// underneath it.
+//
 // The plan below is the real approved plan of that organization, copied whole
 // from its Plan document (issue db48a20d-fc12-4790-b101-6456d180108f, key
 // "plan"), and the work below is the real Output document of
@@ -215,8 +221,12 @@ describe("the last task of a feature is judged with what the feature already ach
       checkResults: [false, false],
       checkAlreadyDone: review.checkAlreadyDone,
     });
-    expect(comment).toContain("1 met, 1 not met");
-    expect(comment).toContain(`- met — done on ZZGAAAAAAAAAAA-4 and accepted — ${DONE_WHEN}`);
+    // Met and not met stay the reviewer's own answers, so the count above can
+    // never disagree with the lines below it; who already did the work is a
+    // note on the line.
+    expect(comment).toContain("0 met, 2 not met");
+    expect(comment).toContain(`- not met (already done on ZZGAAAAAAAAAAA-4 and accepted) — ${DONE_WHEN}`);
+    expect(comment).not.toContain("- met — done on");
     expect(comment).not.toMatch(/marker|todero-|disposition/i);
   });
 

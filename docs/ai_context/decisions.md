@@ -1062,7 +1062,9 @@ than one that says something disappointing. Met and not met are now the reviewer
 nothing else changes them, and who already did the work is a note on the line beside the answer:
 `not met (already done on ZZGAAAAAAAAAAA-4 and accepted) — All four guides have been reviewed and
 edited...`. The count above can no longer disagree with the paragraph below.
-`judge-feature-work.test.ts` replays that comment and holds both halves.
+`judge-feature-work.test.ts` replays that comment and holds both halves, and the registered repro
+`gauntlet/repros/last-task-judged-with-its-feature.gauntlet.ts` — built from 42c3d5e4's real plan —
+was rewritten to hold the same shape, since it had been written against the old one.
 
 **The second way back could be skipped without a word.** Decision 3 says that starting an
 organization again does the reviews and then offers each parked task its corrective turn. The first

@@ -364,6 +364,8 @@ export function reviewDeferredHandInsOnResume(companyId: string): void {
   void Promise.resolve()
     .then(() => run(companyId))
     .catch((err: unknown) => {
-      logger.warn({ err, companyId }, "could not review the hand-ins this organization's hold deferred");
+      // Each pass writes its own line, so this one only ever covers what went
+      // wrong around them both.
+      logger.warn({ err, companyId }, "could not look at what this organization's hold left waiting");
     });
 }
