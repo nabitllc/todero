@@ -972,3 +972,77 @@ reviewer for not being "formatted and ready for distribution" — a packaging li
 cannot prove. That is deliberate: it is the case the next wave starts from. Wave 19's organization
 (`f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`) remains the case for a task parked before all of this
 that has no way back, which nothing here fixes.
+
+## ADR-024 — The last task of a feature is judged with what the feature already achieved, and a parked task gets its way back
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Wave 20 of the improvement loop, and two failures that between them stop a project
+  dead at the last step and leave no way back to it.
+
+  1. **The last task of a project was refused for what earlier tasks had already done.**
+     Organization `42c3d5e4-f0fd-4aea-ae98-32e90707d31f` ("Zz Gauntlet Org 0921-092802"). The
+     feature "Review and Editing" finishes when "All four guides have been reviewed and edited,
+     with final drafts ready for publishing". Its first task, ZZGAAAAAAAAAAA-4 "Review and edit
+     the draft guides", handed in four edited guides, was accepted and closed. Its last task,
+     ZZGAAAAAAAAAAA-5 "Prepare the guides for publishing", handed in those same four guides twice
+     and was refused both times — "not met — All four guides have been reviewed and edited ... The
+     guides are in plain text format and have not been reviewed or edited", then "I reviewed this
+     twice and it is still not there. Over to you." The project stopped there.
+
+     Two things were wrong with what the reviewer was given. It was never told that
+     ZZGAAAAAAAAAAA-4 exists, was accepted, or what it handed in — the reviewer sees one hand-in
+     and the whole feature's finish line, and judged work its own teammate had already finished as
+     not done. And "formatted and ready for distribution" is about how text would be laid out on a
+     page, which a chat reply cannot show at all, so a 14B reviewer reads plain prose and answers
+     "not formatted" every single time.
+
+  2. **A task parked before a fix had no way back.** Wave 20 reopened wave 19's organization
+     (`f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`) to watch the corrective turn from ADR-023 work. It
+     never fired. That turn happens at the moment a turn ends badly, and those two tasks had been
+     parked before it existed, so their bad turns were long over. Nothing wakes a parked task. Two
+     tasks sat in front of a person with a reply that asked them nothing, five tasks queued behind
+     them, and not one turn ran in fifteen minutes. Every person who updates Todero while a
+     project is running is in that same position.
+- **Decision:**
+
+  1. **The reviewer is told what the rest of the feature already finished.** When the task under
+     review has predecessors in the same feature that are done and handed something in, the brief
+     names each one, shows what it handed in, and says in plain words that the work is finished
+     and counts as done — so anything the feature's finish line asks for that one of them already
+     did is met unless this hand-in undoes it. The predecessors are the ones the hand-off already
+     looks up (`task-inputs.ts`); nothing here writes a second lookup, it only adds each one's
+     status. The feature's finish line is still a check on the task the feature ends with, and the
+     verdict comment now names who made it true: "met — done on ZZGAAAAAAAAAAA-4 and accepted".
+
+  2. **A packaging line is judged on substance.** A short written-out list of phrases — formatted,
+     laid out, typeset, exported, print-ready, ready for distribution / publishing / release — is
+     recognised in the task's own hand-in line and in whatever it has to be true for. When one is
+     there the brief says that a plain-text hand-in cannot show how anything is laid out, and that
+     such a line is met when the content itself is complete and reads well. The list is written
+     out on purpose: working out what a sentence really asks for is the reviewer's job, and this
+     only has to spot the handful of phrases no chat reply can ever satisfy.
+
+  3. **Starting an organization again offers a parked task its corrective turn.** The door that
+     already runs the reviews a hold deferred now does a second thing after them: it finds the
+     tasks this organization has parked in front of the person whose last turn neither asked for
+     anything nor handed anything in and which no person has answered since, and gives each one
+     the same corrective turn the end of a bad turn gives — off the person's desk, counted as the
+     one try, the worker asked once more for the work itself. A task Todero has already asked once
+     is left parked; that one really is the person's. Same guards as the reviews: one pass per
+     organization at a time, the organization's state re-read before every task, one failure never
+     costing the next task its turn, and nobody waiting on it over HTTP.
+- **Where:** `server/src/todero/judge-feature-work.ts` (new — the packaging list, the block of
+  accepted work, which checks an earlier task settled), `judge.ts` (`acceptedWorkOfSameFeature`,
+  and the brief and the comment), `judge-review.ts` (`loadAcceptedFeatureWork`, built on
+  `collectTaskInputs`), `empty-turn-recovery.ts` (`buildEmptyTurnRetry`, lifted out so both doors
+  build the same turn rather than copying it), `parked-turn-recovery.ts` (new — the rule, the
+  database reads, the pass), `deferred-review.ts` (the two passes composed at the one resume door).
+- **Consequences:** The reviewer's brief grows by what one earlier task handed in, capped at 1,500
+  characters and cut with the same words the worker's own block uses. A task with no accepted work
+  of its own feature and no packaging line gets the brief it got before, word for word, which a
+  test holds. Todero can now start a task that a person was looking at, once — that is the point,
+  and it is said on the task in plain words before it happens. Repros:
+  `gauntlet/repros/last-task-judged-with-its-feature.gauntlet.ts` (built from 42c3d5e4's real plan
+  and ZZGAAAAAAAAAAA-4's real hand-in) and `gauntlet/repros/parked-task-gets-its-way-back.gauntlet.ts`
+  (wave 19's real replies), both registered in `gauntlet/checks.json`.

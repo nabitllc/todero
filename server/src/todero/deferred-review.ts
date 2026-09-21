@@ -39,6 +39,7 @@ import {
 import { applyJudgeReview, skippedReviewReasonText, type JudgeApplyResult } from "./judge-apply.js";
 import { reviewConversationHandIn, type JudgeReviewResult } from "./judge-review.js";
 import { readAutoAcceptWhenJudgePasses } from "./judge.js";
+import { recoverParkedTurns } from "./parked-turn-recovery.js";
 
 export type { DeferredHandIn } from "./deferred-review-find.js";
 
@@ -320,9 +321,25 @@ export function setDeferredReviewRunner(next: DeferredReviewRunner | null): void
   runner = next;
 }
 
-/** The one composition, installed where the db and a way to wake an agent are both in hand. */
+/**
+ * The one composition, installed where the db and a way to wake an agent are
+ * both in hand.
+ *
+ * Two things happen at this door, in this order. First the hand-ins nobody
+ * answered while the organization was on hold. Then the tasks that were parked
+ * in front of the person with nothing on them to answer — a task parked before
+ * the corrective turn existed has no other way back, because nothing wakes a
+ * parked task. The reviews go first: one of them may accept a hand-in and
+ * unblock the very tasks the second pass would otherwise walk over.
+ */
 export function installDeferredReviewsOnResume(db: Db, enqueueWakeup: DeferredReviewWakeup): void {
-  setDeferredReviewRunner((companyId) => reviewDeferredHandIns(db, { enqueueWakeup }, { companyId }));
+  setDeferredReviewRunner(async (companyId) => {
+    const reviews = await reviewDeferredHandIns(db, { enqueueWakeup }, { companyId });
+    await recoverParkedTurns(db, { enqueueWakeup }, { companyId }).catch((err: unknown) => {
+      logger.warn({ err, companyId }, "could not start the tasks parked with nothing to answer");
+    });
+    return reviews;
+  });
 }
 
 /**
