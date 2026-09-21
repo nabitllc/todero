@@ -1,0 +1,101 @@
+{
+ "organization": "Zz Gauntlet Org 0921-034835",
+ "companyId": "f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3",
+ "elapsedSeconds": 2405,
+ "checks": {
+  "human_answers": {
+   "value": 1,
+   "gate": "<= 1",
+   "pass": true
+  },
+  "project_completes": {
+   "value": false,
+   "gate": "true",
+   "pass": false
+  },
+  "dependency_handoff": {
+   "value": "7/9",
+   "gate": "all",
+   "pass": false
+  },
+  "noise_handbacks": {
+   "value": 2,
+   "gate": "0",
+   "pass": false
+  },
+  "verdict_lists_checks": {
+   "value": "9/9",
+   "gate": "all",
+   "pass": true
+  },
+  "pause_holds": {
+   "value": 0,
+   "gate": "0 new starts",
+   "pass": true
+  },
+  "task_has_criteria": {
+   "value": "0/13",
+   "gate": "all",
+   "pass": false
+  },
+  "pipeline_stages": {
+   "value": "6/13",
+   "gate": "all",
+   "pass": false
+  },
+  "first_pass_rate": {
+   "value": "5/8",
+   "gate": "trend",
+   "pass": true
+  },
+  "recovers_previous_org": {
+   "value": "finished=False, asked=0",
+   "gate": "completes, 0 human touches",
+   "pass": false,
+   "organization": "Zz Gauntlet Org 0920-224444",
+   "final": {
+    "ZZGAAAAAAA-4": "blocked",
+    "ZZGAAAAAAA-5": "blocked",
+    "ZZGAAAAAAA-6": "blocked",
+    "ZZGAAAAAAA-3": "done",
+    "ZZGAAAAAAA-2": "done",
+    "ZZGAAAAAAA-1": "blocked"
+   }
+  }
+ },
+ "humanTouches": {
+  "answers_before_plan": 1,
+  "approves": 1,
+  "lazy_replies": 0,
+  "hand_accepts": 0
+ },
+ "askedForPredecessorOutput": [],
+ "noise": [
+  {
+   "id": "20809e2b-e690-4255-a072-4832c6ab7e03",
+   "issue": "ZZGAAAAAAAAA-4",
+   "said": "**ZZGAAAAAAAAA-4**\n- **Goal:** Create four one-page guides for houseplants that survive a dark flat.\n- **Feature:** Draft guides \u2014 To produce the initial content for the one-page guides.\n- **Done when"
+  },
+  {
+   "id": "e527b603-926d-459c-a735-9a76f1e0fa3c",
+   "issue": "ZZGAAAAAAAAA-11",
+   "said": "**Final Review and Next Steps:**\n\n- **Review Status:** The first guide for the Snake Plant (Sansevieria) has been finalized and formatted. It meets the criteria of being one page and ready for distrib"
+  }
+ ],
+ "final": {
+  "ZZGAAAAAAAAA-10": "done",
+  "ZZGAAAAAAAAA-11": "blocked",
+  "ZZGAAAAAAAAA-9": "done",
+  "ZZGAAAAAAAAA-8": "done",
+  "ZZGAAAAAAAAA-7": "done",
+  "ZZGAAAAAAAAA-4": "blocked",
+  "ZZGAAAAAAAAA-3": "done",
+  "ZZGAAAAAAAAA-2": "done",
+  "ZZGAAAAAAAAA-1": "blocked",
+  "ZZGAAAAAAAAA-14": "todo",
+  "ZZGAAAAAAAAA-13": "todo",
+  "ZZGAAAAAAAAA-12": "todo",
+  "ZZGAAAAAAAAA-6": "todo",
+  "ZZGAAAAAAAAA-5": "todo"
+ }
+}

@@ -696,3 +696,123 @@ instead of guessing.
      near it, so it only ever bites on small windows — which is where it was needed.
 - **Source:** `server/src/todero/available-models.ts`,
   `server/src/adapters/http/prompt-budget.ts`.
+
+## ADR-022 — A blocked task says who it is waiting for, and a task stops asking for work it has
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Three waves of the improvement loop ended the same way.
+
+  1. Two kinds of task sit at `blocked`: one waiting for the tasks before it to finish, and one
+     Todero handed to a person (a question, a hand-in waiting to be read, a plan waiting for a
+     yes, a task the manager is holding). The recovery backstop that brings back tasks whose
+     earlier work is finished read only the row — id, company, identifier, assignee, blocked
+     time — so the two looked identical and it woke the second kind too. Measured: 13 repeats on
+     ZZGAAA-3 and 13 on ZZGAAA-5 in wave 16, 30 on ZZGAAA-5 in wave 17, 21 on ZZGAAAAA-3 in wave
+     18. The guard against repeating a wake could not catch it: the key it compares includes the
+     task's blocked time, and every hand-back stamps a new one, so every repeat looked like a
+     first. The re-wake throttle could not catch it either — it only applies to wakes that assert
+     state, and this one carries an event reason, and every woken turn left a comment behind,
+     which the throttle counts as progress.
+  2. A task handed the finished work of the tasks it waited on (ADR from
+     `doc/plans/2026-09-20-dependency-handoff.md`) went on asking for it. Wave 16 and its
+     recovery are the measured case: ZZGAAA-5 asked for the four drafts in 41 of its 42 turns,
+     with the drafts in hand. Its own thread carried a dozen earlier turns saying "Could you
+     please provide the four draft guides" and "I am still waiting for the four draft guides",
+     and a 14B model reads its own last turns as the pattern to follow. Wave 18's 21 repeats on
+     ZZGAAAAA-3 are a different fault that looks the same from a distance: that task repeated a
+     clarifying question, not a request for missing work, and this decision does not address it.
+  3. Wave 18's conversation task was read as a hand-back that asked nothing. It was not: it had
+     proposed a plan, the approval cleared its notes and blocked it on its own children, and it
+     was waiting on three tasks. The improvement-loop check treated any `blocked` row as a task
+     in front of a person, which is the same confusion as (1), one layer up.
+- **Decision:**
+  1. Whether a task is waiting on a person is read from the task's own text, in one place:
+     `isParkedOnPerson` (`server/src/todero/parked-on-person.ts`). It composes the predicates
+     owned by the modules that write each note, so no note's shape is written twice. The
+     backstop loads the task's text with its other columns and skips a task that is parked on a
+     person, counted in its result like every other skip.
+  2. When the work a task waited on is in hand, its own earlier turns asking for that work are
+     left out of the thread it reads, and it is told in one sentence that the work is above and
+     that this turn is for doing the task. What the person and the reviewer said is never
+     dropped, and neither is a turn that hands work in — a task the reviewer sends back wakes
+     with the earlier work in hand, and losing its own hand-in would make it write that work
+     twice. The wrap-up and manager instructions still win. Both rules are pure and live in
+     `server/src/todero/inputs-arrived.ts`; the heartbeat makes one call.
+- **Consequences:**
+  - A task Todero parks on a person is now woken only by an answer — a comment, an approval, a
+     review. Nothing else brings it back, which is the point, and which means a park written
+     without one of those notes is a park nothing will clear. Every path that parks a task must
+     write its note.
+  - The classifier that decides whether a turn is asking for something is deliberately narrow: a
+     hand-in, a question about scope and a status report are never dropped. It will leave some
+     stale sentences in a thread, and that is the cheaper mistake.
+- **Source:** `server/src/todero/parked-on-person.ts`, `server/src/todero/inputs-arrived.ts`,
+  `server/src/services/recovery/service.ts`,
+  `docs/ai_context/gauntlet/repros/parked-task-stays-parked.gauntlet.ts`.
+
+### Note, 2026-09-21 — the root task was never the problem, and the dead half of this is gone
+
+A hard read of this branch, each point measured against the real module or the live API,
+found that part of what ADR-022 describes was never wired up, and that one of the numbers
+it leans on was the check's own arithmetic. Correcting it here rather than above, as this
+log requires.
+
+**The root task was never at fault.** Wave 18's conversation task was recorded as a
+hand-back that asked nobody for anything. It was not one: the person had woken it, and the
+reply it gave carried the plan. The count was the improvement-loop check's mistake — the
+check read any blocked task with nothing unresolved as a task standing in front of a
+person — and nothing in Todero needed changing for it. The helper written to recognise
+"a reply that asks for nothing" was never called by anything; the check has always used a
+rule of its own. That helper and its tests are deleted, along with the sentence in
+`server/src/todero/inputs-arrived.ts` that claimed the check used it. The only change this
+point calls for is in the check itself.
+
+**What the check counts as standing in front of a person.** The check now reads the same
+five notes the server reads, named in its Python with
+`server/src/todero/parked-on-person.ts` given as the source of truth, and nothing else. A
+blocked task with nothing unresolved and no note on it is no longer counted: that is a task
+whose earlier work has just finished, which is the very task the wake backstop is there to
+bring back. Measured over the three archived organizations: on `f818e743` the count of
+hand-backs that asked nothing goes from 1 to 0, and the one row the old rule and the new
+rule disagree on is the task whose last turn was a hand-in of four finished guides. On
+`67d6f192` and `bddd6a6d` nothing moves — 0 before and 0 after, with the one real
+hand-back that does ask still counted in each.
+
+**The rule that leaves a task's own stale requests out of its thread is read a sentence at
+a time.** It used to stop at the first claim of work done anywhere in the turn, which let
+"I have drafted all four. Could you please provide the four draft guides?" stay in the
+thread — the exact loop this closes, with a preamble in front of it. Now each sentence is
+judged on its own: a sentence that asks for the work makes the turn a request whatever the
+rest of it claims, a sentence that hands something over is not a request, and saying it
+cannot go on counts only when nothing in the turn delivers. What is asked for, waited for
+or needed also has to be the work itself, so a request to have something clarified, and
+waiting for another person to send something, both stay. Re-measured over the 101 archived
+agent turns: 41 of the 42 turns on `ZZGAAA-5` are still left out and the one that survives
+is still the turn that assumed the drafts already existed; none of wave 18's 21 turns is
+left out, unchanged.
+
+### Note, 2026-09-21 — the ask really does win now, and two numbers above are corrected
+
+The note before this one said that a sentence asking for the work makes the turn a request
+whatever the rest of it claims. That was the intent, not the behaviour: the check for "this
+sentence hands something over" ran before the checks for "this sentence asks", so a claim of
+work done still won whenever the two shared one sentence. On a comma, a semicolon or the word
+"so" the loop reopened — "I finished the outline, but I still need the four draft guides."
+and "I have attached the outline; please provide the four draft guides." were both kept in
+the thread. The asking checks now run first, and the sentence above is true as written. Six
+such sentences are in the tests, watched failing before the change. Re-measured over the same
+101 archived agent turns: nothing moved — 41 of the 42 turns on `ZZGAAA-5` are still left out,
+and the survivor is still the turn that assumed the drafts already existed.
+
+**What is not left out.** A bare "it" is not one of the names for the work, so "I am still
+waiting for it." now stays in the thread where it used to come out. That is deliberate — a
+task has to name the work to have its request dropped — and it costs nothing over the
+archive, where no turn is worded that way.
+
+**Two numbers above, corrected.** The twenty-one repeated turns the note before this one
+credits to wave 18's organization `f818e743` are not there: they belong to `ZZGAAAAA-3` in
+`67d6f192`. The count is right, the label was not, and it had been carried along from an
+older comment. `f818e743` holds ten agent turns in total, none of them left out. The test
+file for the wake backstop also says it has one case per way a task can be parked; it has
+four of the five, with a plan waiting for a yes not among them, and now says so.

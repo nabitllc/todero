@@ -58,6 +58,8 @@ export type TaskInputsDeps = {
   readCurrentInputs: (issueId: string) => Promise<string | null>;
   /** Put the block on the task as its own document. */
   writeInputsDocument: (input: { issueId: string; body: string }) => Promise<unknown>;
+  /** Said when what this task builds on is not what it was last time. */
+  onChanged?: () => void;
   /** Said out loud when the document could not be written. */
   onWriteFailed?: (error: unknown) => void;
 };
@@ -123,6 +125,7 @@ export async function syncTaskInputs(deps: TaskInputsDeps, issueId: string): Pro
     const current = await deps.readCurrentInputs(issueId);
     if (current?.trim() !== body.trim()) {
       await deps.writeInputsDocument({ issueId, body });
+      deps.onChanged?.();
     }
   } catch (error) {
     deps.onWriteFailed?.(error);
@@ -144,12 +147,15 @@ export async function gatherTaskInputsForTurn(
     runId?: string | null;
     /** Put in the run's log, with the sentence already written out. */
     onProblem: (error: unknown, said: string) => void;
+    /** Said when what this task builds on is not what it was last time. */
+    onChanged?: () => void;
   },
 ): Promise<TaskInput[]> {
   const deps = taskInputsDbDeps(db, {
     companyId: input.companyId,
     agentId: input.agentId,
     runId: input.runId,
+    onChanged: input.onChanged,
     // The task still gets the work; only the copy a person can open is missing.
     onWriteFailed: (error: unknown) =>
       input.onProblem(error, "could not save the document that shows the work this task builds on"),
@@ -174,6 +180,7 @@ export function taskInputsDbDeps(
     agentId?: string | null;
     runId?: string | null;
     onWriteFailed?: (error: unknown) => void;
+    onChanged?: () => void;
   },
 ): TaskInputsDeps {
   const documents = documentService(db);
@@ -221,5 +228,6 @@ export function taskInputsDbDeps(
         createdByRunId: input.runId ?? null,
       }),
     onWriteFailed: input.onWriteFailed,
+    onChanged: input.onChanged,
   };
 }

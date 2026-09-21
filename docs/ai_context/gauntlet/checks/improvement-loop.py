@@ -42,6 +42,37 @@ ASKS_RE = re.compile(r"\?|\b(please|could you|can you|would you)\b.*\b(provide|s
 WANTS_PREDECESSOR_RE = re.compile(r"\b(without the|provide the|need the|cannot (review|complete|proceed))\b", re.I)
 
 
+# The five notes Todero writes when it puts a task in front of a person. The
+# server reads exactly these five and nothing else, in
+# server/src/todero/parked-on-person.ts, which is the source of truth for this
+# list. When one of them changes shape there, change it here too.
+IN_FRONT_OF_A_PERSON = (
+    "todero-blocked-by: waiting-on-you",    # a question handed back to the person
+    "todero-review: pending",               # a hand-in waiting to be read
+    "todero-review: deferred",              # a hand-in nobody could review yet
+    "todero-plan: pending",                 # a plan waiting for a yes
+    "todero-waiting-for-manager-sendback",  # the manager is holding it
+)
+
+
+def waiting_on_a_person(issue):
+    """Is this task in front of a person, or only waiting for other tasks?
+
+    Both sit at "blocked", so the status cannot tell them apart. Todero writes
+    a note in the task's own text when it hands the task to a person, and that
+    note is the only thing that says so - the same five notes the server reads.
+
+    "Blocked with nothing unresolved" is NOT one of them. That is a task whose
+    earlier work has just finished, which is precisely the population the wake
+    backstop is about to bring back on its own: ZZGAAAAAAA-4 in the archived
+    organization f818e743 sat exactly there, with no note on it and nobody
+    being asked for anything. Counting it as a hand-back made the stand-in
+    person read its last turn and score a hand-back that asked nothing, which
+    is what wave 18 miscounted on ZZGAAAAAAA-1.
+    """
+    return any(note in (issue.get("description") or "") for note in IN_FRONT_OF_A_PERSON)
+
+
 def call(method, path, body=None, timeout=120):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method,
@@ -194,7 +225,7 @@ def drive(C, R):
                 # Auto-accept is on. If this sits here, a person would have had to act.
                 continue
 
-            if "waiting-on-you" in desc or st == "blocked":
+            if waiting_on_a_person(issue):
                 last = agent_replies(issue["id"])
                 said = (last[-1].get("body") or "") if last else ""
                 if not is_child and not answered_root:
@@ -393,7 +424,7 @@ def recover_previous_org():
                 if "todero-plan: pending" in desc:
                     call("POST", f"/issues/{r['id']}/plan/approve", {"keep": []}, timeout=240)
                     touches["approves"] += 1
-                if ("waiting-on-you" in desc or r.get("status") == "blocked") and "todero-review: pending" not in desc:
+                if waiting_on_a_person(r) and "todero-review: pending" not in desc:
                     last = agent_replies(r["id"])
                     said = (last[-1].get("body") or "") if last else ""
                     if ASKS_RE.search(said):

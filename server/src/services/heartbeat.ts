@@ -132,6 +132,7 @@ import { isSlowLocalTurnAgent, SLOW_LOCAL_TURN_ERROR_CODE } from "../todero/slow
 import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js";
 import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
 import { gatherTaskInputsForTurn } from "../todero/task-inputs.js";
+import { applyArrivedInputs } from "../todero/inputs-arrived.js";
 import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
@@ -15071,22 +15072,17 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // should get the same hand-off. The question answers itself for a task
       // nothing waits on — the conversation task included — which is why that
       // one needs no exception of its own.
+      let inputsChanged = false;
       const taskInputs = await gatherTaskInputsForTurn(db, {
         companyId: agent.companyId,
         agentId: agent.id,
         issueId: issueRef.id,
+        onChanged: () => { inputsChanged = true; },
         onProblem: (error: unknown, said: string) =>
           logger.warn({ err: error, agentId: agent.id, issueId: issueRef.id }, said),
       });
-      if (taskInputs.length > 0) {
-        context.toderoInputs = taskInputs.map((input) => ({
-          identifier: input.identifier,
-          title: input.title,
-          body: input.body,
-        }));
-      } else {
-        delete context.toderoInputs;
-      }
+      // And once it is here, the task stops asking for it: see inputs-arrived.ts.
+      applyArrivedInputs(context, taskInputs, { inputsChanged });
       // The agent's own folder: its brief and a copy of everything turned on
       // for it. Written once, and again whenever the set changed.
       await syncAgentSkillFolder({
