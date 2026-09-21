@@ -30,6 +30,7 @@ import {
   EMPTY_TURN_MAX_TRIES,
   planEmptyTurnOutcome,
   planEmptyTurnRecovery,
+  turnDeliversWork,
 } from "../../../../server/src/todero/empty-turn-recovery.js";
 
 const BRIEF = "<!-- todero-type: Task -->\nGoal: Create four one-page guides for houseplants.";
@@ -114,8 +115,11 @@ describe("a turn that produced nothing and asked nothing is not parked", () => {
   });
 
   it("leaves alone the turns that are the person's to answer", () => {
-    // A question is the person's turn, first time or not.
-    const question = "Should the guides cover repotting as well?";
+    // A question is the person's turn, first time or not. Short on purpose:
+    // a long question also reads as a hand-in, so only a short one shows that
+    // the asking itself is what keeps the task off the retry.
+    const question = "Which four plants?";
+    expect(turnDeliversWork(question)).toBe(false);
     expect(planEmptyTurnOutcome({ issue: child(BRIEF), disposition: "waiting", reply: question })).toBe("waiting");
     // So is a hand-in that stopped short of the status line.
     expect(planEmptyTurnOutcome({ issue: child(BRIEF), disposition: "waiting", reply: A_REAL_GUIDE })).toBe("waiting");

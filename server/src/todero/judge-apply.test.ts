@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyJudgeReview, type JudgeApplyDeps } from "./judge-apply.js";
 import { REVIEW_PENDING_MARKER, hasDeferredReviewMarker } from "./conversation-outcome.js";
 import { descriptionWithJudgeFailRounds, planJudgeOutcome, readJudgeFailRounds } from "./judge.js";
+import { descriptionWithEmptyTurnTries, planEmptyTurnOutcome, readEmptyTurnTries } from "./empty-turn-recovery.js";
 import { isWaitingForManagerSendback } from "./manager-sendback.js";
 import type { JudgeReviewResult } from "./judge-review.js";
 
@@ -413,4 +414,58 @@ describe("a review a pause deferred is remembered", () => {
       expect(recorded.updates).toHaveLength(0);
     });
   }
+});
+
+/**
+ * A hand-in that reaches the reviewer is real work, so the count of turns that
+ * produced none starts again here too. It has to: the reviewer writes the
+ * task's text back, and the copy it is given was taken before the hand-in was
+ * saved. Without this, an empty turn, a real hand-in and a send-back left the
+ * count at one — which skipped the one corrective turn on the next empty turn
+ * and told the person the task had "produced no work twice" when it had not.
+ */
+describe("a reviewed hand-in starts the count of empty turns again", () => {
+  const afterAnEmptyTurn = descriptionWithEmptyTurnTries("Draft the second guide.", 1);
+
+  it("writes the task back with no count on it when the reviewer sends it back", async () => {
+    const { deps: d, recorded } = deps();
+    await applyJudgeReview(d, {
+      issue: { id: "issue-1", description: afterAnEmptyTurn },
+      assigneeAgentId: "agent-1",
+      review: review({ outcome: { kind: "revise", round: 1 }, verdict: "fail", comment: "Add the watering line." }),
+    });
+    const written = recorded.updates[0]!.patch.description ?? "";
+    expect(readEmptyTurnTries(written)).toBe(0);
+    expect(written).toContain("Draft the second guide.");
+  });
+
+  it("writes it back with no count on it when a pause deferred the review", async () => {
+    const { deps: d, recorded } = deps();
+    await applyJudgeReview(d, {
+      issue: { id: "issue-1", description: afterAnEmptyTurn },
+      assigneeAgentId: "agent-1",
+      review: review({ outcome: { kind: "skip" }, skipped: "paused" }),
+    });
+    expect(readEmptyTurnTries(recorded.updates[0]!.patch.description ?? "")).toBe(0);
+  });
+
+  it("leaves the turn after a send-back its own corrective turn", async () => {
+    // The whole sequence: a turn that produced nothing, a real hand-in, a
+    // send-back, and then another turn that produced nothing. The last one is
+    // the first empty turn in a row, so it is asked again rather than parked.
+    const { deps: d, recorded } = deps();
+    await applyJudgeReview(d, {
+      issue: { id: "issue-1", description: afterAnEmptyTurn },
+      assigneeAgentId: "agent-1",
+      review: review({ outcome: { kind: "revise", round: 1 }, verdict: "fail", comment: "Add the watering line." }),
+    });
+    const afterTheSendBack = recorded.updates[0]!.patch.description ?? "";
+    expect(
+      planEmptyTurnOutcome({
+        issue: { status: "in_progress", description: afterTheSendBack, parentId: "parent-1" },
+        disposition: "waiting",
+        reply: "Goal: four guides.\nFeature: Draft guides.\nDone when: four drafts.",
+      }),
+    ).toBe("retry");
+  });
 });

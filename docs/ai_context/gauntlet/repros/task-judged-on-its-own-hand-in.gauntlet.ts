@@ -18,8 +18,11 @@
 // ZZGAAAAAAAAA-11 "Finalize the first guide" was sent back the same way, and
 // between them they gated five tasks that never ran.
 //
-// The plan below is the real approved plan of that organization, copied from
-// its Plan document.
+// The plan below is the real approved plan of that organization, copied whole
+// from its Plan document (issue 82b005b6-4735-4476-907f-4ae705469356, key
+// "plan"): four features and all thirteen tasks, in the order the document
+// lists them. The first case below counts them, so a shortened copy fails here
+// rather than quietly changing where each feature ends.
 //
 //   cd docs/ai_context/gauntlet
 //   node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/task-judged-on-its-own-hand-in.gauntlet.ts
@@ -77,14 +80,34 @@ const PLAN_DOCUMENT = [
   "    feature: Review and refine guides",
   "    output: The first guide review, with notes on changes needed.",
   "    after: Draft the first guide",
+  "  - title: Review the second guide",
+  "    feature: Review and refine guides",
+  "    output: The second guide review, with notes on changes needed.",
+  "    after: Review the first guide",
+  "  - title: Review the third guide",
+  "    feature: Review and refine guides",
+  "    output: The third guide review, with notes on changes needed.",
+  "    after: Review the second guide",
+  "  - title: Review the fourth guide",
+  "    feature: Review and refine guides",
+  "    output: The fourth guide review, with notes on changes needed.",
+  "    after: Review the third guide",
   "  - title: Finalize the first guide",
   "    feature: Finalize and format guides",
   "    output: The first finalized and formatted guide.",
   "    after: Review the first guide",
+  "  - title: Finalize the second guide",
+  "    feature: Finalize and format guides",
+  "    output: The second finalized and formatted guide.",
+  "    after: Finalize the first guide",
+  "  - title: Finalize the third guide",
+  "    feature: Finalize and format guides",
+  "    output: The third finalized and formatted guide.",
+  "    after: Finalize the second guide",
   "  - title: Finalize the fourth guide",
   "    feature: Finalize and format guides",
   "    output: The fourth finalized and formatted guide.",
-  "    after: Finalize the first guide",
+  "    after: Finalize the third guide",
   "```",
 ].join("\n");
 
@@ -118,6 +141,21 @@ function reviewOf(title: string, description = "<!-- todero-type: Task -->\nGoal
 }
 
 describe("a task is judged on its own hand-in line", () => {
+  it("is the whole plan of f6e02c4b, thirteen tasks across four features", () => {
+    const plan = parseToderoPlanBlock(PLAN_DOCUMENT)?.plan ?? null;
+    expect(plan?.features.map((feature) => feature.name)).toEqual([
+      "Research and select plants",
+      "Draft guides",
+      "Review and refine guides",
+      "Finalize and format guides",
+    ]);
+    expect(plan?.tasks).toHaveLength(13);
+    // Where each feature ends is the whole point, so it is spelled out.
+    expect(plan?.tasks.filter((task) => task.feature === "Draft guides")).toHaveLength(4);
+    expect(plan?.tasks.filter((task) => task.feature === "Review and refine guides")).toHaveLength(4);
+    expect(plan?.tasks.filter((task) => task.feature === "Finalize and format guides")).toHaveLength(4);
+  });
+
   it("does not ask ZZGAAAAAAAAA-4 for four drafts", () => {
     const review = reviewOf("Draft the second guide");
     expect(review.checks).toEqual([

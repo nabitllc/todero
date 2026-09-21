@@ -5,6 +5,7 @@
  * become.
  */
 import { descriptionForDeferredReview } from "./conversation-outcome.js";
+import { descriptionWithEmptyTurnTries } from "./empty-turn-recovery.js";
 import { JUDGE_MAX_FAIL_ROUNDS, descriptionWithJudgeFailRounds, readJudgeFailRounds } from "./judge.js";
 import type { JudgeOutcome } from "./judge.js";
 import { descriptionWithWaitingForManagerMarker } from "./manager-sendback.js";
@@ -101,6 +102,13 @@ export async function applyJudgeReview(
   },
 ): Promise<JudgeApplyResult> {
   const { review } = input;
+  // Anything that reaches the reviewer is real work handed in, so the count of
+  // turns that produced none starts again here. This function writes the task's
+  // text back, and the copy it is handed was taken before the hand-in was
+  // saved; without this, an empty turn, a real hand-in and a send-back left the
+  // count standing, which skipped the one corrective turn the next empty turn
+  // is owed and then told the person the task had produced no work twice.
+  const description = descriptionWithEmptyTurnTries(input.issue.description, 0);
   if (review.outcome.kind === "skip") {
     // A hold is the one skip that comes back. Waves 16-18: the hand-in was
     // right, the reviewer was simply not allowed to speak, and nothing ever
@@ -109,7 +117,7 @@ export async function applyJudgeReview(
     // an answer, and starting the organization again gives it one.
     if (review.skipped === "paused") {
       await deps.updateIssue(input.issue.id, {
-        description: descriptionForDeferredReview(input.issue.description),
+        description: descriptionForDeferredReview(description),
       });
       deps.log(
         "[todero] No reviewer looked at this hand-in: the organization is paused."
@@ -153,7 +161,7 @@ export async function applyJudgeReview(
   // when it is the manager's send-back. A later send-back than that (only
   // reachable if the cap is raised) goes to the person, so a task can never
   // bounce between the manager and the reviewer forever.
-  let updatedDescription = descriptionWithJudgeFailRounds(input.issue.description, round ?? 1);
+  let updatedDescription = descriptionWithJudgeFailRounds(description, round ?? 1);
 
   if (shouldWakeManager) {
     // The manager holds the task while it rewrites the brief: Todero cancels a

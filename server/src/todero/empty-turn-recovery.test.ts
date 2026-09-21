@@ -95,6 +95,20 @@ describe("planEmptyTurnOutcome", () => {
     ).toBe("waiting");
   });
 
+  it("leaves a short question alone, where only the asking can save it", () => {
+    // A long question is left alone twice over: it asks, and it is long enough
+    // to read as a hand-in. A short one is only ever saved by the asking, so
+    // this is the case that proves a question is what is being looked for.
+    const shortQuestion = "Which four plants?";
+    expect(turnDeliversWork(shortQuestion)).toBe(false);
+    expect(
+      planEmptyTurnOutcome({ issue: child(BRIEF), disposition: "waiting", reply: shortQuestion }),
+    ).toBe("waiting");
+    expect(
+      planEmptyTurnRecovery({ issue: child(BRIEF), disposition: "waiting", reply: shortQuestion }),
+    ).toBeNull();
+  });
+
   it("leaves a turn that handed work in exactly where it is", () => {
     expect(
       planEmptyTurnOutcome({ issue: child(BRIEF), disposition: "waiting", reply: A_REAL_GUIDE }),

@@ -874,8 +874,12 @@ four of the five, with a plan waiting for a yes not among them, and now says so.
   - A worker gets one extra turn before its task reaches a person, and the person sees a note
     saying nothing is needed from them. The cost is one local turn; the alternative was a deadlock.
   - The count of empty turns is kept in the task's text (`todero-empty-turns`), beside the plan
-    tries and the reviewer's rounds, and goes back to nothing the moment the task hands real work
-    in — so "twice" means twice in a row.
+    tries and the reviewer's rounds, and goes back to nothing when the task hands real work in —
+    so "twice" means twice in a row. It is cleared twice over, because two different writes can
+    put it back: once where the hand-in is saved (`heartbeat.ts`), and again inside
+    `applyJudgeReview`, which writes the task's text out from a copy taken before that save.
+    Anything that reaches the reviewer is real work by definition, so clearing it there is right
+    as well as safe, and it is the clearing a test can hold.
   - The retry leaves the task at `todo` and wakes it, rather than at `in_progress`. A task left
     running with no turn behind it is read by the recovery sweep as a turn that stopped halfway,
     which would start a second turn of its own. This is the same route the plan rescue already
@@ -886,3 +890,30 @@ four of the five, with a plan waiting for a yes not among them, and now says so.
   - Repros: `docs/ai_context/gauntlet/repros/task-judged-on-its-own-hand-in.gauntlet.ts` and
     `docs/ai_context/gauntlet/repros/empty-retry-is-not-parked.gauntlet.ts`, both built from the
     real plan and the real replies of `f6e02c4b`, and both registered in `checks.json`.
+
+### Correction, 2026-09-21, after review
+
+The first build of this ADR's second mechanism had the reset in one place only, and a review of
+the branch found that a send-back undid it. The sequence was: a turn that produced nothing (count
+one), a turn that handed a real guide in (count cleared), the reviewer sending that guide back —
+which wrote the task's text back out from the copy taken before the hand-in was saved, count one
+again — and then a turn that produced nothing. Todero read the count as two in a row, skipped the
+one corrective turn this ADR promises, parked the task, and told the person it had "produced no
+work twice", which was not true. That is the send-back-then-empty-turn shape of wave 19 with the
+safety net switched off, so the whole ADR rested on it. `applyJudgeReview` now clears the count on
+the text it writes, which no caller can undo, and `judge-apply.test.ts` walks the four-step
+sequence above and fails if the clearing is taken out.
+
+Two other things the review found were wiring that nothing tested, and both now have a test that
+fails when the wiring is broken. The rule about which task a feature ends with is applied on one
+line inside `reviewConversationHandIn`; `judge-review-task-position.test.ts` drives that function
+for real and reads the prompt the model was sent, so replacing that line with either constant
+fails. And the guard that keeps a question in front of the person was only ever exercised by
+questions long enough to read as a hand-in in their own right; both the test and the repro now use
+a short one ("Which four plants?"), where nothing but the question mark keeps the task off the
+retry.
+
+The repro `task-judged-on-its-own-hand-in.gauntlet.ts` said its plan was copied from the
+organization's Plan document and carried eight of its thirteen tasks, which changed where two
+features ended. It now carries the document whole, and counts the tasks in its first case so a
+shortened copy fails rather than quietly moving a feature's finish line.
