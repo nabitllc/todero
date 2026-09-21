@@ -52,6 +52,7 @@ import {
   buildIssueBlockersResolvedWakeStateKey,
   findExistingIssueBlockersResolvedWakeForReadyState,
 } from "../issue-dependency-wakeups.js";
+import { isParkedOnPerson } from "../../todero/parked-on-person.js";
 import { evaluateAgentInvokabilityFromDb } from "../agent-invokability.js";
 import { isHeartbeatWakeOnDemandEnabled } from "../heartbeat-policy.js";
 import {
@@ -5173,6 +5174,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       existingWakeSkipped: 0,
       livePathSkipped: 0,
       interactionSkipped: 0,
+      parkedOnPersonSkipped: 0,
       pauseHoldSkipped: 0,
       notReadySkipped: 0,
       candidateLimitSkipped: 0,
@@ -5182,13 +5184,19 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     };
 
     const source = opts?.source ?? "issue_graph_liveness.backstop";
-    const requestedByActorId = source === "workspace.finalize"
-      ? "heartbeat_finalize"
-      : "issue_graph_liveness_backstop";
-    const payloadBackstop = source === "workspace.finalize"
-      ? "workspace_finalize_reconciliation"
-      : "issue_graph_liveness_reconciliation";
+    const fromFinalize = source === "workspace.finalize";
+    const requestedByActorId = fromFinalize ? "heartbeat_finalize" : "issue_graph_liveness_backstop";
+    const payloadBackstop = fromFinalize ? "workspace_finalize_reconciliation" : "issue_graph_liveness_reconciliation";
     const useCursor = !opts?.blockerIssueId;
+    const candidateColumns = {
+      id: issues.id,
+      companyId: issues.companyId,
+      identifier: issues.identifier,
+      description: issues.description,
+      assigneeAgentId: issues.assigneeAgentId,
+      blockedTransitionAt: issues.blockedTransitionAt,
+      totalCount: sql<number>`count(*) over()::int`,
+    };
 
     const queryCandidates = (afterIssueId: string | null) => {
       const filters = [
@@ -5207,14 +5215,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
           eq(issueRelations.relatedIssueId, issues.id),
         );
         return db
-          .select({
-            id: issues.id,
-            companyId: issues.companyId,
-            identifier: issues.identifier,
-            assigneeAgentId: issues.assigneeAgentId,
-            blockedTransitionAt: issues.blockedTransitionAt,
-            totalCount: sql<number>`count(*) over()::int`,
-          })
+          .select(candidateColumns)
           .from(issueRelations)
           .innerJoin(issues, eq(issueRelations.relatedIssueId, issues.id))
           .where(and(...filters))
@@ -5223,14 +5224,7 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       }
 
       return db
-        .select({
-          id: issues.id,
-          companyId: issues.companyId,
-          identifier: issues.identifier,
-          assigneeAgentId: issues.assigneeAgentId,
-          blockedTransitionAt: issues.blockedTransitionAt,
-          totalCount: sql<number>`count(*) over()::int`,
-        })
+        .select(candidateColumns)
         .from(issues)
         .where(and(...filters))
         .orderBy(asc(issues.id))
@@ -5246,10 +5240,9 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
     const candidates = candidateRows.map(({ totalCount: _totalCount, ...candidate }) => candidate);
     result.checked = candidates.length;
     result.candidateLimitSkipped = Math.max(0, totalCandidateCount - candidates.length);
-    const lastCandidate = candidates[candidates.length - 1] ?? null;
     if (useCursor) {
       resolvedDependencyWakeBackstopCandidateCursor =
-        result.candidateLimitSkipped > 0 && lastCandidate ? lastCandidate.id : null;
+        result.candidateLimitSkipped > 0 ? (candidates[candidates.length - 1]?.id ?? null) : null;
     }
     if (result.candidateLimitSkipped > 0) {
       logger.warn(
@@ -5284,6 +5277,12 @@ export function recoveryService(db: Db, deps: { enqueueWakeup: RecoveryWakeup })
       for (const candidate of companyCandidates) {
         const agentId = candidate.assigneeAgentId;
         if (!agentId) continue;
+
+        // Todero put this one in front of a person; only their answer wakes it.
+        if (isParkedOnPerson(candidate.description)) {
+          result.parkedOnPersonSkipped += 1;
+          continue;
+        }
 
         const readiness = readinessMap.get(candidate.id);
         const resolvedBlockerIssueId = readiness?.blockerIssueIds[0] ?? null;

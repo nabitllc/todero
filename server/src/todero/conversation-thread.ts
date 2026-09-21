@@ -115,6 +115,11 @@ export function descriptionWithWaitingMarker(description: string | null | undefi
   return `${WAITING_ON_YOU_MARKER}\n${stripped.replace(/^\s*\n/, "")}`;
 }
 
+/** True when the task's text says Todero is waiting for a person to answer. */
+export function hasWaitingOnYouNote(description: string | null | undefined): boolean {
+  return new RegExp(WAITING_ON_YOU_RE.source, "i").test(description ?? "");
+}
+
 export type ConversationDisposition = "done" | "waiting";
 
 export function readConversationDisposition(resultJson: unknown): ConversationDisposition | null {

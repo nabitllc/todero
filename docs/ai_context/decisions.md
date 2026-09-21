@@ -696,3 +696,51 @@ instead of guessing.
      near it, so it only ever bites on small windows — which is where it was needed.
 - **Source:** `server/src/todero/available-models.ts`,
   `server/src/adapters/http/prompt-budget.ts`.
+
+## ADR-022 — A blocked task says who it is waiting for, and a task stops asking for work it has
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Three waves of the improvement loop ended the same way.
+
+  1. Two kinds of task sit at `blocked`: one waiting for the tasks before it to finish, and one
+     Todero handed to a person (a question, a hand-in waiting to be read, a plan waiting for a
+     yes, a task the manager is holding). The recovery backstop that brings back tasks whose
+     earlier work is finished read only the row — id, company, identifier, assignee, blocked
+     time — so the two looked identical and it woke the second kind too. Measured: 13 repeats on
+     ZZGAAA-3 and 13 on ZZGAAA-5 in wave 16, 30 on ZZGAAA-5 in wave 17, 21 on ZZGAAAAA-3 in wave
+     18. The guard against repeating a wake could not catch it: the key it compares includes the
+     task's blocked time, and every hand-back stamps a new one, so every repeat looked like a
+     first. The re-wake throttle could not catch it either — it only applies to wakes that assert
+     state, and this one carries an event reason, and every woken turn left a comment behind,
+     which the throttle counts as progress.
+  2. A task handed the finished work of the tasks it waited on (ADR from
+     `doc/plans/2026-09-20-dependency-handoff.md`) went on asking for it. Its own thread carried
+     a dozen earlier turns saying "I am still waiting for the four draft guides", and a 14B model
+     reads its own last turns as the pattern to follow.
+  3. Wave 18's conversation task was read as a hand-back that asked nothing. It was not: it had
+     proposed a plan, the approval cleared its notes and blocked it on its own children, and it
+     was waiting on three tasks. The improvement-loop check treated any `blocked` row as a task
+     in front of a person, which is the same confusion as (1), one layer up.
+- **Decision:**
+  1. Whether a task is waiting on a person is read from the task's own text, in one place:
+     `isParkedOnPerson` (`server/src/todero/parked-on-person.ts`). It composes the predicates
+     owned by the modules that write each note, so no note's shape is written twice. The
+     backstop loads the task's text with its other columns and skips a task that is parked on a
+     person, counted in its result like every other skip.
+  2. When the work a task waited on is in hand, its own earlier turns asking for that work are
+     left out of the thread it reads, and it is told in one sentence that the work is above and
+     that this turn is for doing the task. What the person and the reviewer said is never
+     dropped; the wrap-up and manager instructions still win. Both rules are pure and live in
+     `server/src/todero/inputs-arrived.ts`; the heartbeat makes one call.
+- **Consequences:**
+  - A task Todero parks on a person is now woken only by an answer — a comment, an approval, a
+     review. Nothing else brings it back, which is the point, and which means a park written
+     without one of those notes is a park nothing will clear. Every path that parks a task must
+     write its note.
+  - The classifier that decides whether a turn is asking for something is deliberately narrow: a
+     hand-in, a question about scope and a status report are never dropped. It will leave some
+     stale sentences in a thread, and that is the cheaper mistake.
+- **Source:** `server/src/todero/parked-on-person.ts`, `server/src/todero/inputs-arrived.ts`,
+  `server/src/services/recovery/service.ts`,
+  `docs/ai_context/gauntlet/repros/parked-task-stays-parked.gauntlet.ts`.

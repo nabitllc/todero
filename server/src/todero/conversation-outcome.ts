@@ -46,6 +46,16 @@ export function descriptionWithPlanMarker(description: string | null | undefined
   return withMarker(description ?? "", PLAN_PENDING_MARKER, PLAN_PENDING_RE, on);
 }
 
+/** True when the task's text says a hand-in is waiting to be read. */
+export function hasReviewPendingNote(description: string | null | undefined): boolean {
+  return new RegExp(REVIEW_PENDING_RE.source, "i").test(description ?? "");
+}
+
+/** True when the task's text says a proposed plan is waiting for a yes. */
+export function hasPlanPendingNote(description: string | null | undefined): boolean {
+  return new RegExp(PLAN_PENDING_RE.source, "i").test(description ?? "");
+}
+
 /**
  * The third of those markers, and the newest: a hand-in nobody could review,
  * because the organization was on hold when it arrived. It means a reviewer

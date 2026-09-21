@@ -42,6 +42,24 @@ ASKS_RE = re.compile(r"\?|\b(please|could you|can you|would you)\b.*\b(provide|s
 WANTS_PREDECESSOR_RE = re.compile(r"\b(without the|provide the|need the|cannot (review|complete|proceed))\b", re.I)
 
 
+def waiting_on_a_person(issue):
+    """Is this task in front of a person, or only waiting for other tasks?
+
+    Both sit at "blocked". Todero writes a note in the task's own text when it
+    hands the task to a person. A task waiting for the tasks before it - the
+    conversation task included, once its plan is approved and it is blocked on
+    its own children - carries no such note and has unresolved blockers. Wave 18
+    counted one of those as a hand-back that asked nothing, which it was not:
+    ZZGAAAAAAA-1 was blocked on three children, with every note cleared by the
+    approval, and nobody was being asked for anything.
+    """
+    if "waiting-on-you" in (issue.get("description") or ""):
+        return True
+    if issue.get("status") != "blocked":
+        return False
+    return not (issue.get("blockerAttention") or {}).get("unresolvedBlockerCount", 0)
+
+
 def call(method, path, body=None, timeout=120):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(BASE + path, data=data, method=method,
@@ -194,7 +212,7 @@ def drive(C, R):
                 # Auto-accept is on. If this sits here, a person would have had to act.
                 continue
 
-            if "waiting-on-you" in desc or st == "blocked":
+            if waiting_on_a_person(issue):
                 last = agent_replies(issue["id"])
                 said = (last[-1].get("body") or "") if last else ""
                 if not is_child and not answered_root:
@@ -393,7 +411,7 @@ def recover_previous_org():
                 if "todero-plan: pending" in desc:
                     call("POST", f"/issues/{r['id']}/plan/approve", {"keep": []}, timeout=240)
                     touches["approves"] += 1
-                if ("waiting-on-you" in desc or r.get("status") == "blocked") and "todero-review: pending" not in desc:
+                if waiting_on_a_person(r) and "todero-review: pending" not in desc:
                     last = agent_replies(r["id"])
                     said = (last[-1].get("body") or "") if last else ""
                     if ASKS_RE.search(said):
