@@ -83,6 +83,14 @@ describe("work-item model", () => {
     expect(parsed.body).toBe("Write the sign up words.");
   });
 
+  it("keeps the note that a review is still owed out of the body", () => {
+    const parsed = parseWorkItemDescription(
+      "<!-- todero-type: Task -->\n<!-- todero-review: deferred -->\nWrite the sign up words.",
+    );
+    expect(parsed.type).toBe("Task");
+    expect(parsed.body).toBe("Write the sign up words.");
+  });
+
   it("keeps the manager's own notes out of the body", () => {
     const parsed = parseWorkItemDescription(
       [
