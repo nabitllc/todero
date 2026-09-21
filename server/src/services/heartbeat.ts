@@ -152,7 +152,7 @@ import {
   MISSING_PLAN_RETRY_WAKE_REASON,
   planMissingPlanRecovery,
 } from "../todero/missing-plan-recovery.js";
-import { applyEmptyTurnRecovery, descriptionWithEmptyTurnTries, EMPTY_TURN_RETRY_WAKE_REASON, emptyTurnInstructionForWake, planEmptyTurnRecovery } from "../todero/empty-turn-recovery.js";
+import { applyEmptyTurnRecovery, descriptionWithEmptyTurnTries, EMPTY_TURN_RETRY_WAKE_REASON, planEmptyTurnRecovery } from "../todero/empty-turn-recovery.js";
 import {
   recordConversationDispositionApplied,
   withConversationDispositionApplied,
@@ -162,7 +162,7 @@ import { loadAgentSkillText } from "../todero/skill-pack.js";
 import { syncAgentSkillFolder, writeAgentHandIn } from "../todero/agent-folder.js";
 import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
-import { applyJudgeReview, judgeFailRound } from "../todero/judge-apply.js";
+import { applyJudgeReview, instructionForConversationWake, judgeFailRound } from "../todero/judge-apply.js";
 import { installDeferredReviewsOnResume } from "../todero/deferred-review.js";
 import { isManagerMode, getManager } from "../todero/manager-mode.js";
 import { isWaitingForManagerSendback } from "../todero/manager-sendback.js";
@@ -15023,7 +15023,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       } else if (conversationWakeReason === MISSING_PLAN_RETRY_WAKE_REASON) {
         context.toderoTurnInstruction = buildMissingPlanRetryInstruction();
       } else {
-        context.toderoTurnInstruction = emptyTurnInstructionForWake(conversationWakeReason) ?? context.toderoTurnInstruction;
+        context.toderoTurnInstruction = instructionForConversationWake(conversationWakeReason) ?? context.toderoTurnInstruction;
       }
       // What this agent knows for this kind of turn. The rows are the
       // organization's own copies, so a person's edit takes effect on the

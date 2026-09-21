@@ -30,6 +30,8 @@
     { "id": "repro_empty_retry_is_not_parked", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/empty-retry-is-not-parked.gauntlet.ts", "timeout": 300 },
     { "id": "repro_last_task_judged_with_its_feature", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/last-task-judged-with-its-feature.gauntlet.ts", "timeout": 300 },
     { "id": "repro_parked_task_gets_its_way_back", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-task-gets-its-way-back.gauntlet.ts", "timeout": 300 },
+    { "id": "repro_text_only_worker_judged_on_content", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts", "timeout": 300 },
+    { "id": "repro_parked_refusal_gets_a_fresh_review", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-refusal-gets-a-fresh-review.gauntlet.ts", "timeout": 300 },
     { "id": "improvement_loop", "cmd": "python checks/improvement-loop.py", "timeout": 3900 }
   ]
 }

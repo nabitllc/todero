@@ -7,8 +7,8 @@
  * The request goes to the reviewer agent's own adapter config, which is a
  * copy of the worker's, so there is nothing extra to configure.
  */
-import { inArray } from "drizzle-orm";
-import { issues, type Db } from "@todero/db";
+import { eq, inArray } from "drizzle-orm";
+import { agents, issues, type Db } from "@todero/db";
 import { parseToderoPlanBlock, type CompanySkill, type ToderoPlan } from "@todero/shared";
 import { isChatCompletionsUrl, parseChatCompletionsText } from "../adapters/http/chat-completions.js";
 import { companySkillService } from "../services/company-skills.js";
@@ -34,6 +34,12 @@ import {
   checksAlreadyDone,
   type AcceptedFeatureWork,
 } from "./judge-feature-work.js";
+import {
+  applyTextOnlyWorkerAllowance,
+  isTextOnlyWorker,
+  TEXT_ONLY_WORKER_CHECK_NOTE,
+  TEXT_ONLY_WORKER_COMMENT_NOTE,
+} from "./judge-text-only-worker.js";
 import { getManager } from "./manager-mode.js";
 import { loadAgentSkillText } from "./skill-pack.js";
 import { collectTaskInputs, taskInputsDbDeps } from "./task-inputs.js";
@@ -169,6 +175,27 @@ export async function loadAcceptedFeatureWork(
   }
 }
 
+/**
+ * Can the worker that handed this in only write? Read off its own adapter, the
+ * same way the heartbeat decides to hand it the thread instead of tools.
+ * Anything that goes wrong reading it answers no, which leaves the review
+ * exactly as it was before this existed.
+ */
+export async function workerCanOnlyWrite(db: Db, agentId: string): Promise<boolean> {
+  if (!agentId.trim()) return false;
+  try {
+    const worker = await db
+      .select({ adapterType: agents.adapterType, adapterConfig: agents.adapterConfig })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    return isTextOnlyWorker(worker);
+  } catch {
+    return false;
+  }
+}
+
 export type JudgeReviewResult = {
   outcome: JudgeOutcome;
   verdict: JudgeVerdict | null;
@@ -281,6 +308,8 @@ export async function reviewConversationHandIn(
     acceptedWork,
   });
 
+  const workerIsTextOnly = await workerCanOnlyWrite(db, input.leadAgentId);
+
   const review = await requestJudgeVerdict({
     config,
     expectedChecks: checks.length,
@@ -299,27 +328,41 @@ export async function reviewConversationHandIn(
       checks,
       isLastTaskOfFeature: lastOfFeature,
       acceptedWork,
+      workerIsTextOnly,
     }),
     fetcher: input.fetcher,
   });
   if (!review) return { ...SKIPPED, judgeAgent, skipped: "no_verdict" };
 
-  const outcome = planJudgeOutcome({
+  // The guard. A worker that can only write, refused for not having produced a
+  // file or a layout, was refused for something it could never do; that answer
+  // is recorded as met on substance and the verdict worked out again.
+  const allowance = applyTextOnlyWorkerAllowance({
+    workerIsTextOnly,
     verdict: review.verdict,
+    note: review.note,
+    checks: review.checks,
+  });
+  const guarded = allowance.verdict !== review.verdict;
+
+  const outcome = planJudgeOutcome({
+    verdict: allowance.verdict,
     failRounds: readJudgeFailRounds(input.issue.description),
     autoAcceptWhenJudgePasses: input.autoAcceptWhenJudgePasses,
   });
   return {
     outcome,
-    verdict: review.verdict,
+    verdict: allowance.verdict,
     note: review.note,
     comment: buildJudgeComment({
-      verdict: review.verdict,
+      verdict: allowance.verdict,
       note: review.note,
       outcome,
       checks,
-      checkResults: review.checks,
+      checkResults: allowance.checks,
       checkAlreadyDone,
+      checkNotes: allowance.allowed.map((allowed) => (allowed ? TEXT_ONLY_WORKER_CHECK_NOTE : null)),
+      aboveTheNote: guarded ? TEXT_ONLY_WORKER_COMMENT_NOTE : null,
     }),
     judgeAgent,
     skipped: null,

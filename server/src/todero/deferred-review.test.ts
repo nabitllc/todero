@@ -235,13 +235,13 @@ describe("running the reviews a hold deferred", () => {
  * opened again in `companies-service.test.ts`, Play and Resume everything in
  * `todero-pause-routes.test.ts`. All three prove that the door calls
  * `reviewDeferredHandInsOnResume`. What is proved here is the other half: that
- * the thing installed behind that call really does both passes, and that a
- * pass that falls over does not take the other one with it.
+ * the thing installed behind that call really does all three passes, and that
+ * a pass that falls over does not take the others with it.
  *
  * The database is a stub that answers every read with nothing and remembers
- * how it was asked. The two passes read differently — the parked-task pass
- * joins the agents table to get the worker's name, and the deferred-review
- * pass does not — so which pass ran is read off the reads themselves.
+ * how it was asked. The passes read differently — the parked-task pass joins
+ * the agents table to get the worker's name, and the other two do not — so
+ * which pass ran is read off the reads themselves, in the order they come.
  */
 describe("what starting an organization again runs", () => {
   type Read = { joined: boolean };
@@ -275,15 +275,16 @@ describe("what starting an organization again runs", () => {
     vi.restoreAllMocks();
   });
 
-  it("does the reviews and then the parked tasks", async () => {
+  it("does the reviews, then the parked tasks, then the work that was sent back", async () => {
     const { reads, db } = stubDb(async () => []);
     installDeferredReviewsOnResume(db, wakeup);
 
     reviewDeferredHandInsOnResume("co-both");
 
-    await vi.waitFor(() => expect(reads).toHaveLength(2));
+    await vi.waitFor(() => expect(reads).toHaveLength(3));
     expect(reads[0]!.joined).toBe(false);
     expect(reads[1]!.joined).toBe(true);
+    expect(reads[2]!.joined).toBe(false);
   });
 
   it("still starts the parked tasks when the reviews fall over, and says what went wrong", async () => {
@@ -296,7 +297,7 @@ describe("what starting an organization again runs", () => {
 
     reviewDeferredHandInsOnResume("co-review-threw");
 
-    await vi.waitFor(() => expect(reads).toHaveLength(2));
+    await vi.waitFor(() => expect(reads).toHaveLength(3));
     expect(reads[1]!.joined).toBe(true);
     await vi.waitFor(() => expect(warn).toHaveBeenCalled());
     // The line the reviews' own catch writes, which is not the line the whole
