@@ -15062,32 +15062,34 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       }
       // The finished work of every task this one waited on, gathered fresh and
       // written on the task as its own document. A task sent back and redone
-      // is what the tasks after it read on their next turn. The conversation
-      // task itself has nothing before it — its wrap-up reads its children its
-      // own way — so only a task inside a plan gathers anything.
-      const taskInputs = issueContext?.parentId
-        ? await syncTaskInputs(
-            taskInputsDbDeps(db, {
-              companyId: agent.companyId,
-              agentId: agent.id,
-              onWriteFailed: (error: unknown) => {
-                // The task still gets the work; only the copy a person can
-                // open is missing this turn.
-                logger.warn(
-                  { err: error, agentId: agent.id, issueId: issueRef.id },
-                  "could not save the document that shows the work this task builds on",
-                );
-              },
-            }),
-            issueRef.id,
-          ).catch((error: unknown) => {
+      // is what the tasks after it read on their next turn.
+      //
+      // Every task asks, whether or not it belongs to a plan: a task someone
+      // made by hand can be told to wait on another one just as well, and it
+      // should get the same hand-off. The question answers itself for a task
+      // nothing waits on — the conversation task included — which is why that
+      // one needs no exception of its own.
+      const taskInputs = await syncTaskInputs(
+        taskInputsDbDeps(db, {
+          companyId: agent.companyId,
+          agentId: agent.id,
+          onWriteFailed: (error: unknown) => {
+            // The task still gets the work; only the copy a person can open is
+            // missing this turn.
             logger.warn(
               { err: error, agentId: agent.id, issueId: issueRef.id },
-              "could not gather the work this task builds on",
+              "could not save the document that shows the work this task builds on",
             );
-            return [] as TaskInput[];
-          })
-        : [];
+          },
+        }),
+        issueRef.id,
+      ).catch((error: unknown) => {
+        logger.warn(
+          { err: error, agentId: agent.id, issueId: issueRef.id },
+          "could not gather the work this task builds on",
+        );
+        return [] as TaskInput[];
+      });
       if (taskInputs.length > 0) {
         context.toderoInputs = taskInputs.map((input) => ({
           identifier: input.identifier,
