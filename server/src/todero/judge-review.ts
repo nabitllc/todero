@@ -335,13 +335,15 @@ export async function reviewConversationHandIn(
   if (!review) return { ...SKIPPED, judgeAgent, skipped: "no_verdict" };
 
   // The guard. A worker that can only write, refused for not having produced a
-  // file or a layout, was refused for something it could never do; that answer
-  // is recorded as met on substance and the verdict worked out again.
+  // file or a layout, was refused for something it could never do; the lines
+  // that asked for one are recorded as met on substance and the verdict worked
+  // out again. A line about the writing keeps the reviewer's own answer.
   const allowance = applyTextOnlyWorkerAllowance({
     workerIsTextOnly,
     verdict: review.verdict,
     note: review.note,
     checks: review.checks,
+    checkTexts: checks,
   });
   const guarded = allowance.verdict !== review.verdict;
 

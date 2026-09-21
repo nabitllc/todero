@@ -27,7 +27,12 @@ const WAVE_21_SECOND_REFUSAL =
   + " refined to read well, and that the hand-in is the refined guides, ready for publication."
   + " Since the refined guides are missing, the task has not been fully completed.";
 
-/** Wave 20, first refusal of "Prepare the guides for publishing". */
+/**
+ * Wave 20, first refusal of "Prepare the guides for publishing". It asks for
+ * two things at once: a layout, and drafts that have been reviewed and edited.
+ * The second is about the writing, so this refusal stands — the brief, not the
+ * guard, is what a refusal like this one is answered with.
+ */
 const WAVE_20_FIRST_REFUSAL =
   "The work handed in does not meet the done-when line because it lacks the final drafts that have"
   + " been reviewed and edited, and it is not formatted and ready for distribution. The guides are"
@@ -38,6 +43,31 @@ const WAVE_20_FIRST_REFUSAL =
 const CONTENT_REFUSAL =
   "The hand-in only contains information for one plant. To pass, it must include information for"
   + " three additional houseplants.";
+
+/**
+ * Refusals that name a packaging word and are still about the writing. Every
+ * one of these has to stand: they are what a reviewer sounds like when it is
+ * right, and setting one aside would accept work that is not finished.
+ */
+const CONTENT_REFUSALS_THAT_MUST_STAND = [
+  "The design of the experiment is not described.",
+  "The report does not print the totals for Q4.",
+  "The presentation of the argument is not clear and it never states the conclusion.",
+  "There are no visual examples of the three plants the task named.",
+  "The email template never mentions the discount.",
+  "It lacks a proper layout and any mention of humidity.",
+  // The complaint about the writing comes first here, and the one about
+  // packaging after it. Reading only what follows the first "is not" would
+  // miss it.
+  "It omits the fourth guide and is not formatted for publication.",
+  "The draft is short of detail and needs to be laid out on a page.",
+];
+
+/** Wave 21's two written-down checks. The second one is the one out of reach. */
+const WAVE_21_CHECKS = [
+  "All four drafts have been reviewed and refined to read well.",
+  "The hand-in is the refined guides, ready for publication.",
+];
 
 describe("which workers can only write", () => {
   it("is the wizard-hired local model, and nothing with tools", () => {
@@ -72,15 +102,24 @@ describe("the reviewer's brief", () => {
 });
 
 describe("a refusal that is only about packaging", () => {
-  it("recognizes both of the refusals that stopped wave 21 and wave 20", () => {
+  it("recognizes the refusal that stopped wave 21", () => {
     expect(refusalIsOnlyAboutPackaging(WAVE_21_FIRST_REFUSAL)).toBe(true);
-    expect(refusalIsOnlyAboutPackaging(WAVE_20_FIRST_REFUSAL)).toBe(true);
   });
 
   it("leaves a refusal that names something about the content itself", () => {
     expect(refusalIsOnlyAboutPackaging(CONTENT_REFUSAL)).toBe(false);
     // Wave 21's second refusal was right: the retry was a plan, not the guides.
     expect(refusalIsOnlyAboutPackaging(WAVE_21_SECOND_REFUSAL)).toBe(false);
+  });
+
+  it("leaves every refusal that names a packaging word and a content one", () => {
+    for (const refusal of CONTENT_REFUSALS_THAT_MUST_STAND) {
+      expect([refusal, refusalIsOnlyAboutPackaging(refusal)]).toEqual([refusal, false]);
+    }
+  });
+
+  it("leaves wave 20's refusal, which also asked for drafts that had been edited", () => {
+    expect(refusalIsOnlyAboutPackaging(WAVE_20_FIRST_REFUSAL)).toBe(false);
   });
 
   it("leaves a paragraph that complains about nothing at all", () => {
@@ -90,16 +129,56 @@ describe("a refusal that is only about packaging", () => {
 });
 
 describe("what the guard does to the verdict", () => {
-  it("records the refused check as met and turns wave 21's send-back into an accept", () => {
+  it("records the line that asked for a publication as met and turns wave 21's send-back into an accept", () => {
     const result = applyTextOnlyWorkerAllowance({
       workerIsTextOnly: true,
       verdict: "fail",
       note: WAVE_21_FIRST_REFUSAL,
       checks: [true, false],
+      checkTexts: WAVE_21_CHECKS,
     });
     expect(result.checks).toEqual([true, true]);
     expect(result.allowed).toEqual([false, true]);
     expect(result.verdict).toBe("pass");
+  });
+
+  it("leaves the lines that asked for writing, and the send-back with them", () => {
+    const result = applyTextOnlyWorkerAllowance({
+      workerIsTextOnly: true,
+      verdict: "fail",
+      note: WAVE_21_FIRST_REFUSAL,
+      checks: [false, false, true],
+      checkTexts: [
+        "The hand-in is the refined guides, ready for publication.",
+        "Every guide names the light the plant needs.",
+        "All four drafts are there.",
+      ],
+    });
+    expect(result.checks).toEqual([true, false, true]);
+    expect(result.allowed).toEqual([true, false, false]);
+    expect(result.verdict).toBe("fail");
+  });
+
+  it("changes nothing when no line asked for a file or a layout at all", () => {
+    const result = applyTextOnlyWorkerAllowance({
+      workerIsTextOnly: true,
+      verdict: "fail",
+      note: WAVE_21_FIRST_REFUSAL,
+      checks: [false],
+      checkTexts: ["Every guide names the light the plant needs."],
+    });
+    expect(result).toEqual({ verdict: "fail", checks: [false], allowed: [false] });
+  });
+
+  it("changes nothing when nobody said what the lines were", () => {
+    const result = applyTextOnlyWorkerAllowance({
+      workerIsTextOnly: true,
+      verdict: "fail",
+      note: WAVE_21_FIRST_REFUSAL,
+      checks: [true, false],
+      checkTexts: [],
+    });
+    expect(result).toEqual({ verdict: "fail", checks: [true, false], allowed: [false, false] });
   });
 
   it("leaves a content refusal exactly where it was", () => {
@@ -108,6 +187,7 @@ describe("what the guard does to the verdict", () => {
       verdict: "fail",
       note: CONTENT_REFUSAL,
       checks: [true, false],
+      checkTexts: WAVE_21_CHECKS,
     });
     expect(result.checks).toEqual([true, false]);
     expect(result.verdict).toBe("fail");
@@ -120,19 +200,32 @@ describe("what the guard does to the verdict", () => {
       verdict: "fail",
       note: WAVE_21_FIRST_REFUSAL,
       checks: [false],
+      checkTexts: WAVE_21_CHECKS.slice(1),
     });
     expect(result).toEqual({ verdict: "fail", checks: [false], allowed: [false] });
   });
 
-  it("passes a packaging-only refusal that never said which checks it made", () => {
+  it("passes a packaging-only refusal that never said which checks it made, when a line asked for one", () => {
     const result = applyTextOnlyWorkerAllowance({
       workerIsTextOnly: true,
       verdict: "fail",
-      note: WAVE_20_FIRST_REFUSAL,
+      note: WAVE_21_FIRST_REFUSAL,
       checks: null,
+      checkTexts: WAVE_21_CHECKS,
     });
     expect(result.verdict).toBe("pass");
     expect(result.checks).toBeNull();
+  });
+
+  it("leaves a refusal that never said which checks it made when no line asked for one", () => {
+    const result = applyTextOnlyWorkerAllowance({
+      workerIsTextOnly: true,
+      verdict: "fail",
+      note: WAVE_21_FIRST_REFUSAL,
+      checks: null,
+      checkTexts: ["Every guide names the light the plant needs."],
+    });
+    expect(result.verdict).toBe("fail");
   });
 
   it("never touches a pass", () => {
@@ -141,6 +234,7 @@ describe("what the guard does to the verdict", () => {
       verdict: "pass",
       note: "It reads well.",
       checks: [true],
+      checkTexts: WAVE_21_CHECKS.slice(0, 1),
     });
     expect(result).toEqual({ verdict: "pass", checks: [true], allowed: [false] });
   });
@@ -152,7 +246,7 @@ describe("what the person reads afterwards", () => {
       verdict: "pass",
       note: WAVE_21_FIRST_REFUSAL,
       outcome: { kind: "accept" },
-      checks: ["All four drafts have been reviewed and refined to read well.", "The hand-in is the refined guides, ready for publication."],
+      checks: WAVE_21_CHECKS,
       checkResults: [true, true],
       checkNotes: [null, TEXT_ONLY_WORKER_CHECK_NOTE],
     });

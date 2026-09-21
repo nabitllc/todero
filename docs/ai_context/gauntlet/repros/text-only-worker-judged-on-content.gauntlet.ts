@@ -82,6 +82,21 @@ const CHECKS = [
   "The hand-in is The refined guides, ready for publication.",
 ];
 
+/**
+ * Refusals that name a packaging word and are still about the writing. The
+ * guard has to leave every one of them alone: they are what a reviewer sounds
+ * like when it is right, and setting one aside would accept unfinished work in
+ * the person's name.
+ */
+const REFUSALS_ABOUT_THE_WRITING = [
+  "The design of the experiment is not described.",
+  "The report does not print the totals for Q4.",
+  "The presentation of the argument is not clear and it never states the conclusion.",
+  "There are no visual examples of the three plants the task named.",
+  "The email template never mentions the discount.",
+  "It lacks a proper layout and any mention of humidity.",
+];
+
 const workerOfWave21 = {
   adapterType: "http",
   adapterConfig: { url: "http://127.0.0.1:11434/v1/chat/completions", model: "qwen2.5-coder:14b" },
@@ -112,10 +127,8 @@ describe("wave 6: the worker's nature, not the reviewer's wording", () => {
 });
 
 describe("wave 6: a refusal about packaging is not a reason to send writing back", () => {
-  it("reads all three packaging refusals that stopped waves 20 and 21", () => {
+  it("reads the refusal that stopped wave 21", () => {
     expect(refusalIsOnlyAboutPackaging(WAVE_21_FIRST_REFUSAL)).toBe(true);
-    expect(refusalIsOnlyAboutPackaging(WAVE_20_FIRST_REFUSAL)).toBe(true);
-    expect(refusalIsOnlyAboutPackaging(WAVE_20_SECOND_REFUSAL)).toBe(true);
   });
 
   it("leaves a refusal that names the content itself", () => {
@@ -124,12 +137,25 @@ describe("wave 6: a refusal about packaging is not a reason to send writing back
     expect(refusalIsOnlyAboutPackaging(WAVE_21_SECOND_REFUSAL)).toBe(false);
   });
 
+  it("leaves every refusal that names a packaging word and something written too", () => {
+    for (const refusal of REFUSALS_ABOUT_THE_WRITING) {
+      expect([refusal, refusalIsOnlyAboutPackaging(refusal)]).toEqual([refusal, false]);
+    }
+    // Wave 20's own two refusals are of that kind: each asks for a layout and,
+    // in the same breath, for drafts that have been reviewed and edited. The
+    // guard leaves them standing, and it is the reviewer's brief — the first
+    // half of this wave — that answers wave 20.
+    expect(refusalIsOnlyAboutPackaging(WAVE_20_FIRST_REFUSAL)).toBe(false);
+    expect(refusalIsOnlyAboutPackaging(WAVE_20_SECOND_REFUSAL)).toBe(false);
+  });
+
   it("turns wave 21's send-back into an accept, and says on the line why", () => {
     const allowance = applyTextOnlyWorkerAllowance({
       workerIsTextOnly: true,
       verdict: "fail",
       note: WAVE_21_FIRST_REFUSAL,
       checks: [true, false],
+      checkTexts: CHECKS,
     });
     expect(allowance.verdict).toBe("pass");
     expect(allowance.checks).toEqual([true, true]);
@@ -159,6 +185,7 @@ describe("wave 6: a refusal about packaging is not a reason to send writing back
       verdict: "fail",
       note: A_CONTENT_REFUSAL,
       checks: [false],
+      checkTexts: [CHECKS[1]!],
     });
     expect(allowance.verdict).toBe("fail");
     expect(planJudgeOutcome({
@@ -166,6 +193,21 @@ describe("wave 6: a refusal about packaging is not a reason to send writing back
       failRounds: 0,
       autoAcceptWhenJudgePasses: true,
     })).toEqual({ kind: "revise", round: 1 });
+  });
+
+  it("keeps a send-back when the line the reviewer refused was about the writing", () => {
+    // The same packaging-only refusal, against a task whose unmet line asks for
+    // content. Nothing here is out of the worker's reach, so nothing is set
+    // aside and the work goes back.
+    const allowance = applyTextOnlyWorkerAllowance({
+      workerIsTextOnly: true,
+      verdict: "fail",
+      note: WAVE_21_FIRST_REFUSAL,
+      checks: [false, false],
+      checkTexts: ["Every guide names the light the plant needs.", CHECKS[1]!],
+    });
+    expect(allowance.checks).toEqual([false, true]);
+    expect(allowance.verdict).toBe("fail");
   });
 });
 

@@ -190,7 +190,13 @@ export function planConversationOutcome(input: {
   closeAllowed?: boolean;
 }): ConversationOutcomePlan | null {
   if (input.issue.status !== "in_progress") return null;
-  const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false);
+  // The mark of a fresh look comes off here as well as on close: a task that
+  // hands work in again is a new hand-in, and if a reviewer refuses that one
+  // too the next start owes it a look of its own.
+  const base = descriptionWithRefreshedReviewMarker(
+    descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false),
+    false,
+  );
   const isConversation = !input.issue.parentId;
   if (input.disposition === "done" && isConversation && input.closeAllowed && !input.proposedPlan) {
     return { outcome: "done", status: "done", description: descriptionWithWaitingMarker(base, false) };

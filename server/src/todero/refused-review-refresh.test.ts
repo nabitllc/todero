@@ -3,7 +3,13 @@
 // The rule on its own, with the database stood in for. The database half is in
 // refused-review-refresh-db.test.ts next door.
 import { describe, expect, it } from "vitest";
-import { descriptionWithReviewMarker, descriptionWithRefreshedReviewMarker } from "./conversation-outcome.js";
+import {
+  descriptionWithReviewMarker,
+  descriptionWithRefreshedReviewMarker,
+  descriptionWithoutConversationMarkers,
+  hasRefreshedReviewMarker,
+  planConversationOutcome,
+} from "./conversation-outcome.js";
 import { descriptionWithWaitingMarker } from "./conversation-thread.js";
 import {
   findRefusedHandInsToRefresh,
@@ -93,5 +99,30 @@ describe("which parked refusals get one fresh look", () => {
     expect(found(task({ assigneeAgentId: null }))).toEqual([]);
     expect(found(task({ parentId: null }))).toEqual([]);
     expect(found(task({ status: "todo" }))).toEqual([]);
+  });
+});
+
+describe("when the mark of a fresh look comes off", () => {
+  const refreshedAndParked = () => descriptionWithRefreshedReviewMarker(parkedText(), true);
+
+  it("comes off when the task hands work in again, so a later refusal gets its own fresh look", () => {
+    const plan = planConversationOutcome({
+      issue: { status: "in_progress", description: refreshedAndParked(), parentId: "parent-1" },
+      disposition: "done",
+    });
+    expect(plan?.outcome).toBe("review");
+    expect(hasRefreshedReviewMarker(plan?.description ?? "")).toBe(false);
+  });
+
+  it("comes off when the task hands the turn back without finishing", () => {
+    const plan = planConversationOutcome({
+      issue: { status: "in_progress", description: refreshedAndParked(), parentId: "parent-1" },
+      disposition: "waiting",
+    });
+    expect(hasRefreshedReviewMarker(plan?.description ?? "")).toBe(false);
+  });
+
+  it("comes off when the task closes", () => {
+    expect(hasRefreshedReviewMarker(descriptionWithoutConversationMarkers(refreshedAndParked()))).toBe(false);
   });
 });
