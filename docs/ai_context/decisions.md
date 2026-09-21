@@ -750,3 +750,44 @@ instead of guessing.
 - **Source:** `server/src/todero/parked-on-person.ts`, `server/src/todero/inputs-arrived.ts`,
   `server/src/services/recovery/service.ts`,
   `docs/ai_context/gauntlet/repros/parked-task-stays-parked.gauntlet.ts`.
+
+### Note, 2026-09-21 — the root task was never the problem, and the dead half of this is gone
+
+A hard read of this branch, each point measured against the real module or the live API,
+found that part of what ADR-022 describes was never wired up, and that one of the numbers
+it leans on was the check's own arithmetic. Correcting it here rather than above, as this
+log requires.
+
+**The root task was never at fault.** Wave 18's conversation task was recorded as a
+hand-back that asked nobody for anything. It was not one: the person had woken it, and the
+reply it gave carried the plan. The count was the improvement-loop check's mistake — the
+check read any blocked task with nothing unresolved as a task standing in front of a
+person — and nothing in Todero needed changing for it. The helper written to recognise
+"a reply that asks for nothing" was never called by anything; the check has always used a
+rule of its own. That helper and its tests are deleted, along with the sentence in
+`server/src/todero/inputs-arrived.ts` that claimed the check used it. The only change this
+point calls for is in the check itself.
+
+**What the check counts as standing in front of a person.** The check now reads the same
+five notes the server reads, named in its Python with
+`server/src/todero/parked-on-person.ts` given as the source of truth, and nothing else. A
+blocked task with nothing unresolved and no note on it is no longer counted: that is a task
+whose earlier work has just finished, which is the very task the wake backstop is there to
+bring back. Measured over the three archived organizations: on `f818e743` the count of
+hand-backs that asked nothing goes from 1 to 0, and the one row the old rule and the new
+rule disagree on is the task whose last turn was a hand-in of four finished guides. On
+`67d6f192` and `bddd6a6d` nothing moves — 0 before and 0 after, with the one real
+hand-back that does ask still counted in each.
+
+**The rule that leaves a task's own stale requests out of its thread is read a sentence at
+a time.** It used to stop at the first claim of work done anywhere in the turn, which let
+"I have drafted all four. Could you please provide the four draft guides?" stay in the
+thread — the exact loop this closes, with a preamble in front of it. Now each sentence is
+judged on its own: a sentence that asks for the work makes the turn a request whatever the
+rest of it claims, a sentence that hands something over is not a request, and saying it
+cannot go on counts only when nothing in the turn delivers. What is asked for, waited for
+or needed also has to be the work itself, so a request to have something clarified, and
+waiting for another person to send something, both stay. Re-measured over the 101 archived
+agent turns: 41 of the 42 turns on `ZZGAAA-5` are still left out and the one that survives
+is still the turn that assumed the drafts already existed; none of wave 18's 21 turns is
+left out, unchanged.

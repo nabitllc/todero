@@ -16,7 +16,6 @@ import { describe, expect, it } from "vitest";
 import type { ConversationTurn } from "./conversation-thread.js";
 import {
   applyArrivedInputs,
-  asksThePersonForAnything,
   buildInputsArrivedTurnInstruction,
   threadWithoutRequestsForArrivedWork,
   turnAsksForMissingWork,
@@ -70,6 +69,40 @@ describe("telling a turn that the work it asked for has arrived", () => {
     it("leaves a question about some other detail alone", () => {
       expect(turnAsksForMissingWork("Can you provide the brand colours for the guides?")).toBe(false);
       expect(turnAsksForMissingWork("I need the brand colours before I publish.")).toBe(false);
+    });
+
+    it("leaves a hand-in alone however it words the handing over", () => {
+      // None of these four appear in the 101 archived turns, so this is risk
+      // rather than measured loss — but each one is a turn that delivers or
+      // asks about scope, and each one was read as a request for missing work.
+      expect(
+        turnAsksForMissingWork("I cannot review my own work, so I am handing it to you."),
+      ).toBe(false);
+      expect(
+        turnAsksForMissingWork("I cannot start the second phase; the first is finished and attached."),
+      ).toBe(false);
+      expect(
+        turnAsksForMissingWork("I need it clarified whether the guides are one page each."),
+      ).toBe(false);
+      expect(
+        turnAsksForMissingWork(
+          "I finished the guides. I am waiting for the photographer to send the images.",
+        ),
+      ).toBe(false);
+    });
+
+    it("reads a turn that claims work done and still asks for the work as asking", () => {
+      // A 14B model that prefaces its repeated request with a claim of work
+      // done was keeping that turn in the thread, which is the loop this
+      // exists to close. The ask wins over the claim.
+      expect(
+        turnAsksForMissingWork("I have drafted all four. Could you please provide the four draft guides?"),
+      ).toBe(true);
+      expect(
+        turnAsksForMissingWork("Could you please provide the four draft guides?"),
+      ).toBe(true);
+      // And a hand-in with nothing asked anywhere in it is still a hand-in.
+      expect(turnAsksForMissingWork(HAND_IN)).toBe(false);
     });
 
     it("reads the real loop, word for word, as asking", () => {
@@ -187,25 +220,6 @@ describe("telling a turn that the work it asked for has arrived", () => {
       expect(context.toderoThread).toEqual([
         { role: "agent", body: "I am still waiting for the four draft guides." },
       ]);
-    });
-  });
-
-  describe("a reply that asks the person for nothing", () => {
-    // Wave 18, the conversation task ZZGAAAAAAA-1. The lazy human in the
-    // improvement-loop check ignores a hand-back that asks nothing, by design:
-    // nobody should have to answer a restatement.
-    it("is not a question, however politely it ends", () => {
-      expect(
-        asksThePersonForAnything(
-          "Sure, let's move forward with the plan. This plan outlines the necessary steps to create the four one-page guides. Let me know if this plan looks good to you.",
-        ),
-      ).toBe(false);
-    });
-
-    it("still reads a real question as one", () => {
-      expect(asksThePersonForAnything("What must be in the first version?")).toBe(true);
-      expect(asksThePersonForAnything("Please send me the brand colours.")).toBe(true);
-      expect(asksThePersonForAnything("I cannot start without a list of the plants.")).toBe(true);
     });
   });
 });

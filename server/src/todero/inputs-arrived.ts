@@ -46,26 +46,31 @@ export type ArrivedInput = {
  * back wakes with the earlier work in hand, and if its own hand-in went missing
  * it would simply write that work a second time.
  *
- * Three rules follow from that, and each is why a line below reads as it does:
+ * Four rules follow from that, and each is why a line below reads as it does:
  *
- *  - a turn that puts something on the table is never a request, whatever else
- *    it says. "I cannot finish the fourth guide without the plant list. Here
+ *  - the turn is read a sentence at a time. A sentence that hands something
+ *    over is not a request, and it does not speak for the rest of the turn.
+ *  - a turn that both claims work done and asks for the work it is missing is
+ *    a request: the ask wins. "I have drafted all four. Could you please
+ *    provide the four draft guides?" is the loop this exists to close.
+ *  - saying it cannot go on is only a request when nothing in the turn
+ *    delivers. "I cannot finish the fourth guide without the plant list. Here
  *    are the three I have." is a delivery with a caveat.
- *  - waiting for a review, an answer or a go-ahead is not waiting for work.
- *    "Handing this in. I will wait for your review." is how a hand-in ends.
- *  - what is asked for has to be the work itself — the drafts, the guides, the
- *    documents, or a plain "them". A question about some other detail ("can you
- *    provide the brand colours?") is a question, and questions stay.
+ *  - what is asked for, waited for or needed has to be the work itself — the
+ *    drafts, the guides, the documents, the notes, or a plain "them". A
+ *    question about some other detail ("can you provide the brand colours?"),
+ *    a request to have something clarified, and waiting for a review or for
+ *    another person are all left in the thread.
  */
 
-/** The turn is handing something over. Nothing in it is a request for work. */
+/** The turn is handing something over. This sentence is not a request for work. */
 const HANDS_WORK_IN =
-  /\b(?:here\s+(?:is|are)|here's|handing\s+(?:this|it|these)\s+in|handed\s+in\s+(?:the|my)|below\s+(?:is|are)|attached\s+(?:is|are|you)|i(?:\s+have|'ve)\s+(?:written|drafted|attached|completed|finished|prepared|put\s+together)|(?:this|these|that)\s+(?:is|are)\s+the\s+(?:finished|completed|final|revised))\b/i;
+  /\b(?:here\s+(?:is|are)|here's|handing\s+(?:this|it|these|them)\s+(?:in|over|to\s+you)|handed\s+in\s+(?:the|my)|below\s+(?:is|are)|attached|i(?:\s+have|'ve)?\s+(?:written|drafted|attached|completed|finished|prepared|put\s+together)|(?:this|these|that)\s+(?:is|are)\s+the\s+(?:finished|completed|final|revised))\b/i;
 
 /** The work itself, named the way a task names it while it is missing it. */
 const THE_MISSING_WORK =
   "(?:the\\s+|those\\s+|these\\s+|your\\s+|a\\s+copy\\s+of\\s+the\\s+)?(?:\\w+\\s+){0,2}" +
-  "(?:drafts?|guides?|documents?|files?|deliverables?|outputs?|contents?|materials?|write-?ups?|work|results?|them|those|these|it)\\b";
+  "(?:drafts?|guides?|documents?|files?|deliverables?|outputs?|contents?|materials?|notes?|lists?|write-?ups?|work|results?|them|those|these)\\b";
 
 const CANNOT_GO_ON =
   /\b(cannot|can'?t|unable to)\b[^.?!]{0,40}\b(review|complete|proceed|continue|start|begin|finish|go ahead|move forward)\b/i;
@@ -76,48 +81,39 @@ const ASKS_FOR_IT = new RegExp(
 );
 
 /**
- * "Waiting for the drafts" counts; "waiting for your review" does not. Every
- * place the turn says it is waiting is read, so one mention of a review does
- * not excuse a turn that is still asking for the work somewhere else.
+ * "Waiting for the drafts" counts. Waiting for a review, for a go-ahead, or
+ * for another person to send something does not: what is waited for has to be
+ * the work itself.
  */
-const EVERY_WAIT = /\b(?:still\s+)?wait(?:ing|s)?\s+(?:for|on)\s+([^.?!\n]{0,60})/gi;
-const WAITING_ON_A_PERSON =
-  /^(?:your|the|a|an|his|her|their|my)?\s*(?:reviews?|approvals?|feedback|repl(?:y|ies)|responses?|answers?|go[- ]?ahead|sign[- ]?off|confirmation|comments?|verdict|decision|word|you\b)/i;
+const WAITS_FOR_THE_WORK = new RegExp(
+  "\\b(?:still\\s+)?wait(?:ing|s|ed)?\\s+(?:for|on)\\s+" + THE_MISSING_WORK,
+  "i",
+);
 
-function waitsForTheWork(said: string): boolean {
-  for (const match of said.matchAll(EVERY_WAIT)) {
-    if (!WAITING_ON_A_PERSON.test(match[1] ?? "")) return true;
-  }
-  return false;
+/** The turn, cut into sentences, so one claim cannot speak for the rest of it. */
+function sentencesOf(said: string): string[] {
+  return said
+    .split(/(?<=[.?!])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0);
 }
 
 /**
  * Does this turn ask for work it is missing? A hand-in, a question about
- * scope and a status report all answer no.
+ * scope and a status report all answer no. A hand-in that also asks for the
+ * work answers yes: the ask wins over the claim of work done.
  */
 export function turnAsksForMissingWork(body: string): boolean {
-  const said = body ?? "";
-  if (HANDS_WORK_IN.test(said)) return false;
-  return waitsForTheWork(said) || CANNOT_GO_ON.test(said) || NEEDS_IT.test(said) || ASKS_FOR_IT.test(said);
-}
-
-const A_QUESTION = /\?/;
-const A_POLITE_REQUEST =
-  /\b(please|could you|can you|would you)\b[^.?!]{0,60}\b(provide|send|share|give|supply|attach|paste|tell|confirm)\b/i;
-const A_STATED_NEED = /\b(i|we)\s+(need|require|cannot|can'?t)\b/i;
-
-/**
- * Does this turn ask the person for anything at all? Wider than the one above:
- * any question, any request, anything the turn says it cannot do without.
- *
- * A reply that answers no is a restatement. Nobody should have to answer one,
- * which is why the improvement-loop check's stand-in person ignores them, and
- * why a turn like wave 18's "Sure, let's move forward with the plan … Let me
- * know if this plan looks good to you" leaves the person nothing to do.
- */
-export function asksThePersonForAnything(body: string): boolean {
-  const said = body ?? "";
-  return A_QUESTION.test(said) || A_POLITE_REQUEST.test(said) || A_STATED_NEED.test(said) || turnAsksForMissingWork(said);
+  const sentences = sentencesOf(body ?? "");
+  const delivers = sentences.some((sentence) => HANDS_WORK_IN.test(sentence));
+  for (const sentence of sentences) {
+    if (HANDS_WORK_IN.test(sentence)) continue;
+    if (WAITS_FOR_THE_WORK.test(sentence)) return true;
+    if (NEEDS_IT.test(sentence)) return true;
+    if (ASKS_FOR_IT.test(sentence)) return true;
+    if (!delivers && CANNOT_GO_ON.test(sentence)) return true;
+  }
+  return false;
 }
 
 /**

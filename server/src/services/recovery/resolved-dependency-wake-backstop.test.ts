@@ -16,7 +16,11 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "../../__tests__/helpers/embedded-postgres.js";
 import { descriptionWithWaitingMarker } from "../../todero/conversation-thread.js";
-import { descriptionWithReviewMarker } from "../../todero/conversation-outcome.js";
+import {
+  descriptionWithDeferredReviewMarker,
+  descriptionWithReviewMarker,
+} from "../../todero/conversation-outcome.js";
+import { descriptionWithWaitingForManagerMarker } from "../../todero/manager-sendback.js";
 import { recoveryService } from "./service.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -138,22 +142,35 @@ describeEmbeddedPostgres("the backstop that wakes a task whose earlier work is f
     expect(result.healed).toBe(1);
   }, 30_000);
 
-  it("leaves a task Todero handed back to the person alone", async () => {
-    const { companyId } = await seed(
-      descriptionWithWaitingMarker("Review the four drafts and say what to fix.", true),
-    );
-    const { woken, result } = await runBackstop(companyId);
-    expect(woken).toEqual([]);
-    expect(result.healed).toBe(0);
-    expect(result.parkedOnPersonSkipped).toBe(1);
-  }, 30_000);
+  // One case per way a task can be parked, each written on its own. A single
+  // case carrying two of these notes at once would still pass if only one of
+  // them were honoured, which is exactly the hole this is here to close.
+  const PARKED_ON_A_PERSON: Array<{ what: string; note: (description: string) => string }> = [
+    {
+      what: "a task Todero handed back to the person",
+      note: (description) => descriptionWithWaitingMarker(description, true),
+    },
+    {
+      what: "a hand-in that is waiting to be reviewed",
+      note: (description) => descriptionWithReviewMarker(description, true),
+    },
+    {
+      what: "a hand-in whose review was put off while the organization was on hold",
+      note: (description) => descriptionWithDeferredReviewMarker(description, true),
+    },
+    {
+      what: "a task the manager is holding while it rewrites the brief",
+      note: (description) => descriptionWithWaitingForManagerMarker(description, "worker-agent"),
+    },
+  ];
 
-  it("leaves a hand-in that is waiting to be reviewed alone", async () => {
-    const { companyId } = await seed(
-      descriptionWithReviewMarker(descriptionWithWaitingMarker("Review the four drafts.", true), true),
-    );
-    const { woken, result } = await runBackstop(companyId);
-    expect(woken).toEqual([]);
-    expect(result.parkedOnPersonSkipped).toBe(1);
-  }, 30_000);
+  for (const parked of PARKED_ON_A_PERSON) {
+    it(`leaves ${parked.what} alone`, async () => {
+      const { companyId } = await seed(parked.note("Review the four drafts and say what to fix."));
+      const { woken, result } = await runBackstop(companyId);
+      expect(woken).toEqual([]);
+      expect(result.healed).toBe(0);
+      expect(result.parkedOnPersonSkipped).toBe(1);
+    }, 30_000);
+  }
 });
