@@ -2,11 +2,16 @@
 // was waiting for has arrived.
 //
 // Wave 3 of the improvement loop. Wave 2 (PR #118) started handing a task the
-// finished work of the tasks before it. In wave 17 ZZGAAA-5 was handed the four
-// drafts and still said "I am still waiting for the four draft guides" thirty
-// times; the same happened twenty-one times on ZZGAAAAA-3 in wave 18. Its own
-// thread carried thirteen earlier turns saying exactly that, and a small local
+// finished work of the tasks before it. Wave 16 and its recovery are the case
+// this closes: ZZGAAA-5 spent forty-one of its forty-two turns asking for the
+// four drafts — "Could you please provide the four draft guides", then "I am
+// still waiting for the four draft guides" — with the drafts in hand. Its own
+// thread carried a dozen earlier turns saying exactly that, and a small local
 // model copies what it sees itself having said.
+//
+// Wave 18's twenty-one repeats on ZZGAAAAA-3 are NOT this case: that task
+// repeated a clarifying question, and none of those turns asks for missing
+// work. A repeated question is a different fault, fixed somewhere else.
 import { describe, expect, it } from "vitest";
 import type { ConversationTurn } from "./conversation-thread.js";
 import {
@@ -43,6 +48,46 @@ describe("telling a turn that the work it asked for has arrived", () => {
       expect(turnAsksForMissingWork(HAND_IN)).toBe(false);
       expect(turnAsksForMissingWork("What must be in the first version, and what can wait?")).toBe(false);
       expect(turnAsksForMissingWork("Two of the four guides are written; the rest follow today.")).toBe(false);
+    });
+
+    it("never reads a turn that hands work in as asking, whatever else it says", () => {
+      // A task sent back by the reviewer wakes with the earlier work in hand.
+      // If its own hand-in were dropped it would write that work again, which
+      // is the waste this whole thing exists to stop.
+      expect(turnAsksForMissingWork("Handing this in. I will wait for your review.")).toBe(false);
+      expect(
+        turnAsksForMissingWork(
+          "I cannot complete the fourth guide without the plant list. Here are the three I have.",
+        ),
+      ).toBe(false);
+      expect(
+        turnAsksForMissingWork(
+          "Here is the finished guide. I wrote it without the photos, which were not needed.",
+        ),
+      ).toBe(false);
+    });
+
+    it("leaves a question about some other detail alone", () => {
+      expect(turnAsksForMissingWork("Can you provide the brand colours for the guides?")).toBe(false);
+      expect(turnAsksForMissingWork("I need the brand colours before I publish.")).toBe(false);
+    });
+
+    it("reads the real loop, word for word, as asking", () => {
+      // The turns wave 16 and its recovery repeated forty-one times on ZZGAAA-5.
+      expect(
+        turnAsksForMissingWork("Could you please provide the four draft guides for me to review and edit?"),
+      ).toBe(true);
+      expect(
+        turnAsksForMissingWork(
+          "I am still waiting for the four draft guides to proceed with the review and editing.",
+        ),
+      ).toBe(true);
+      expect(
+        turnAsksForMissingWork("I need the four draft guides to begin the review and editing process."),
+      ).toBe(true);
+      expect(
+        turnAsksForMissingWork("I cannot complete the task without the four draft guides to review and edit."),
+      ).toBe(true);
     });
   });
 

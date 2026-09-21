@@ -715,9 +715,13 @@ instead of guessing.
      state, and this one carries an event reason, and every woken turn left a comment behind,
      which the throttle counts as progress.
   2. A task handed the finished work of the tasks it waited on (ADR from
-     `doc/plans/2026-09-20-dependency-handoff.md`) went on asking for it. Its own thread carried
-     a dozen earlier turns saying "I am still waiting for the four draft guides", and a 14B model
-     reads its own last turns as the pattern to follow.
+     `doc/plans/2026-09-20-dependency-handoff.md`) went on asking for it. Wave 16 and its
+     recovery are the measured case: ZZGAAA-5 asked for the four drafts in 41 of its 42 turns,
+     with the drafts in hand. Its own thread carried a dozen earlier turns saying "Could you
+     please provide the four draft guides" and "I am still waiting for the four draft guides",
+     and a 14B model reads its own last turns as the pattern to follow. Wave 18's 21 repeats on
+     ZZGAAAAA-3 are a different fault that looks the same from a distance: that task repeated a
+     clarifying question, not a request for missing work, and this decision does not address it.
   3. Wave 18's conversation task was read as a hand-back that asked nothing. It was not: it had
      proposed a plan, the approval cleared its notes and blocked it on its own children, and it
      was waiting on three tasks. The improvement-loop check treated any `blocked` row as a task
@@ -731,7 +735,9 @@ instead of guessing.
   2. When the work a task waited on is in hand, its own earlier turns asking for that work are
      left out of the thread it reads, and it is told in one sentence that the work is above and
      that this turn is for doing the task. What the person and the reviewer said is never
-     dropped; the wrap-up and manager instructions still win. Both rules are pure and live in
+     dropped, and neither is a turn that hands work in — a task the reviewer sends back wakes
+     with the earlier work in hand, and losing its own hand-in would make it write that work
+     twice. The wrap-up and manager instructions still win. Both rules are pure and live in
      `server/src/todero/inputs-arrived.ts`; the heartbeat makes one call.
 - **Consequences:**
   - A task Todero parks on a person is now woken only by an answer — a comment, an approval, a

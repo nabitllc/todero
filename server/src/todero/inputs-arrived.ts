@@ -4,11 +4,18 @@
  *
  * Wave 2 of the improvement loop (PR #118) started handing a task the finished
  * work of the tasks it waited on. It arrived, and the task went on asking for
- * it anyway: in wave 17 ZZGAAA-5 was given the four drafts and said "I am still
- * waiting for the four draft guides" thirty times; in wave 18 ZZGAAAAA-3 did
- * the same twenty-one times. The reason was in its own thread. It had already
- * said that thirteen times before the work arrived, and a small local model
- * reads its own last turns as the pattern to follow.
+ * it anyway. Wave 16 and its recovery are the case: ZZGAAA-5 asked for the four
+ * drafts in forty-one of its forty-two turns — "Could you please provide the
+ * four draft guides", then "I am still waiting for the four draft guides" —
+ * long after they were in hand. The reason was in its own thread. It had said
+ * that a dozen times before the work arrived, and a small local model reads its
+ * own last turns as the pattern to follow.
+ *
+ * Wave 18's twenty-one repeats on ZZGAAAAA-3 look the same from a distance but
+ * are not this: that task repeated a clarifying question ("Do you want the
+ * notes to include both light requirements and watering frequency?"), and none
+ * of its twenty-one turns asks for missing work. A repeated question is a
+ * different fault and is not fixed here.
  *
  * So when the work is there:
  *
@@ -33,17 +40,56 @@ export type ArrivedInput = {
 
 /**
  * The shapes a turn takes when it is asking for work it has not got. Narrow on
- * purpose: everything that is not clearly a request for missing material stays
- * in the thread, because dropping a hand-in or a real question would cost more
- * than leaving one stale sentence in.
+ * purpose, and narrowed again after review: anything that is not plainly a
+ * request for the missing work stays in the thread, because losing a hand-in
+ * costs far more than leaving one stale sentence in. A task the reviewer sends
+ * back wakes with the earlier work in hand, and if its own hand-in went missing
+ * it would simply write that work a second time.
+ *
+ * Three rules follow from that, and each is why a line below reads as it does:
+ *
+ *  - a turn that puts something on the table is never a request, whatever else
+ *    it says. "I cannot finish the fourth guide without the plant list. Here
+ *    are the three I have." is a delivery with a caveat.
+ *  - waiting for a review, an answer or a go-ahead is not waiting for work.
+ *    "Handing this in. I will wait for your review." is how a hand-in ends.
+ *  - what is asked for has to be the work itself — the drafts, the guides, the
+ *    documents, or a plain "them". A question about some other detail ("can you
+ *    provide the brand colours?") is a question, and questions stay.
  */
-const STILL_WAITING = /\b(still\s+)?wait(ing|s)?\s+(for|on)\b/i;
+
+/** The turn is handing something over. Nothing in it is a request for work. */
+const HANDS_WORK_IN =
+  /\b(?:here\s+(?:is|are)|here's|handing\s+(?:this|it|these)\s+in|handed\s+in\s+(?:the|my)|below\s+(?:is|are)|attached\s+(?:is|are|you)|i(?:\s+have|'ve)\s+(?:written|drafted|attached|completed|finished|prepared|put\s+together)|(?:this|these|that)\s+(?:is|are)\s+the\s+(?:finished|completed|final|revised))\b/i;
+
+/** The work itself, named the way a task names it while it is missing it. */
+const THE_MISSING_WORK =
+  "(?:the\\s+|those\\s+|these\\s+|your\\s+|a\\s+copy\\s+of\\s+the\\s+)?(?:\\w+\\s+){0,2}" +
+  "(?:drafts?|guides?|documents?|files?|deliverables?|outputs?|contents?|materials?|write-?ups?|work|results?|them|those|these|it)\\b";
+
 const CANNOT_GO_ON =
   /\b(cannot|can'?t|unable to)\b[^.?!]{0,40}\b(review|complete|proceed|continue|start|begin|finish|go ahead|move forward)\b/i;
-const NEEDS_IT = /\b(i|we)\s+(need|require)\s+(the|those|these|them|it|a copy)\b/i;
-const ASKS_FOR_IT =
-  /\b(provide|send|share|supply|attach|paste|upload|forward)\s+(me\s+)?(the|those|these|them|it|a copy)\b/i;
-const WITHOUT_IT = /\bwithout\s+(the|those|these|them|it)\b/i;
+const NEEDS_IT = new RegExp("\\b(?:i|we)\\s+(?:still\\s+)?(?:need|require)\\s+" + THE_MISSING_WORK, "i");
+const ASKS_FOR_IT = new RegExp(
+  "\\b(?:provide|send|share|supply|attach|paste|upload|forward)\\s+(?:me\\s+)?" + THE_MISSING_WORK,
+  "i",
+);
+
+/**
+ * "Waiting for the drafts" counts; "waiting for your review" does not. Every
+ * place the turn says it is waiting is read, so one mention of a review does
+ * not excuse a turn that is still asking for the work somewhere else.
+ */
+const EVERY_WAIT = /\b(?:still\s+)?wait(?:ing|s)?\s+(?:for|on)\s+([^.?!\n]{0,60})/gi;
+const WAITING_ON_A_PERSON =
+  /^(?:your|the|a|an|his|her|their|my)?\s*(?:reviews?|approvals?|feedback|repl(?:y|ies)|responses?|answers?|go[- ]?ahead|sign[- ]?off|confirmation|comments?|verdict|decision|word|you\b)/i;
+
+function waitsForTheWork(said: string): boolean {
+  for (const match of said.matchAll(EVERY_WAIT)) {
+    if (!WAITING_ON_A_PERSON.test(match[1] ?? "")) return true;
+  }
+  return false;
+}
 
 /**
  * Does this turn ask for work it is missing? A hand-in, a question about
@@ -51,13 +97,8 @@ const WITHOUT_IT = /\bwithout\s+(the|those|these|them|it)\b/i;
  */
 export function turnAsksForMissingWork(body: string): boolean {
   const said = body ?? "";
-  return (
-    STILL_WAITING.test(said) ||
-    CANNOT_GO_ON.test(said) ||
-    NEEDS_IT.test(said) ||
-    ASKS_FOR_IT.test(said) ||
-    WITHOUT_IT.test(said)
-  );
+  if (HANDS_WORK_IN.test(said)) return false;
+  return waitsForTheWork(said) || CANNOT_GO_ON.test(said) || NEEDS_IT.test(said) || ASKS_FOR_IT.test(said);
 }
 
 const A_QUESTION = /\?/;
