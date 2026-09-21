@@ -25,6 +25,7 @@ OLD_MISSION = "Fill a table of five strangers for dinner in Tampa every Wednesda
 MISSION = "Publish a one-page guide to each of four houseplants that survive a dark flat."
 FIRST_ANSWER = ("Must have: the four one-page guides, each naming the plant, the light it needs, "
                 "and how often to water it. Everything else can wait. Done means all four read well. "
+                "Keep the plan to at most four tasks. "
                 "Propose the plan now.")
 LAZY = "Use your best judgment and hand in the output now."
 BUDGET_S = int(os.environ.get("GAUNTLET_WAVE_SECONDS", "2400"))
