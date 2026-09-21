@@ -195,6 +195,28 @@ describe("review and plan markers", () => {
     expect(again).not.toContain("todero-plan");
   });
 
+  it("drops Todero's note that a review is still owed when somebody edits the task", () => {
+    const description = [
+      "<!-- todero-type: Task -->",
+      "<!-- todero-blocked-by: waiting-on-you -->",
+      "<!-- todero-review: deferred -->",
+      "<!-- todero-review: pending -->",
+      "Goal: x",
+      "",
+    ].join("\n");
+    const parsed = parseWorkItemDescription(description);
+    // The person never sees it, and never sees it come back either: saving
+    // their own edit drops it, the same way the reviewer's round tally and the
+    // manager's own notes are dropped. That is safe on purpose - work that was
+    // never reviewed is found again on the next start whether the note is
+    // there or not - and this is here so the next person to change this screen
+    // knows it is a choice and not an oversight.
+    expect(parsed.body).toBe("Goal: x");
+    const again = serializeWorkItemDescription({ ...parsed, waitingOnYou: true });
+    expect(again).not.toContain("todero-review: deferred");
+    expect(again).toContain("<!-- todero-review: pending -->");
+  });
+
   it("keeps Todero's own tally of plan tries through an edit", () => {
     const description =
       "<!-- todero-type: Task -->\n<!-- todero-plan-tries: 2 -->\nGoal: x\n";
