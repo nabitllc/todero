@@ -11,15 +11,17 @@ import {
   planConversationOutcome,
   planReviewedOutcome,
   REVIEW_PENDING_MARKER,
+} from "./conversation-outcome.js";
+import {
   applyMissingPlanRecovery,
   buildStopAskingForPlanInstruction,
-  SYSTEM_NOTICE_PRESENTATION,
   descriptionWithPlanTries,
   hasGivenUpOnPlan,
   planMissingPlanRecovery,
   readPlanTries,
+  SYSTEM_NOTICE_PRESENTATION,
   type MissingPlanRecoveryDeps,
-} from "./conversation-outcome.js";
+} from "./missing-plan-recovery.js";
 
 describe("planConversationOutcome", () => {
   it("sends a child task's done to the person for review instead of closing it", () => {

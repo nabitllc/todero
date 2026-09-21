@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Db } from "@todero/db";
-import { SYSTEM_NOTICE_PRESENTATION } from "./conversation-outcome.js";
+import {
+  SYSTEM_NOTICE_PRESENTATION,
+} from "./missing-plan-recovery.js";
 import {
   conversationTurnRole,
   loadConversationThread,

@@ -134,21 +134,23 @@ import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
 import { syncTaskInputs, taskInputsDbDeps, type TaskInput } from "../todero/task-inputs.js";
 import {
   allPlanChildrenClosed,
-  applyMissingPlanRecovery,
-  buildMissingPlanRetryInstruction,
   buildPlanSummaryTurnInstruction,
-  buildStopAskingForPlanInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
   descriptionWithoutConversationMarkers,
-  hasGivenUpOnPlan,
   loadPlanChildren,
-  MISSING_PLAN_RETRY_WAKE_REASON,
   NEXT_PROJECT_DOCUMENT_KEY,
   parseNextProjectLine,
   planConversationOutcome,
-  planMissingPlanRecovery,
   planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
+import {
+  applyMissingPlanRecovery,
+  buildMissingPlanRetryInstruction,
+  buildStopAskingForPlanInstruction,
+  hasGivenUpOnPlan,
+  MISSING_PLAN_RETRY_WAKE_REASON,
+  planMissingPlanRecovery,
+} from "../todero/missing-plan-recovery.js";
 import {
   recordConversationDispositionApplied,
   withConversationDispositionApplied,
