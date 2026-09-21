@@ -1046,3 +1046,30 @@ that has no way back, which nothing here fixes.
   `gauntlet/repros/last-task-judged-with-its-feature.gauntlet.ts` (built from 42c3d5e4's real plan
   and ZZGAAAAAAAAAAA-4's real hand-in) and `gauntlet/repros/parked-task-gets-its-way-back.gauntlet.ts`
   (wave 19's real replies), both registered in `gauntlet/checks.json`.
+
+### Correction, 2026-09-21, after review
+
+Two things in the build above did not match what this ADR says, and both are now fixed.
+
+**The verdict comment could contradict its own paragraph.** The sentence in decision 1 — "the
+verdict comment now names who made it true: `met — done on ZZGAAAAAAAAAAA-4 and accepted`" —
+described a comment that overwrote the reviewer's own answer. Replaying 42c3d5e4's task
+ZZGAAAAAAAAAAA-5 through it produced a comment that counted "1 met, 1 not met", printed "met — done
+on ZZGAAAAAAAAAAA-4 and accepted" against the feature's finish line, and then printed the reviewer's
+own words underneath: "have not been reviewed or edited". Nothing reads that count — the verdict is
+what decides the outcome — but a person reads it, and a comment that disagrees with itself is worse
+than one that says something disappointing. Met and not met are now the reviewer's own answers and
+nothing else changes them, and who already did the work is a note on the line beside the answer:
+`not met (already done on ZZGAAAAAAAAAAA-4 and accepted) — All four guides have been reviewed and
+edited...`. The count above can no longer disagree with the paragraph below.
+`judge-feature-work.test.ts` replays that comment and holds both halves.
+
+**The second way back could be skipped without a word.** Decision 3 says that starting an
+organization again does the reviews and then offers each parked task its corrective turn. The first
+build awaited the reviews without catching them, so a database read that failed, or a reviewer that
+was not there, threw before the parked pass was ever reached — the pass with no other way back was
+the one lost, silently. Each pass is now caught on its own and writes down in plain words what went
+wrong; the parked pass runs whether or not the reviews did. The order is unchanged.
+`deferred-review.test.ts` drives the installed composition with a stand-in database: one test that
+both passes run, one that the parked pass runs after the reviews throw, and a reading of the source
+that holds the three doors and the one line at startup that puts both passes behind them.

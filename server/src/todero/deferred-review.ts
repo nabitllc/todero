@@ -331,13 +331,25 @@ export function setDeferredReviewRunner(next: DeferredReviewRunner | null): void
  * the corrective turn existed has no other way back, because nothing wakes a
  * parked task. The reviews go first: one of them may accept a hand-in and
  * unblock the very tasks the second pass would otherwise walk over.
+ *
+ * Each pass is caught on its own. They are two different ways back into a
+ * stuck organization, and the first one falling over — a database read that
+ * fails, a reviewer that is not there — must not cost the second one its turn.
+ * Whatever went wrong is written down in plain words rather than swallowed.
  */
 export function installDeferredReviewsOnResume(db: Db, enqueueWakeup: DeferredReviewWakeup): void {
   setDeferredReviewRunner(async (companyId) => {
-    const reviews = await reviewDeferredHandIns(db, { enqueueWakeup }, { companyId });
-    await recoverParkedTurns(db, { enqueueWakeup }, { companyId }).catch((err: unknown) => {
+    let reviews: unknown = null;
+    try {
+      reviews = await reviewDeferredHandIns(db, { enqueueWakeup }, { companyId });
+    } catch (err: unknown) {
+      logger.warn({ err, companyId }, "could not review the hand-ins this organization's hold deferred");
+    }
+    try {
+      await recoverParkedTurns(db, { enqueueWakeup }, { companyId });
+    } catch (err: unknown) {
       logger.warn({ err, companyId }, "could not start the tasks parked with nothing to answer");
-    });
+    }
     return reviews;
   });
 }

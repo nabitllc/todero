@@ -186,17 +186,43 @@ describe("the reviewer's brief", () => {
 });
 
 describe("the verdict comment", () => {
-  it("says which check an earlier accepted task already made true", () => {
+  // Wave 20's own comment, replayed: organization 42c3d5e4, task
+  // ZZGAAAAAAAAAAA-5. The reviewer answered no to both lines and wrote "have
+  // not been reviewed or edited" underneath. The count above has to say the
+  // same thing the reviewer said, and who already did the work is a note on
+  // the line rather than an answer of its own.
+  it("counts only what the reviewer itself answered", () => {
+    const comment = buildJudgeComment({
+      verdict: "fail",
+      note: "The guides are in plain text format and have not been reviewed or edited.",
+      outcome: { kind: "revise", round: 1 },
+      checks: [DONE_WHEN, "The hand-in is The final guides formatted and ready for distribution."],
+      checkResults: [false, false],
+      checkAlreadyDone: ["ZZGAAAAAAAAAAA-4", null],
+    });
+    expect(comment).toContain("0 met, 2 not met");
+    expect(comment).toContain(
+      `- not met (already done on ZZGAAAAAAAAAAA-4 and accepted) — ${DONE_WHEN}`,
+    );
+    expect(comment).not.toContain("- met — done on");
+  });
+
+  it("leaves a line the reviewer met reading met, with nothing added", () => {
     const comment = buildJudgeComment({
       verdict: "pass",
       note: "The four guides are all there and read well.",
       outcome: { kind: "accept" },
       checks: [DONE_WHEN, "The hand-in is The final guides formatted and ready for distribution."],
-      checkResults: [false, true],
-      checkAlreadyDone: ["ZZ-4", null],
+      checkResults: [true, true],
+      checkAlreadyDone: ["ZZGAAAAAAAAAAA-4", null],
     });
     expect(comment).toContain("2 met, 0 not met");
-    expect(comment).toContain(`- met — done on ZZ-4 and accepted — ${DONE_WHEN}`);
+    expect(comment).toContain(
+      `- met (already done on ZZGAAAAAAAAAAA-4 and accepted) — ${DONE_WHEN}`,
+    );
+    expect(comment).toContain(
+      "- met — The hand-in is The final guides formatted and ready for distribution.",
+    );
   });
 
   it("is unchanged when nothing earlier settled anything", () => {

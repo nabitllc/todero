@@ -407,6 +407,11 @@ export function readAutoAcceptWhenJudgePasses(governance: unknown): boolean {
  * were met and which were not. When the reviewer skipped the answers it says
  * that too, in as many words: a review nobody can see into is the one thing
  * this comment must not look like.
+ *
+ * Met and not met are the reviewer's own answers and nothing else changes
+ * them, so the count at the top can never disagree with the reviewer's words
+ * underneath. Where an earlier task of the same feature already did the work a
+ * line asks for, that is added to the line as a note beside the answer.
  */
 export function buildJudgeComment(input: {
   verdict: JudgeVerdict;
@@ -414,7 +419,7 @@ export function buildJudgeComment(input: {
   outcome: JudgeOutcome;
   checks?: string[];
   checkResults?: boolean[] | null;
-  /** Per check, the earlier accepted task that already made it true, or null. */
+  /** Per check, the earlier accepted task that had already done it, or null. */
   checkAlreadyDone?: (string | null)[];
 }): string {
   const note = input.note.trim();
@@ -423,15 +428,16 @@ export function buildJudgeComment(input: {
   const alreadyDone = input.checkAlreadyDone ?? [];
   const body: string[] = [];
   if (checks.length > 0 && results && results.length === checks.length) {
-    const met = results.filter((ok, index) => ok || alreadyDone[index]).length;
+    const met = results.filter(Boolean).length;
     body.push(
       [
         `Checked ${checks.length} thing${checks.length === 1 ? "" : "s"}. ${met} met, ${checks.length - met} not met.`,
         "",
-        ...checks.map((check, index) =>
-          alreadyDone[index]
-            ? `- met — done on ${alreadyDone[index]} and accepted — ${check}`
-            : `- ${results[index] ? "met" : "not met"} — ${check}`),
+        ...checks.map((check, index) => {
+          const answer = results[index] ? "met" : "not met";
+          const done = alreadyDone[index];
+          return `- ${answer}${done ? ` (already done on ${done} and accepted)` : ""} — ${check}`;
+        }),
       ].join("\n"),
     );
   } else if (checks.length > 0) {

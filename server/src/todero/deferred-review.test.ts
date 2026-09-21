@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Db } from "@todero/db";
+import { logger } from "../middleware/logger.js";
 import {
   descriptionForDeferredReview,
   descriptionWithReviewMarker,
@@ -7,8 +11,11 @@ import {
 } from "./conversation-outcome.js";
 import { descriptionWithWaitingMarker } from "./conversation-thread.js";
 import {
+  installDeferredReviewsOnResume,
   planDeferredSettlement,
+  reviewDeferredHandInsOnResume,
   runDeferredReviews,
+  setDeferredReviewRunner,
   type DeferredReviewActions,
 } from "./deferred-review.js";
 import { findDeferredHandIns, type DeferredHandIn } from "./deferred-review-find.js";
@@ -217,5 +224,112 @@ describe("running the reviews a hold deferred", () => {
     expect(result).toEqual({ reviewed: 1, failed: 1, stopped: false });
     expect(seen.logs.join("")).toContain("ZZG-2");
     expect(seen.logs.join("")).toContain("the reviewer went away");
+  });
+});
+
+/**
+ * What starting an organization again actually does, end to end through the
+ * seam the three doors call.
+ *
+ * The doors themselves are held by their own tests — an archived organization
+ * opened again in `companies-service.test.ts`, Play and Resume everything in
+ * `todero-pause-routes.test.ts`. All three prove that the door calls
+ * `reviewDeferredHandInsOnResume`. What is proved here is the other half: that
+ * the thing installed behind that call really does both passes, and that a
+ * pass that falls over does not take the other one with it.
+ *
+ * The database is a stub that answers every read with nothing and remembers
+ * how it was asked. The two passes read differently — the parked-task pass
+ * joins the agents table to get the worker's name, and the deferred-review
+ * pass does not — so which pass ran is read off the reads themselves.
+ */
+describe("what starting an organization again runs", () => {
+  type Read = { joined: boolean };
+
+  function stubDb(answer: (read: Read, index: number) => Promise<unknown[]>) {
+    const reads: Read[] = [];
+    const select = () => {
+      const read: Read = { joined: false };
+      const index = reads.length;
+      reads.push(read);
+      const chain: Record<string, unknown> = {
+        from: () => chain,
+        leftJoin: () => {
+          read.joined = true;
+          return chain;
+        },
+        where: () => chain,
+        limit: () => chain,
+        then: (resolve: (rows: unknown[]) => unknown, reject: (err: unknown) => unknown) =>
+          answer(read, index).then(resolve, reject),
+      };
+      return chain;
+    };
+    return { reads, db: { select } as unknown as Db };
+  }
+
+  const wakeup = async () => null;
+
+  afterEach(() => {
+    setDeferredReviewRunner(null);
+    vi.restoreAllMocks();
+  });
+
+  it("does the reviews and then the parked tasks", async () => {
+    const { reads, db } = stubDb(async () => []);
+    installDeferredReviewsOnResume(db, wakeup);
+
+    reviewDeferredHandInsOnResume("co-both");
+
+    await vi.waitFor(() => expect(reads).toHaveLength(2));
+    expect(reads[0]!.joined).toBe(false);
+    expect(reads[1]!.joined).toBe(true);
+  });
+
+  it("still starts the parked tasks when the reviews fall over, and says what went wrong", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const { reads, db } = stubDb(async (_read, index) => {
+      if (index === 0) throw new Error("the reviewer went away");
+      return [];
+    });
+    installDeferredReviewsOnResume(db, wakeup);
+
+    reviewDeferredHandInsOnResume("co-review-threw");
+
+    await vi.waitFor(() => expect(reads).toHaveLength(2));
+    expect(reads[1]!.joined).toBe(true);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalled());
+    expect(warn.mock.calls.map((call) => String(call[1])).join(" ")).toContain(
+      "could not review the hand-ins",
+    );
+  });
+});
+
+/**
+ * The three doors an organization can start again through, read in the source.
+ *
+ * Each door has a test of its own that drives it for real — an archived
+ * organization opened again in `companies-service.test.ts`, Play and Resume
+ * everything in `todero-pause-routes.test.ts`. Those tests put their own
+ * stand-in behind the seam, so they would still pass if nothing ever installed
+ * the real thing. This reads the four lines that make the claim true: three
+ * doors that call the seam, and the one place at startup that puts both passes
+ * behind it.
+ */
+describe("the doors that start an organization again", () => {
+  const read = (...parts: string[]) => readFileSync(path.resolve(__dirname, "..", ...parts), "utf8");
+
+  it("all three ask for the hand-ins the hold deferred", () => {
+    const companies = read("services", "companies.ts");
+    expect(companies).toContain("if (result.reactivated) reviewDeferredHandInsOnResume(");
+
+    const routes = read("routes", "todero-pause-routes.ts");
+    // One organization started by hand, and every organization Resume
+    // everything starts.
+    expect(routes.match(/reviewDeferredHandInsOnResume\(/g) ?? []).toHaveLength(2);
+  });
+
+  it("startup puts both passes behind the seam", () => {
+    expect(read("services", "heartbeat.ts")).toContain("installDeferredReviewsOnResume(db, enqueueWakeup)");
   });
 });
