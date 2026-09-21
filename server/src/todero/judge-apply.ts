@@ -60,6 +60,33 @@ export type JudgeApplyResult =
   /** No review happened; keep whatever the worker's own reply asked for. */
   | "none";
 
+/**
+ * Why nobody reviewed a hand-in, in words a person reads.
+ *
+ * Wave 16's live loop: a task was handed in, the reviewer never spoke, and
+ * neither the run log nor the thread said anything at all — the cause could
+ * not be worked out afterwards. Every way of skipping a review now leaves one
+ * line behind.
+ */
+export function skippedReviewReasonText(skipped: JudgeReviewResult["skipped"]): string {
+  switch (skipped) {
+    case "paused":
+      return "the organization is paused";
+    case "not_a_plan_task":
+      return "this task is not part of a plan";
+    case "no_deliverable":
+      return "the task handed in nothing to look at";
+    case "no_reviewer":
+      return "this team has nobody who reviews work";
+    case "no_model":
+      return "the reviewer has no model to think with";
+    case "no_verdict":
+      return "the reviewer gave no answer";
+    default:
+      return "no reason was recorded";
+  }
+}
+
 export async function applyJudgeReview(
   deps: JudgeApplyDeps,
   input: {
@@ -73,7 +100,10 @@ export async function applyJudgeReview(
   },
 ): Promise<JudgeApplyResult> {
   const { review } = input;
-  if (review.outcome.kind === "skip") return "none";
+  if (review.outcome.kind === "skip") {
+    deps.log(`[todero] No reviewer looked at this hand-in: ${skippedReviewReasonText(review.skipped)}.\n`);
+    return "none";
+  }
 
   if (review.comment && review.judgeAgent) {
     await deps.addComment(input.issue.id, review.comment, review.judgeAgent.id);

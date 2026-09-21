@@ -341,3 +341,35 @@ describe("applyJudgeReview", () => {
     expect(recorded.wakes).toEqual([{ issueId: "issue-1", agentId: "agent-1", status: "todo" }]);
   });
 });
+
+/**
+ * Wave 16's live loop: a task was handed in, the reviewer never spoke, and
+ * nothing anywhere said why. The run log now names the reason in plain words.
+ * Nothing about what happens changes — only that it is said.
+ */
+describe("a hand-in nobody reviewed says why", () => {
+  const reasons: Array<[NonNullable<JudgeReviewResult["skipped"]> | null, string]> = [
+    ["paused", "the organization is paused"],
+    ["not_a_plan_task", "this task is not part of a plan"],
+    ["no_deliverable", "the task handed in nothing to look at"],
+    ["no_reviewer", "this team has nobody who reviews work"],
+    ["no_model", "the reviewer has no model to think with"],
+    ["no_verdict", "the reviewer gave no answer"],
+    [null, "no reason was recorded"],
+  ];
+
+  for (const [skipped, words] of reasons) {
+    it(`says so when the reason is ${skipped ?? "unrecorded"}`, async () => {
+      const { deps: d, recorded } = deps();
+      const result = await applyJudgeReview(d, {
+        issue,
+        assigneeAgentId: "agent-1",
+        review: review({ outcome: { kind: "skip" }, skipped }),
+      });
+      expect(result).toBe("none");
+      expect(recorded.logs).toHaveLength(1);
+      expect(recorded.logs[0]).toContain("No reviewer looked at this hand-in");
+      expect(recorded.logs[0]).toContain(words);
+    });
+  }
+});
