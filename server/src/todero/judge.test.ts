@@ -9,6 +9,7 @@ import {
   descriptionWithJudgeFailRounds,
   findPlanFeatureForTask,
   findPlanTaskByTitle,
+  isLastTaskOfFeature,
   JUDGE_MAX_FAIL_ROUNDS,
   parseJudgeVerdict,
   planJudgeOutcome,
@@ -355,5 +356,92 @@ describe("buildJudgeComment, showing what was checked", () => {
     expect(comment).toContain("I reviewed this and it does what the task asked");
     expect(comment).not.toContain("Checked");
     expect(comment).not.toContain("did not say which");
+  });
+});
+
+describe("a task is judged on its own hand-in line", () => {
+  // Wave 19: "Draft the second guide" handed in a correct second guide and was
+  // sent back because the feature is not finished until there are four. The
+  // feature's finish line was being handed to the reviewer as a thing this one
+  // task had to make true, which no single-guide task can ever do.
+  const multiTask: ToderoPlan = {
+    goal: "Four one-page guides.",
+    features: [{ id: "f1", name: "Draft guides", why: "Content first", doneWhen: "Four drafts, one per plant." }],
+    tasks: [
+      { id: "t1", title: "Draft the first guide", feature: "Draft guides", output: "The first draft", after: "" },
+      { id: "t2", title: "Draft the second guide", feature: "Draft guides", output: "The second draft", after: "" },
+    ],
+  };
+
+  it("knows which task of a feature is its last", () => {
+    expect(isLastTaskOfFeature(multiTask, findPlanTaskByTitle(multiTask, "Draft the first guide"))).toBe(false);
+    expect(isLastTaskOfFeature(multiTask, findPlanTaskByTitle(multiTask, "Draft the second guide"))).toBe(true);
+    // A feature with one task: that task is its last.
+    expect(isLastTaskOfFeature(plan, findPlanTaskByTitle(plan, "Draft the starter guide"))).toBe(true);
+  });
+
+  it("gives a middle task one check, its own hand-in line", () => {
+    expect(
+      buildAcceptanceChecks({
+        doneWhen: "Four drafts, one per plant.",
+        expectedOutput: "The second draft",
+        description: "Goal: four guides.",
+        isLastTaskOfFeature: false,
+      }),
+    ).toEqual(["The hand-in is The second draft"]);
+  });
+
+  it("gives the last task of a feature both lines to check", () => {
+    expect(
+      buildAcceptanceChecks({
+        doneWhen: "Four drafts, one per plant.",
+        expectedOutput: "The fourth draft",
+        description: "Goal: four guides.",
+        isLastTaskOfFeature: true,
+      }),
+    ).toEqual(["Four drafts, one per plant.", "The hand-in is The fourth draft"]);
+  });
+
+  it("leaves a task that wrote its own criteria alone", () => {
+    const description = ["Acceptance Criteria", "- The guide fits on one page"].join("\n");
+    expect(
+      buildAcceptanceChecks({
+        doneWhen: "Four drafts, one per plant.",
+        expectedOutput: "The second draft",
+        description,
+        isLastTaskOfFeature: false,
+      }),
+    ).toEqual(["The guide fits on one page"]);
+  });
+
+  it("tells the reviewer the feature line is background, not a thing to check", () => {
+    const prompt = buildJudgeReviewPrompt({
+      featureName: "Draft guides",
+      doneWhen: "Four drafts, one per plant.",
+      taskTitle: "Draft the second guide",
+      expectedOutput: "The second draft",
+      deliverable: "Pothos: bright indirect light, water when dry.",
+      checks: ["The hand-in is The second draft"],
+      isLastTaskOfFeature: false,
+    });
+    expect(prompt).toContain("Four drafts, one per plant.");
+    expect(prompt).toContain("judge only this task's hand-in");
+    expect(prompt).not.toContain("Done when: Four drafts, one per plant.");
+    expect(prompt).not.toContain("1. Four drafts, one per plant.");
+  });
+
+  it("still puts the feature line in front of the last task's reviewer as a check", () => {
+    const prompt = buildJudgeReviewPrompt({
+      featureName: "Draft guides",
+      doneWhen: "Four drafts, one per plant.",
+      taskTitle: "Draft the fourth guide",
+      expectedOutput: "The fourth draft",
+      deliverable: "Four guides.",
+      checks: ["Four drafts, one per plant.", "The hand-in is The fourth draft"],
+      isLastTaskOfFeature: true,
+    });
+    expect(prompt).toContain("Done when: Four drafts, one per plant.");
+    expect(prompt).toContain("1. Four drafts, one per plant.");
+    expect(prompt).not.toContain("judge only this task's hand-in");
   });
 });

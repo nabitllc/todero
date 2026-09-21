@@ -816,3 +816,159 @@ credits to wave 18's organization `f818e743` are not there: they belong to `ZZGA
 older comment. `f818e743` holds ten agent turns in total, none of them left out. The test
 file for the wake backstop also says it has one case per way a task can be parked; it has
 four of the five, with a plan waiting for a yes not among them, and now says so.
+
+## ADR-023 — A task is judged on its own hand-in, and a turn that produced nothing is not parked
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Wave 19 of the improvement loop (organization
+  `f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`, "Zz Gauntlet Org 0921-034835"). Wave 3 stopped the
+  backstop from re-waking parked tasks, so the organization stopped thrashing — and deadlocked
+  instead. Two tasks ended up in front of a person without asking for anything; one of them gated
+  five tasks that never ran. The project never finished. Both deadlocks have the same two steps.
+
+  1. **A send-back nobody could satisfy.** ZZGAAAAAAAAA-4 "Draft the second guide" handed in a
+     correct second guide — Pothos, the light it needs, how often to water it — and the reviewer
+     sent it back: "not met — Four drafts, each naming the plant, the light it needs, and how
+     often to water it ... it only contains information for one plant. To pass, it must include
+     information for three additional houseplants." "Four drafts" is the feature's finish line,
+     not the task's. The reviewer's list of things to check was built from the feature's done-when
+     line plus the task's hand-in line, for every task inside the feature, so a task asked for one
+     guide was being held to a four-guide bar it could never reach. ZZGAAAAAAAAA-11 "Finalize the
+     first guide" was sent back the same way.
+  2. **A retry that delivered nothing and asked nothing.** On the round that came back, with the
+     reviewer's note in its prompt, ZZGAAAAAAAAA-4 wrote its own task brief out again — goal,
+     feature, done when, what the person said, the last verdict — with no guide in it.
+     ZZGAAAAAAAAA-11 wrote a "Final Review and Next Steps" action list about work it had not done.
+     Neither reply carried a `STATUS: done` line, and a chat reply without one means "waiting";
+     waiting means the person's turn, so both tasks were parked, the run log said "Handed the turn
+     back to the user", and the person — correctly — never answered a turn that asked nothing.
+- **Decision:** two mechanisms. The first is the cause; the second is the safety net.
+
+  1. **A task is judged on its own hand-in line.** The feature's done-when line is something the
+     reviewer must check only on the task the feature ends with — the last task in the plan
+     carrying that feature's name, which for a one-task feature is that task. On every earlier
+     task the line is still given to the reviewer, in plain words, as background: "This task is
+     one step of <feature>, which is finished when: <line>. That is the finish line for the whole
+     of <feature>, not for this task — judge only this task's hand-in." A task that wrote its own
+     Acceptance Criteria section is unaffected, as before. Leaving the flag out keeps today's
+     behaviour, so a caller that cannot tell where the task sits loses nothing.
+  2. **A turn that handed nothing in and asked nothing is not parked.** When a task inside a plan
+     hands its turn back, and its reply asks the person for nothing and hands nothing in, Todero
+     does not put it in front of the person the first time. It says so on the task in plain words,
+     and wakes the worker with one instruction: write the work itself — the guide, the list, the
+     document — not a summary of the task and not a list of next steps, and end with
+     `STATUS: done`. If the second turn is no better the task does go to the person, with a
+     message saying it produced no work twice. There is never a third silent round. The
+     conversation task is untouched: its "waiting" is the person's turn by design.
+
+  "Asks the person for anything" is wider than the wave-3 rule it sits beside: a question mark, a
+  request put to the person, or saying it cannot go on. "We need to finalize the remaining three
+  guides" is the task talking about its own work and does not count — it is the exact sentence the
+  deadlocked task wrote. "Handed nothing in" is decided by taking the task read back and the list
+  of what to do next out of the reply and seeing whether anything of substance is left. A real
+  guide with "Next steps" tacked on the end is a hand-in like any other.
+- **Consequences:**
+  - A reviewer can now pass a task that did exactly what it was asked, mid-feature. The feature's
+    finish line is still enforced, once, on the task the feature ends with.
+  - A worker gets one extra turn before its task reaches a person, and the person sees a note
+    saying nothing is needed from them. The cost is one local turn; the alternative was a deadlock.
+  - The count of empty turns is kept in the task's text (`todero-empty-turns`), beside the plan
+    tries and the reviewer's rounds, and goes back to nothing when the task hands real work in —
+    so "twice" means twice in a row. It is cleared twice over, because two different writes can
+    put it back: once where the hand-in is saved (`heartbeat.ts`), and again inside
+    `applyJudgeReview`, which writes the task's text out from a copy taken before that save.
+    Anything that reaches the reviewer is real work by definition, so clearing it there is right
+    as well as safe, and it is the clearing a test can hold.
+  - The retry leaves the task at `todo` and wakes it, rather than at `in_progress`. A task left
+    running with no turn behind it is read by the recovery sweep as a turn that stopped halfway,
+    which would start a second turn of its own. This is the same route the plan rescue already
+    takes, and the point holds either way: the task is not in front of the person.
+  - Both mechanisms live in their own modules (`server/src/todero/judge.ts`,
+    `server/src/todero/empty-turn-recovery.ts`). The heartbeat's two rescues now share one set of
+    dependencies and one wake, so the file did not grow.
+  - Repros: `docs/ai_context/gauntlet/repros/task-judged-on-its-own-hand-in.gauntlet.ts` and
+    `docs/ai_context/gauntlet/repros/empty-retry-is-not-parked.gauntlet.ts`, both built from the
+    real plan and the real replies of `f6e02c4b`, and both registered in `checks.json`.
+
+### Correction, 2026-09-21, after review
+
+The first build of this ADR's second mechanism had the reset in one place only, and a review of
+the branch found that a send-back undid it. The sequence was: a turn that produced nothing (count
+one), a turn that handed a real guide in (count cleared), the reviewer sending that guide back —
+which wrote the task's text back out from the copy taken before the hand-in was saved, count one
+again — and then a turn that produced nothing. Todero read the count as two in a row, skipped the
+one corrective turn this ADR promises, parked the task, and told the person it had "produced no
+work twice", which was not true. That is the send-back-then-empty-turn shape of wave 19 with the
+safety net switched off, so the whole ADR rested on it. `applyJudgeReview` now clears the count on
+the text it writes, which no caller can undo, and `judge-apply.test.ts` walks the four-step
+sequence above and fails if the clearing is taken out.
+
+Two other things the review found were wiring that nothing tested, and both now have a test that
+fails when the wiring is broken. The rule about which task a feature ends with is applied on one
+line inside `reviewConversationHandIn`; `judge-review-task-position.test.ts` drives that function
+for real and reads the prompt the model was sent, so replacing that line with either constant
+fails. And the guard that keeps a question in front of the person was only ever exercised by
+questions long enough to read as a hand-in in their own right; both the test and the repro now use
+a short one ("Which four plants?"), where nothing but the question mark keeps the task off the
+retry.
+
+The repro `task-judged-on-its-own-hand-in.gauntlet.ts` said its plan was copied from the
+organization's Plan document and carried eight of its thirteen tasks, which changed where two
+features ended. It now carries the document whole, and counts the tasks in its first case so a
+shortened copy fails rather than quietly moving a feature's finish line.
+
+### Second correction, 2026-09-21, after the wave-20 review
+
+The consequence bullet above says the count of empty turns is "cleared twice over" and the
+correction before this one says the reviewer's clearing is one "no caller can undo". Neither holds,
+because both describe only the writes that go through the reviewer's own code. When a reviewer
+passes a hand-in and the organization closes on a pass, nothing writes the task's text there at
+all: the closing text is built from the copy the hand-in was planned with, taken before the
+hand-in write cleared the count, so a task closed that way kept a count from a turn that had
+already been made good. A person's comment on a closed task sets it going again with exactly that
+text, and the next turn that produced nothing then read the count as its second — no corrective
+turn, and a message telling the person the task had produced no work twice when it had done so
+once, weeks earlier.
+
+The count is now cleared in three places, and the third is the last word: where the hand-in is
+saved (`heartbeat.ts`), on every text `applyJudgeReview` writes, and in
+`descriptionWithoutConversationMarkers`, which is what a closing task keeps. The count belongs
+with the three markers that helper already takes off — it is one more thing the conversation wrote
+on the task — so it now lives beside them in `conversation-outcome.ts` and
+`empty-turn-recovery.ts` passes it on under its own name. Two tests hold it: the text a reviewer's
+accept closes with carries no count, and the four steps above (a turn that produced nothing, a
+real hand-in, a pass that closes the task, a comment that sets it going again, a turn that
+produced nothing) end in the corrective turn rather than in front of the person.
+
+Three smaller things in the same review:
+
+- **A terse hand-in read as nothing.** The rule for "handed nothing in" struck out any line
+  beginning `Output:`, `Progress:` or `Status:`, so a worker that wrote the whole of a short
+  hand-in under one of those labels was asked for it again. Those labels are now taken off and
+  what follows them is kept, and the bar for "something of substance" is twenty characters rather
+  than forty — a plant, the light it needs and how often to water it is the whole of what one of
+  these tasks was asked for, and it fits in thirty-three. The labels of the task read back (goal,
+  feature, done when, what the person said, last verdict) are still struck out with their lines,
+  so the wave-19 reply that started all this still counts as nothing handed in.
+- **A test that restated a constant.** The corrective turn's wake reason was proved only by a test
+  asserting the constant equalled its own string. The heartbeat's mapping from that wake reason to
+  the instruction is now one pure function, `emptyTurnInstructionForWake`, called from the
+  heartbeat on the line the comparison used to sit on, and the test drives that function: its own
+  reason gives the instruction, any other reason and no reason give nothing.
+- **The harness answered twice in a hundred milliseconds.** `checks/live-loop.py` answered a
+  task's question and re-read the task in the same breath. The comment is what wakes the worker,
+  so the question was still standing, and the check spent both of the answers it allows 107 ms
+  apart and failed the task with "still asking after two answers" before the worker had reacted to
+  either — a false regression headline in wave 20's report. It now waits, up to two minutes, until
+  the question is off the task or the task changes state, and says in its log line when that wait
+  ran out. In the run it failed on (`Zz Gauntlet 0921-091116`, ZZGAAAAAAAAAA-5) the worker's reply
+  to the first answer arrived 24.2 seconds after it was posted, so one answer would have been
+  enough.
+
+`gauntlet/reports/last-org.json` still names wave 20's organization
+(`42c3d5e4-f0fd-4aea-ae98-32e90707d31f`), which stopped with its last task refused twice by the
+reviewer for not being "formatted and ready for distribution" — a packaging line a text hand-in
+cannot prove. That is deliberate: it is the case the next wave starts from. Wave 19's organization
+(`f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`) remains the case for a task parked before all of this
+that has no way back, which nothing here fixes.

@@ -91,20 +91,30 @@ const BULLET_RE = /^\s*[-*]\s+(.*)$/;
 /**
  * What this task has to be true for. A task that wrote its own Acceptance
  * Criteria list is checked against that list; a task created from a plan has
- * no list, so the feature's done-when line and the task's hand-in line stand
- * in for one. Returns an empty list when nothing was written down anywhere,
- * which the caller reports rather than papering over.
+ * no list, so the task's hand-in line stands in for one. Returns an empty list
+ * when nothing was written down anywhere, which the caller reports rather than
+ * papering over.
+ *
+ * The feature's done-when line is the finish line for the whole feature, not
+ * for one task inside it, so it is only something to check on the task the
+ * feature ends with. Wave 19 is why: "Draft the second guide" handed in a
+ * correct second guide and was sent back because there were not four of them —
+ * a criterion that task could never make true, on a loop that could never end.
+ * On every earlier task the line is still told to the reviewer, as background.
+ * Leaving the flag out keeps the line as a check, which is what a caller that
+ * cannot tell where the task sits should get.
  */
 export function buildAcceptanceChecks(input: {
   doneWhen?: string | null;
   expectedOutput?: string | null;
   description?: string | null;
+  isLastTaskOfFeature?: boolean;
 }): string[] {
   const written = readAcceptanceCriteriaSection(input.description);
   const source = written.length > 0
     ? written
     : [
-        (input.doneWhen ?? "").trim(),
+        input.isLastTaskOfFeature === false ? "" : (input.doneWhen ?? "").trim(),
         // Phrased as something that can be true or false. "The work handed in
         // is: X" reads as a label, and a reviewer answering it just restates X.
         (input.expectedOutput ?? "").trim() ? `The hand-in is ${(input.expectedOutput ?? "").trim()}` : "",
@@ -230,6 +240,20 @@ export function findPlanTaskByTitle(plan: ToderoPlan | null, title: string): Tod
   return plan.tasks.find((task) => task.title.trim().toLowerCase() === wanted) ?? null;
 }
 
+/**
+ * Is this the task the feature ends with — the one after which the feature is
+ * finished? The plan lists its tasks in the order they are meant to happen, so
+ * the feature's last task is the last one in that list carrying its name. A
+ * feature with a single task is finished by that task.
+ */
+export function isLastTaskOfFeature(plan: ToderoPlan | null, task: ToderoPlanTask | null): boolean {
+  if (!plan || !task) return false;
+  const wanted = task.feature.trim().toLowerCase();
+  const ofFeature = plan.tasks.filter((candidate) => candidate.feature.trim().toLowerCase() === wanted);
+  const last = ofFeature[ofFeature.length - 1];
+  return Boolean(last && last.id === task.id && last.title === task.title);
+}
+
 export function findPlanFeatureForTask(plan: ToderoPlan | null, task: ToderoPlanTask | null): ToderoPlanFeature | null {
   if (!plan || !task) return null;
   const wanted = task.feature.trim().toLowerCase();
@@ -252,6 +276,8 @@ export function buildJudgeReviewPrompt(input: {
   deliverable: string;
   /** What this task has to be true for, from `buildAcceptanceChecks`. */
   checks?: string[];
+  /** The same flag `buildAcceptanceChecks` took, so the two agree. */
+  isLastTaskOfFeature?: boolean;
 }): string {
   const parts: string[] = [
     "A teammate has finished a task and handed in the work below. Decide whether it is good enough to show the person who asked for it.",
@@ -259,7 +285,17 @@ export function buildJudgeReviewPrompt(input: {
   ];
   if (input.goal?.trim()) parts.push(`Goal: ${input.goal.trim()}`);
   if (input.featureName?.trim()) parts.push(`Feature: ${input.featureName.trim()}`);
-  if (input.doneWhen?.trim()) parts.push(`Done when: ${input.doneWhen.trim()}`);
+  // On any task but the one a feature ends with, the feature's finish line is
+  // background. Said as a bare "Done when:" line a small model reads it as the
+  // bar for this task and fails work that is exactly right.
+  const feature = input.featureName?.trim() || "this feature";
+  if (input.doneWhen?.trim()) {
+    parts.push(
+      input.isLastTaskOfFeature === false
+        ? `This task is one step of ${feature}, which is finished when: ${input.doneWhen.trim()}. That is the finish line for the whole of ${feature}, not for this task — judge only this task's hand-in.`
+        : `Done when: ${input.doneWhen.trim()}`,
+    );
+  }
   parts.push(`Task: ${input.taskTitle.trim()}`);
   if (input.expectedOutput?.trim()) parts.push(`Was asked to hand in: ${input.expectedOutput.trim()}`);
   const checks = (input.checks ?? []).filter((check) => check.trim());
@@ -274,7 +310,9 @@ export function buildJudgeReviewPrompt(input: {
     input.deliverable.trim(),
     '"""',
     "",
-    "Judge only what is above. Pass it when it does what the task asked and meets the done-when line, even if it could be longer or prettier. Fail it only when something the task asked for is missing or wrong.",
+    input.isLastTaskOfFeature === false
+      ? "Judge only what is above, and only against this one task. Pass it when it does what this task asked for, even if it could be longer or prettier, and even though the rest of the feature is still to come. Fail it only when something this task asked for is missing or wrong."
+      : "Judge only what is above. Pass it when it does what the task asked and meets the done-when line, even if it could be longer or prettier. Fail it only when something the task asked for is missing or wrong.",
     "",
     "Answer in exactly this shape and nothing else:",
   );

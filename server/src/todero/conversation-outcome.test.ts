@@ -181,6 +181,18 @@ describe("descriptionWithoutConversationMarkers", () => {
     expect(clean).toContain("Body");
     expect(clean).toContain("<!-- todero-type: Task -->");
   });
+
+  it("takes off the count of turns that produced nothing as well", () => {
+    // The count is one of the things the task's text says about the
+    // conversation, so a task that closes carries none of it. Without this, a
+    // closed task that someone comments on comes back carrying a count from
+    // before it ever handed work in.
+    const clean = descriptionWithoutConversationMarkers(
+      "<!-- todero-empty-turns: 1 -->\n<!-- todero-type: Task -->\nBody",
+    );
+    expect(clean).not.toContain("todero-empty-turns");
+    expect(clean).toContain("Body");
+  });
 });
 
 /**
