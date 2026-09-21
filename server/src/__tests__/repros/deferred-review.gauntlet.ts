@@ -15,7 +15,9 @@
 //
 // This drives the whole path against a real database: a hand-in skipped for a
 // pause exactly the way the heartbeat skips it, then the organization opened
-// again, then the reviewer's verdict and the closed task.
+// again, then the reviewer's verdict and the closed task. The reviewer is held
+// at the model part-way through so the organization can be stopped and started
+// again while its review is still running: one hand-in, one answer.
 //
 // Fails on origin/main (nothing ever reviews it; the task stays blocked and
 // the reviewer never speaks). Run with:
@@ -61,6 +63,9 @@ describeEmbeddedPostgres("a hand-in nobody could review while the organization w
   let workerUrl = "";
   /** Every time the reviewer was asked for a verdict. */
   let timesAsked = 0;
+  /** While set, the reviewer's model does not answer until this is released. */
+  let reviewerWaits: Promise<void> | null = null;
+  let letTheReviewerAnswer: () => void = () => {};
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("todero-deferred-review-");
@@ -76,17 +81,19 @@ describeEmbeddedPostgres("a hand-in nobody could review while the organization w
       if (asReviewer) timesAsked += 1;
       req.resume();
       req.on("end", () => {
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(
-          JSON.stringify({
-            choices: [{
-              message: {
-                role: "assistant",
-                content: asReviewer ? "Verdict: pass\nIt does what the task asked." : "Nothing further.",
-              },
-            }],
-          }),
-        );
+        void Promise.resolve(asReviewer ? reviewerWaits : null).then(() => {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({
+              choices: [{
+                message: {
+                  role: "assistant",
+                  content: asReviewer ? "Verdict: pass\nIt does what the task asked." : "Nothing further.",
+                },
+              }],
+            }),
+          );
+        });
       });
     });
     await new Promise<void>((resolve) => models.listen(0, "127.0.0.1", resolve));
@@ -259,8 +266,26 @@ describeEmbeddedPostgres("a hand-in nobody could review while the organization w
     expect(hasDeferredReviewMarker(held.description)).toBe(true);
     expect(held.description ?? "").toContain(REVIEW_PENDING_MARKER);
 
+    // Hold the reviewer at the model, so the second start below lands while the
+    // first review is still going rather than safely after it.
+    reviewerWaits = new Promise<void>((resolve) => {
+      letTheReviewerAnswer = resolve;
+    });
+
     // Play. On main this is where the task's life ended.
     await companyService(db).update(companyId, { status: "active" });
+    await expect.poll(() => timesAsked, { timeout: 20_000, interval: 25 }).toBe(1);
+
+    // Still inside the first review: hold the organization and start it again.
+    // This is the real sequence - Resume everything starts one pass per
+    // organization, and a hold and a Play seconds later start another over the
+    // same hand-in. The one hand-in must still get exactly one answer.
+    await companyService(db).update(companyId, { status: "paused" });
+    await companyService(db).update(companyId, { status: "active" });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(timesAsked).toBe(1);
+
+    letTheReviewerAnswer();
 
     await expect
       .poll(
@@ -283,10 +308,10 @@ describeEmbeddedPostgres("a hand-in nobody could review while the organization w
     expect(after.description ?? "").not.toContain(REVIEW_PENDING_MARKER);
     expect(timesAsked).toBe(1);
 
-    // And it is never reviewed twice for the one hand-in.
+    // And once it is closed, starting again does not review it a third time.
     await companyService(db).update(companyId, { status: "paused" });
     await companyService(db).update(companyId, { status: "active" });
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(timesAsked).toBe(1);
-  }, 60_000);
+  }, 90_000);
 });
