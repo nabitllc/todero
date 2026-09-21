@@ -108,6 +108,12 @@ export async function applyJudgeReview(
   // saved; without this, an empty turn, a real hand-in and a send-back left the
   // count standing, which skipped the one corrective turn the next empty turn
   // is owed and then told the person the task had produced no work twice.
+  //
+  // This is one of three places the count is cleared, not the only one: the
+  // hand-in write clears it (`heartbeat.ts`), this clears it on every text it
+  // writes, and closing a task clears it for good
+  // (`descriptionWithoutConversationMarkers`), which is what catches the
+  // accept that closes a task without coming through here at all.
   const description = descriptionWithEmptyTurnTries(input.issue.description, 0);
   if (review.outcome.kind === "skip") {
     // A hold is the one skip that comes back. Waves 16-18: the hand-in was

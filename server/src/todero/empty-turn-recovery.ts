@@ -28,7 +28,12 @@
  */
 import type { IssueCommentPresentation } from "@todero/shared";
 import { descriptionWithWaitingMarker, type ConversationDisposition } from "./conversation-thread.js";
-import { descriptionWithPlanMarker, descriptionWithReviewMarker } from "./conversation-outcome.js";
+import {
+  descriptionWithEmptyTurnTries,
+  descriptionWithPlanMarker,
+  descriptionWithReviewMarker,
+  readEmptyTurnTries,
+} from "./conversation-outcome.js";
 import { asksThePersonForAnything } from "./inputs-arrived.js";
 import { SYSTEM_NOTICE_PRESENTATION } from "./missing-plan-recovery.js";
 
@@ -39,30 +44,14 @@ export const EMPTY_TURN_MAX_TRIES = 1;
 export const EMPTY_TURN_RETRY_WAKE_REASON = "issue_turn_produced_nothing";
 
 /**
- * How many turns in a row this task has ended with nothing on it. Kept in the
- * task's own text, the way the plan tries and the reviewer's rounds already
- * are: every heartbeat builds a fresh request, so a count held only in that
- * request is forgotten by the next one. It goes back to nothing the moment the
- * task hands real work in.
+ * How many turns in a row this task has ended with nothing on it, kept in the
+ * task's own text the way the plan tries and the reviewer's rounds already
+ * are. It lives with the rest of what the conversation writes on a task
+ * (`conversation-outcome.ts`), so that a task which closes takes it off with
+ * everything else; it is passed on from here because this is where the rules
+ * about it are.
  */
-const EMPTY_TURNS_RE = /<!--\s*todero-empty-turns:\s*(\d+)\s*-->\s*\n?/gi;
-
-export function readEmptyTurnTries(description: string | null | undefined): number {
-  let tries = 0;
-  for (const match of (description ?? "").matchAll(EMPTY_TURNS_RE)) {
-    const value = Number.parseInt(match[1]!, 10);
-    if (Number.isFinite(value) && value > tries) tries = value;
-  }
-  return tries;
-}
-
-/** The description with exactly one count on it, or none when the count is zero. */
-export function descriptionWithEmptyTurnTries(description: string | null | undefined, tries: number): string {
-  const stripped = (description ?? "").replace(EMPTY_TURNS_RE, "");
-  const count = Math.max(0, Math.trunc(tries));
-  if (count === 0) return stripped;
-  return `<!-- todero-empty-turns: ${count} -->\n${stripped.replace(/^\s*\n/, "")}`;
-}
+export { descriptionWithEmptyTurnTries, readEmptyTurnTries };
 
 /**
  * The lines that are the task read back rather than the work. Both wave-19
@@ -71,7 +60,17 @@ export function descriptionWithEmptyTurnTries(description: string | null | undef
  */
 const IDENTIFIER_ONLY_RE = /^\s*\**\s*[A-Z][A-Z0-9]*-\d+\s*\**\s*$/;
 const BRIEF_LABEL_RE =
-  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:goal|feature|done[- ]when|what the person said|last verdict|task|title|output|deliverable|objective|context|acceptance criteria|status|review status|progress)\s*\**\s*:/i;
+  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:goal|feature|done[- ]when|what the person said|last verdict|task|title|objective|context|acceptance criteria)\s*\**\s*:/i;
+
+/**
+ * The other kind of label: one a worker writes the work itself under. The
+ * label is not the hand-in but whatever follows it is, so only the label is
+ * struck out. Dropping these lines whole made a terse but complete hand-in —
+ * "Output: Snake plant, low light, water every 2 weeks" — read as empty and
+ * cost the task a corrective turn it did not need.
+ */
+const WORK_LABEL_RE =
+  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:output|deliverable|result|review status|status|progress)\s*\**\s*:\s*\**\s*/i;
 
 /**
  * Where a reply stops being the work and starts being a list of what someone
@@ -83,12 +82,18 @@ const BRIEF_LABEL_RE =
 const WHAT_COMES_NEXT_RE =
   /^\s*(?:[-*]\s+|\d+[.)]\s+|#{1,6}\s+)?\**\s*(?:[\w ]*\b(?:next steps?|action required|action items?|recommended actions?|way forward|what happens next)\b[\w ]*)\s*\**\s*:?\s*\**\s*$/i;
 
-/** Below this much left over, the turn handed nothing in. */
-const DELIVERS_MIN_CHARS = 40;
+/**
+ * Below this much left over, the turn handed nothing in. Twenty characters,
+ * because that is about as short as a real answer gets — a plant, the light it
+ * needs and how often to water it is thirty-odd — and a bar set above a real
+ * answer costs a task a turn for nothing.
+ */
+const DELIVERS_MIN_CHARS = 20;
 
 /**
- * Did this turn actually hand something in? Take out the task read back and
- * the list of what to do next, and see whether anything of substance is left.
+ * Did this turn actually hand something in? Take out the task read back, the
+ * labels the work is written under and the list of what to do next, and see
+ * whether anything of substance is left.
  */
 export function turnDeliversWork(body: string): boolean {
   const lines = (body ?? "").replace(/\r\n?/g, "\n").split("\n");
@@ -98,7 +103,8 @@ export function turnDeliversWork(body: string): boolean {
     if (WHAT_COMES_NEXT_RE.test(line)) break;
     if (IDENTIFIER_ONLY_RE.test(line)) continue;
     if (BRIEF_LABEL_RE.test(line)) continue;
-    kept.push(line.trim());
+    const workLabel = line.match(WORK_LABEL_RE);
+    kept.push((workLabel ? line.slice(workLabel[0].length) : line).trim());
   }
   return kept.join(" ").replace(/[*_#`>\s-]+/g, " ").trim().length >= DELIVERS_MIN_CHARS;
 }
@@ -188,6 +194,16 @@ export function buildEmptyTurnRetryInstruction(): string {
     "",
     "Then end your message with `STATUS: done`.",
   ].join("\n");
+}
+
+/**
+ * What the worker is told when it is woken again, read off the reason it was
+ * woken for. The heartbeat asks this of every wake and says whatever comes
+ * back, so the corrective turn reaches the worker only through here. Null for
+ * every other wake: that turn has its own instruction, or none.
+ */
+export function emptyTurnInstructionForWake(wakeReason: string | null | undefined): string | null {
+  return wakeReason === EMPTY_TURN_RETRY_WAKE_REASON ? buildEmptyTurnRetryInstruction() : null;
 }
 
 /** The one line the person sees when Todero decides to ask again. */

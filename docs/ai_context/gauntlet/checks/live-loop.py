@@ -87,6 +87,31 @@ def comments(issue_id):
     return d if isinstance(d, list) else (d or {}).get("comments", [])
 
 
+def answer_and_wait(issue_id, ident, status_before, seconds=120):
+    """Answer the task's question, then wait until the worker has had its
+    chance to read the answer: the question comes off the task, or the task
+    changes state.
+
+    Posting an answer and reading the task again in the same breath finds the
+    question still standing, because the comment is what wakes the worker and
+    the wake takes a moment. Wave 20 spent both of the answers this check
+    allows 107 ms apart that way, and failed the task with "still asking after
+    two answers" before the worker had reacted to either; in that same run the
+    worker's reply to the first answer arrived 24 seconds later. Returns True
+    when the answer was picked up inside the wait.
+    """
+    call("POST", f"/issues/{issue_id}/comments", {"body": CHILD_ANSWER})
+
+    def picked_up():
+        row = call("GET", f"/issues/{issue_id}")[1] or {}
+        moved = not markers(row.get("description"))["waiting"] or row.get("status") != status_before
+        return True if moved else None
+
+    taken = bool(wait_for(picked_up, seconds, every=5))
+    log(f"{ident}: answered a question" + ("" if taken else f" (not picked up within {seconds}s)"))
+    return taken
+
+
 def markers(desc):
     desc = desc or ""
     return {
@@ -209,13 +234,17 @@ def main() -> int:
                     log(f"{ident}: handed in, reviewed, accepted")
                     acted = True
                 elif m["waiting"]:
+                    # An answer is only spent once the worker has had its
+                    # chance to read it: answer_and_wait does not come back
+                    # until the question is off the task or two minutes have
+                    # gone by, so the second answer can never go out in the
+                    # same breath as the first.
                     answers[cid] = answers.get(cid, 0) + 1
                     if answers[cid] > 2:
                         expect(False, f"{ident}: still asking after two answers")
                         call("PATCH", f"/issues/{cid}", {"status": "done"})
                     else:
-                        call("POST", f"/issues/{cid}/comments", {"body": CHILD_ANSWER})
-                        log(f"{ident}: answered a question")
+                        answer_and_wait(cid, ident, r["status"])
                     acted = True
             if not acted:
                 time.sleep(10)

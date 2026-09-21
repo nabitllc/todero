@@ -89,6 +89,36 @@ export function descriptionForDeferredReview(description: string | null | undefi
   );
 }
 
+/**
+ * The fourth thing a task's text carries about its conversation: how many
+ * turns in a row it has ended with nothing on it. Kept here, beside the
+ * markers, rather than with the rest of the empty-turn rules, so that closing
+ * a task takes it off with everything else. `empty-turn-recovery.ts` passes
+ * both of these on under its own name.
+ *
+ * Every heartbeat builds a fresh request, so a count held only in that request
+ * would be forgotten by the next one. It goes back to nothing the moment the
+ * task hands real work in, and again when the task closes.
+ */
+const EMPTY_TURNS_RE = /<!--\s*todero-empty-turns:\s*(\d+)\s*-->\s*\n?/gi;
+
+export function readEmptyTurnTries(description: string | null | undefined): number {
+  let tries = 0;
+  for (const match of (description ?? "").matchAll(EMPTY_TURNS_RE)) {
+    const value = Number.parseInt(match[1]!, 10);
+    if (Number.isFinite(value) && value > tries) tries = value;
+  }
+  return tries;
+}
+
+/** The description with exactly one count on it, or none when the count is zero. */
+export function descriptionWithEmptyTurnTries(description: string | null | undefined, tries: number): string {
+  const stripped = (description ?? "").replace(EMPTY_TURNS_RE, "");
+  const count = Math.max(0, Math.trunc(tries));
+  if (count === 0) return stripped;
+  return `<!-- todero-empty-turns: ${count} -->\n${stripped.replace(/^\s*\n/, "")}`;
+}
+
 export type ConversationOutcome = "done" | "review" | "waiting";
 
 export type ConversationOutcomePlan = {
@@ -98,16 +128,24 @@ export type ConversationOutcomePlan = {
 };
 
 /**
- * Every conversation marker off. What a task keeps once it closes, and the
- * clean base a task sent back for another round starts from.
+ * Everything the conversation wrote on the task, off: the three markers and
+ * the count of turns that produced nothing. What a task keeps once it closes,
+ * and the clean base a task sent back for another round starts from.
+ *
+ * This is the last word on that count. A closed task can be set going again by
+ * a person's comment, with the text it closed with and nothing rewritten, so a
+ * count left on it here would be read by a turn days later.
  */
 export function descriptionWithoutConversationMarkers(description: string | null | undefined): string {
-  return descriptionWithWaitingMarker(
-    descriptionWithPlanMarker(
-      descriptionWithReviewMarker(descriptionWithDeferredReviewMarker(description, false), false),
+  return descriptionWithEmptyTurnTries(
+    descriptionWithWaitingMarker(
+      descriptionWithPlanMarker(
+        descriptionWithReviewMarker(descriptionWithDeferredReviewMarker(description, false), false),
+        false,
+      ),
       false,
     ),
-    false,
+    0,
   );
 }
 

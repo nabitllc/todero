@@ -917,3 +917,58 @@ The repro `task-judged-on-its-own-hand-in.gauntlet.ts` said its plan was copied 
 organization's Plan document and carried eight of its thirteen tasks, which changed where two
 features ended. It now carries the document whole, and counts the tasks in its first case so a
 shortened copy fails rather than quietly moving a feature's finish line.
+
+### Second correction, 2026-09-21, after the wave-20 review
+
+The consequence bullet above says the count of empty turns is "cleared twice over" and the
+correction before this one says the reviewer's clearing is one "no caller can undo". Neither holds,
+because both describe only the writes that go through the reviewer's own code. When a reviewer
+passes a hand-in and the organization closes on a pass, nothing writes the task's text there at
+all: the closing text is built from the copy the hand-in was planned with, taken before the
+hand-in write cleared the count, so a task closed that way kept a count from a turn that had
+already been made good. A person's comment on a closed task sets it going again with exactly that
+text, and the next turn that produced nothing then read the count as its second — no corrective
+turn, and a message telling the person the task had produced no work twice when it had done so
+once, weeks earlier.
+
+The count is now cleared in three places, and the third is the last word: where the hand-in is
+saved (`heartbeat.ts`), on every text `applyJudgeReview` writes, and in
+`descriptionWithoutConversationMarkers`, which is what a closing task keeps. The count belongs
+with the three markers that helper already takes off — it is one more thing the conversation wrote
+on the task — so it now lives beside them in `conversation-outcome.ts` and
+`empty-turn-recovery.ts` passes it on under its own name. Two tests hold it: the text a reviewer's
+accept closes with carries no count, and the four steps above (a turn that produced nothing, a
+real hand-in, a pass that closes the task, a comment that sets it going again, a turn that
+produced nothing) end in the corrective turn rather than in front of the person.
+
+Three smaller things in the same review:
+
+- **A terse hand-in read as nothing.** The rule for "handed nothing in" struck out any line
+  beginning `Output:`, `Progress:` or `Status:`, so a worker that wrote the whole of a short
+  hand-in under one of those labels was asked for it again. Those labels are now taken off and
+  what follows them is kept, and the bar for "something of substance" is twenty characters rather
+  than forty — a plant, the light it needs and how often to water it is the whole of what one of
+  these tasks was asked for, and it fits in thirty-three. The labels of the task read back (goal,
+  feature, done when, what the person said, last verdict) are still struck out with their lines,
+  so the wave-19 reply that started all this still counts as nothing handed in.
+- **A test that restated a constant.** The corrective turn's wake reason was proved only by a test
+  asserting the constant equalled its own string. The heartbeat's mapping from that wake reason to
+  the instruction is now one pure function, `emptyTurnInstructionForWake`, called from the
+  heartbeat on the line the comparison used to sit on, and the test drives that function: its own
+  reason gives the instruction, any other reason and no reason give nothing.
+- **The harness answered twice in a hundred milliseconds.** `checks/live-loop.py` answered a
+  task's question and re-read the task in the same breath. The comment is what wakes the worker,
+  so the question was still standing, and the check spent both of the answers it allows 107 ms
+  apart and failed the task with "still asking after two answers" before the worker had reacted to
+  either — a false regression headline in wave 20's report. It now waits, up to two minutes, until
+  the question is off the task or the task changes state, and says in its log line when that wait
+  ran out. In the run it failed on (`Zz Gauntlet 0921-091116`, ZZGAAAAAAAAAA-5) the worker's reply
+  to the first answer arrived 24.2 seconds after it was posted, so one answer would have been
+  enough.
+
+`gauntlet/reports/last-org.json` still names wave 20's organization
+(`42c3d5e4-f0fd-4aea-ae98-32e90707d31f`), which stopped with its last task refused twice by the
+reviewer for not being "formatted and ready for distribution" — a packaging line a text hand-in
+cannot prove. That is deliberate: it is the case the next wave starts from. Wave 19's organization
+(`f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`) remains the case for a task parked before all of this
+that has no way back, which nothing here fixes.

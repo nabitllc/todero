@@ -152,7 +152,7 @@ import {
   MISSING_PLAN_RETRY_WAKE_REASON,
   planMissingPlanRecovery,
 } from "../todero/missing-plan-recovery.js";
-import { applyEmptyTurnRecovery, buildEmptyTurnRetryInstruction, descriptionWithEmptyTurnTries, EMPTY_TURN_RETRY_WAKE_REASON, planEmptyTurnRecovery } from "../todero/empty-turn-recovery.js";
+import { applyEmptyTurnRecovery, descriptionWithEmptyTurnTries, EMPTY_TURN_RETRY_WAKE_REASON, emptyTurnInstructionForWake, planEmptyTurnRecovery } from "../todero/empty-turn-recovery.js";
 import {
   recordConversationDispositionApplied,
   withConversationDispositionApplied,
@@ -15022,8 +15022,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         context.toderoTurnInstruction = buildStopAskingForPlanInstruction();
       } else if (conversationWakeReason === MISSING_PLAN_RETRY_WAKE_REASON) {
         context.toderoTurnInstruction = buildMissingPlanRetryInstruction();
-      } else if (conversationWakeReason === EMPTY_TURN_RETRY_WAKE_REASON) {
-        context.toderoTurnInstruction = buildEmptyTurnRetryInstruction();
+      } else {
+        context.toderoTurnInstruction = emptyTurnInstructionForWake(conversationWakeReason) ?? context.toderoTurnInstruction;
       }
       // What this agent knows for this kind of turn. The rows are the
       // organization's own copies, so a person's edit takes effect on the

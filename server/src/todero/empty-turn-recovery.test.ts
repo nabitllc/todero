@@ -14,7 +14,9 @@ import {
   planEmptyTurnRecovery,
   readEmptyTurnTries,
   turnDeliversWork,
+  emptyTurnInstructionForWake,
 } from "./empty-turn-recovery.js";
+import { planConversationOutcome, planReviewedOutcome } from "./conversation-outcome.js";
 
 const BRIEF = "<!-- todero-type: Task -->\nGoal: Create four one-page guides.";
 
@@ -66,6 +68,23 @@ describe("turnDeliversWork", () => {
 
   it("says yes to the guide even when next steps are tacked on the end", () => {
     expect(turnDeliversWork(`${A_REAL_GUIDE}\n\n**Next Steps:**\n\n1. Draft the third guide.`)).toBe(true);
+  });
+
+  it("says yes to a short hand-in written under a label", () => {
+    // A worker that writes "Output:" and then the thing has handed the thing
+    // in. The label was being struck out with the line under it, so a whole
+    // hand-in could read as empty and cost a corrective turn nobody needed.
+    expect(turnDeliversWork("Output: Snake plant — low light, water every 2 weeks.")).toBe(true);
+    expect(turnDeliversWork("Progress: Ten restaurants chosen, all within a mile of downtown.")).toBe(true);
+    // A label with nothing under it is still nothing.
+    expect(turnDeliversWork("Output:")).toBe(false);
+    expect(turnDeliversWork("Status:\nProgress:")).toBe(false);
+    // Twenty characters is the bar, not forty: a plant, the light it needs and
+    // how often to water it is the whole of what one of these tasks was asked
+    // for, and it fits in thirty-three.
+    expect(turnDeliversWork("Output: Pothos, low light, water monthly.")).toBe(true);
+    // The task read back is still the task read back, however long it is.
+    expect(turnDeliversWork(PARROTED_BRIEF)).toBe(false);
   });
 
   it("says no to nothing at all", () => {
@@ -143,6 +162,48 @@ describe("the count of empty turns", () => {
     expect(descriptionWithEmptyTurnTries(once, 2).match(/todero-empty-turns/g)).toHaveLength(1);
     // Back to nothing once the task hands real work in.
     expect(descriptionWithEmptyTurnTries(once, 0)).not.toContain("todero-empty-turns");
+  });
+
+  it("is gone from the text a reviewer's accept closes the task with", () => {
+    // The accept writes the task's text back from the copy the hand-in was
+    // planned with, which was taken before the hand-in write cleared the
+    // count. Closing the task is what takes it off for good.
+    const handIn = planConversationOutcome({
+      issue: {
+        status: "in_progress",
+        description: descriptionWithEmptyTurnTries(BRIEF, 1),
+        parentId: "parent",
+      },
+      disposition: "done",
+    })!;
+    expect(handIn.outcome).toBe("review");
+    expect(readEmptyTurnTries(handIn.description)).toBe(1);
+    expect(readEmptyTurnTries(planReviewedOutcome(handIn, "accept")!.description)).toBe(0);
+  });
+
+  it("does not follow a closed task back into a new turn", () => {
+    // The four steps that cost a task its one corrective turn:
+    // 1. a turn that produced nothing, so the count stands at one;
+    const afterAnEmptyTurn = descriptionWithEmptyTurnTries(BRIEF, 1);
+    // 2. a turn that handed a real guide in — planned from the text above,
+    //    which is what the reviewer is later handed;
+    const handIn = planConversationOutcome({
+      issue: { status: "in_progress", description: afterAnEmptyTurn, parentId: "parent" },
+      disposition: "done",
+    })!;
+    // 3. the reviewer passes it and this organization closes on a pass, so
+    //    nothing else writes the task's text in between;
+    const closed = planReviewedOutcome(handIn, "accept")!;
+    expect(closed.status).toBe("done");
+    // 4. the person comments on the closed task, which sets it going again
+    //    with the text it closed with, and that turn produces nothing.
+    expect(
+      planEmptyTurnOutcome({
+        issue: { status: "in_progress", description: closed.description, parentId: "parent" },
+        disposition: "waiting",
+        reply: PARROTED_BRIEF,
+      }),
+    ).toBe("retry");
   });
 });
 
@@ -261,6 +322,11 @@ describe("applyEmptyTurnRecovery", () => {
   });
 
   it("has a wake reason of its own so the next turn gets the right instruction", () => {
-    expect(EMPTY_TURN_RETRY_WAKE_REASON).toBe("issue_turn_produced_nothing");
+    // The heartbeat hands every wake reason to this one function and says
+    // whatever comes back, so the corrective turn reaches the worker only if
+    // its own reason is matched here and nothing else is.
+    expect(emptyTurnInstructionForWake(EMPTY_TURN_RETRY_WAKE_REASON)).toBe(buildEmptyTurnRetryInstruction());
+    expect(emptyTurnInstructionForWake("issue_children_completed")).toBeNull();
+    expect(emptyTurnInstructionForWake(undefined)).toBeNull();
   });
 });
