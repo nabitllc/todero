@@ -19,7 +19,8 @@ BASE = os.environ.get("TODERO_API", "http://127.0.0.1:3100/api")
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = json.load(open(os.path.join(HERE, "live-loop-fixture.json"), encoding="utf-8"))
 
-ORG = f"Zz Gauntlet Org {time.strftime('%m%d-%H%M%S')}"
+STAMP = time.strftime('%m%d-%H%M%S')
+ORG = f"Zz Gauntlet Org {STAMP}"
 OLD_MISSION = "Fill a table of five strangers for dinner in Tampa every Wednesday and Saturday."
 MISSION = "Publish a one-page guide to each of four houseplants that survive a dark flat."
 FIRST_ANSWER = ("Must have: the four one-page guides, each naming the plant, the light it needs, "
@@ -55,6 +56,28 @@ def call(method, path, body=None, timeout=120):
             return err.code, None
     except Exception as exc:
         return 0, {"error": str(exc)}
+
+
+REPORT_DIR = os.path.join(HERE, "..", "reports")
+REPORT_FILE = os.path.join(REPORT_DIR, f"improvement-loop-{STAMP}.json")
+
+
+def save_report(report):
+    """Put the numbers on disk the moment they exist.
+
+    Wave 16 ran 3,324 seconds, past the runner's limit, and the runner threw
+    the output away -- so a wave that had worked out every number produced
+    nothing at all. This is written before anything is printed, and again
+    when the recovery step adds its result.
+    """
+    try:
+        os.makedirs(REPORT_DIR, exist_ok=True)
+        with open(REPORT_FILE, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, indent=1)
+        print(f"report written to {REPORT_FILE}", flush=True)
+    except Exception as exc:
+        print(f"could not write the report file: {exc}", flush=True)
+    return REPORT_FILE
 
 
 def log(msg):
@@ -314,6 +337,9 @@ def measure(C, R, finished):
         "noise": noise,
         "final": {(r.get("identifier") or "?"): r.get("status") for r in rows},
     }
+    # On disk before anything else happens: the recovery step below runs for
+    # another quarter of an hour, and these numbers must survive it.
+    save_report(report)
     return report
 
 
@@ -411,6 +437,7 @@ def main() -> int:
     # wave's recovery case.
     report["checks"]["recovers_previous_org"] = recover_previous_org()
     remember_org(C)
+    save_report(report)
 
     print()
     print("=" * 72)
@@ -425,4 +452,5 @@ def main() -> int:
     return 0 if not failing else 1
 
 
-sys.exit(main())
+if __name__ == "__main__":
+    sys.exit(main())
