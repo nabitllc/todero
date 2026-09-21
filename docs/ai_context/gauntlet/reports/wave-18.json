@@ -1,0 +1,230 @@
+{
+  "wave": 18,
+  "label": "improvement loop wave 2b - deferred review on top of the hand-off",
+  "started": "2026-09-21T03:20:09+00:00",
+  "wall_seconds": 4783.5,
+  "checks": [
+    {
+      "id": "smoke",
+      "cmd": "node checks/pnpm-run.mjs check:node-version check:no-git-push",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.1,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "tokens",
+      "cmd": "node checks/pnpm-run.mjs check:tokens check:token-gates",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1.9,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "typecheck",
+      "cmd": "node checks/tsc.mjs packages/shared server ui",
+      "ok": true,
+      "exit": 0,
+      "seconds": 10.2,
+      "tail": "[gauntlet] tsc --noEmit in packages/shared\n[gauntlet] tsc --noEmit in server\n[gauntlet] tsc --noEmit in ui"
+    },
+    {
+      "id": "unit_shared",
+      "cmd": "node checks/vitest.mjs packages/shared",
+      "ok": true,
+      "exit": 0,
+      "seconds": 10.8,
+      "tail": "etry] dropping batch 81512955b2423ce8d8972b7e8b3a0d55 on terminal response (HTTP 413); 1 event(s) lost\n\nstderr | src/telemetry/client-contract.test.ts > telemetry client wire contract \u00e2\u20ac\u201d retry semantics > does not retry a terminal 400 or 413\n[telemetry] dropping batch bcb611a997c44397bfe082acd0488575 on terminal response (HTTP 400); 1 event(s) lost\n\nstderr | src/telemetry/client-contract.test.ts > telemetry client wire contract \u00e2\u20ac\u201d retry semantics > does not retry a terminal 400 or 413\n[telemetry] dropping batch e6cb76a4c0495a506d2c72ba16322d22 on terminal response (HTTP 413); 1 event(s) lost"
+    },
+    {
+      "id": "unit_ui",
+      "cmd": "node checks/vitest.mjs ui",
+      "ok": true,
+      "exit": 0,
+      "seconds": 106.3,
+      "tail": " testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act\n\nstderr | src/adapters/use-disabled-adapters.test.tsx > useDisabledAdaptersSync > does not fetch adapters when disabled\nAn update to Root inside a test was not wrapped in act(...).\n\nWhen testing, code that causes React state updates should be wrapped into act(...):\n\nact(() => {\n  /* fire events that update state */\n});\n/* assert on the output */\n\nThis ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act"
+    },
+    {
+      "id": "unit_server_core",
+      "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 150.8,
+      "tail": "stderr | src/__tests__/company-skills-service.test.ts\nSkipping the symlink cases in company-skills-service.test.ts: this host cannot create symlinks."
+    },
+    {
+      "id": "file_size_caps",
+      "cmd": "node checks/file-size-caps.mjs",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.2,
+      "tail": "[file-size] 1837 files checked, 298 standing outliers, 0 failure(s)"
+    },
+    {
+      "id": "live_loop_ollama",
+      "cmd": "python checks/live-loop.py",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1045.3,
+      "tail": "2452 b380aa63-56ee-4017-a2fe-f1007e537920\n22:25:50 round 1: status=blocked markers={'waiting': True, 'review': False, 'plan': False}\n22:26:51 round 2: status=blocked markers={'waiting': True, 'review': False, 'plan': True}\n22:30:22 paused for ninety seconds; nothing moved; resumed\n22:40:24 ZZGAAAAAA-2: handed in, reviewed, accepted\n22:40:24 ZZGAAAAAA-3: handed in, reviewed, accepted\n22:40:24 ZZGAAAAAA-4: handed in, reviewed, accepted\n22:40:24 ZZGAAAAAA-5: handed in, reviewed, accepted\n22:42:17 runs by status: {'succeeded': 10}\n22:42:17 archived Zz Gauntlet 0920-222452\n22:42:17 live loop passed"
+    },
+    {
+      "id": "item0_local_model_timeout",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.4,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/local-model-timeout.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  22:42:18\n   Duration  1.69s (transform 873ms, setup 175ms, import 1.33s, tests 2ms, environment 0ms)"
+    },
+    {
+      "id": "item0_recovery_copy",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.7,
+      "tail": "[gauntlet] vitest in server: src/services/recovery/recovery-copy.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  22:42:20\n   Duration  305ms (transform 29ms, setup 114ms, import 21ms, tests 18ms, environment 0ms)"
+    },
+    {
+      "id": "item1_skill_rows",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.6,
+      "tail": "sets through the API\nThe current testing environment is not configured to support act(...)\nThe current testing environment is not configured to support act(...)\n\nstderr | src/components/skills/SkillPackRowMeta.gauntlet.tsx > SkillPackRowMeta > shows the version and the because-line, and resets through the API\nThe current testing environment is not configured to support act(...)\n\nstderr | src/components/skills/SkillPackRowMeta.gauntlet.tsx > SkillPackRowMeta > shows the version and the because-line, and resets through the API\nThe current testing environment is not configured to support act(...)"
+    },
+    {
+      "id": "item2_wizard_window",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "\u001b[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - `__dirname` (vitest.config.ts:7:25). Use `import.meta.dirname` instead\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\u001b[39m"
+    },
+    {
+      "id": "item2_cut_off_reply",
+      "cmd": "node checks/vitest.mjs server src/adapters/http/cut-off-reply.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1.9,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/cut-off-reply.test.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  22:42:27\n   Duration  1.44s (transform 798ms, setup 114ms, import 1.14s, tests 30ms, environment 0ms)"
+    },
+    {
+      "id": "item3_board_reorder",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "\u001b[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - `__dirname` (vitest.config.ts:7:25). Use `import.meta.dirname` instead\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\u001b[39m"
+    },
+    {
+      "id": "item4_send_back_one_call",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 14.1,
+      "tail": "[gauntlet] vitest in server: src/__tests__/send-back-route.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  22:42:31\n   Duration  13.60s (transform 4.00s, setup 112ms, import 8.50s, tests 4.83s, environment 0ms)"
+    },
+    {
+      "id": "item5_task_drain_stable",
+      "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 68.5,
+      "tail": "     at Mock (file:///C:/Development/Todero/node_modules/.pnpm/@vitest+spy@4.1.10/node_modules/@vitest/spy/dist/index.js:332:34)\n              at publishActivitiesBestEffort (C:/Development/Todero/server/src/routes/instance-settings.ts:74:7)\n              at C:/Development/Todero/server/src/routes/instance-settings.ts:398:9\n              at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    }\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  50 passed (50)\n   Start at  22:43:40\n   Duration  13.21s (transform 1.99s, setup 113ms, import 128ms, tests 12.81s, environment 0ms)"
+    },
+    {
+      "id": "repro_slow_local_model_turn",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  22:43:53\n   Duration  2.51s (transform 778ms, setup 115ms, import 1.12s, tests 1.12s, environment 0ms)"
+    },
+    {
+      "id": "repro_plan_without_tasks",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  22:43:56\n   Duration  299ms (transform 36ms, setup 111ms, import 31ms, tests 3ms, environment 0ms)"
+    },
+    {
+      "id": "repro_review_window",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-window.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 17.5,
+      "tail": "61e9acdc1568\",\"runId\":\"20c2ee49-a0f9-48b7-aa3c-79cca8ecfe2a\"}\u001b[39m\n[22:44:13] \u001b[32mINFO\u001b[39m: \u001b[36mwrote the agent's copy of the hand-in\u001b[39m \u001b[90m{\"agentId\":\"2fc7d222-abf0-4460-a5ba-61e9acdc1568\",\"issueId\":\"903136ec-068b-4581-8b59-64c80e2f120d\",\"path\":\"C:\\Users\\msaen\\.todero\\instances\\default\\companies\\966465c8-fb0f-4531-918a-fd5a03b388d7\\agents\\2fc7d222-abf0-4460-a5ba-61e9acdc1568\\documents\\2026-09-21-t966465-2.md\"}\u001b[39m\n\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  22:43:57\n   Duration  16.94s (transform 5.70s, setup 108ms, import 10.39s, tests 6.28s, environment 0ms)"
+    },
+    {
+      "id": "repro_second_hand_in",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 9.3,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  22:44:15\n   Duration  8.84s (transform 1.31s, setup 111ms, import 3.88s, tests 4.69s, environment 0ms)"
+    },
+    {
+      "id": "repro_dependency_handoff",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/dependency-handoff.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.9,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/dependency-handoff.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  22:44:24\n   Duration  2.40s (transform 1.43s, setup 111ms, import 2.14s, tests 3ms, environment 0ms)"
+    },
+    {
+      "id": "repro_deferred_review",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/deferred-review.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 17.0,
+      "tail": "C:/Development/Todero/server\n\n[22:44:42] \u001b[32mINFO\u001b[39m: \u001b[36m[todero] The reviewer passed it; accepting the task.\u001b[39m \u001b[90m{\"companyId\":\"1d4e7e72-0c8a-4ae8-9417-a1878bec17ae\"}\u001b[39m\n[22:44:42] \u001b[33mWARN\u001b[39m: \u001b[36mruntime connection tools could not be delivered\u001b[39m \u001b[90m{\"companyId\":\"1d4e7e72-0c8a-4ae8-9417-a1878bec17ae\",\"agentId\":\"2efb1577-363e-4431-94f0-6072879865ae\",\"runId\":\"ea39b5f8-5d22-4b4d-a72d-084a67569f58\"}\u001b[39m\n\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  22:44:27\n   Duration  16.47s (transform 5.80s, setup 108ms, import 10.31s, tests 5.87s, environment 0ms)"
+    },
+    {
+      "id": "improvement_loop",
+      "cmd": "python checks/improvement-loop.py",
+      "ok": false,
+      "exit": 1,
+      "seconds": 3309.3,
+      "tail": "re_plan\": 1,\n  \"approves\": 1,\n  \"lazy_replies\": 0,\n  \"hand_accepts\": 0\n },\n \"askedForPredecessorOutput\": [],\n \"noise\": [\n  {\n   \"id\": \"fbdc3398-a734-4f64-95de-aa317127e660\",\n   \"issue\": \"ZZGAAAAAAA-1\",\n   \"said\": \"Sure, let's move forward with the plan.\\n\\nThis plan outlines the necessary steps to create the four one-page guides, ensuring that each guide contains the required information and is well-written. Let \"\n  }\n ],\n \"final\": {\n  \"ZZGAAAAAAA-4\": \"todo\",\n  \"ZZGAAAAAAA-3\": \"done\",\n  \"ZZGAAAAAAA-2\": \"done\",\n  \"ZZGAAAAAAA-1\": \"blocked\",\n  \"ZZGAAAAAAA-6\": \"todo\",\n  \"ZZGAAAAAAA-5\": \"todo\"\n }\n}"
+    }
+  ],
+  "delta": {
+    "fixed": [
+      "unit_ui",
+      "live_loop_ollama"
+    ],
+    "regressed": [],
+    "still_failing": [
+      "improvement_loop"
+    ],
+    "new": [
+      "repro_deferred_review"
+    ]
+  },
+  "prev_score": 19,
+  "spend": {
+    "subagent:workflow-subagent|claude-opus-5[1m]": {
+      "input": 46,
+      "output": 8196,
+      "cacheRead": 1003521,
+      "cacheCreation": 680694,
+      "usd": 4.961228
+    },
+    "main|claude-fable-5-1": {
+      "input": 198,
+      "output": 11040,
+      "cacheRead": 4064176,
+      "cacheCreation": 879829,
+      "usd": 19.166603999999996
+    },
+    "auxiliary|claude-fable-5-1": {
+      "input": 1012,
+      "output": 34,
+      "cacheRead": 960582,
+      "cacheCreation": 1005,
+      "usd": 0.27206549999999996
+    }
+  },
+  "local": {}
+}

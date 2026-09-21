@@ -1,0 +1,90 @@
+{
+ "organization": "Zz Gauntlet Org 0920-224444",
+ "companyId": "f818e743-9bff-4023-9b66-85acf74ef588",
+ "elapsedSeconds": 2403,
+ "checks": {
+  "human_answers": {
+   "value": 1,
+   "gate": "<= 1",
+   "pass": true
+  },
+  "project_completes": {
+   "value": false,
+   "gate": "true",
+   "pass": false
+  },
+  "dependency_handoff": {
+   "value": "2/3",
+   "gate": "all",
+   "pass": false
+  },
+  "noise_handbacks": {
+   "value": 1,
+   "gate": "0",
+   "pass": false
+  },
+  "verdict_lists_checks": {
+   "value": "3/3",
+   "gate": "all",
+   "pass": true
+  },
+  "pause_holds": {
+   "value": 0,
+   "gate": "0 new starts",
+   "pass": true
+  },
+  "task_has_criteria": {
+   "value": "0/5",
+   "gate": "all",
+   "pass": false
+  },
+  "pipeline_stages": {
+   "value": "2/5",
+   "gate": "all",
+   "pass": false
+  },
+  "first_pass_rate": {
+   "value": "2/3",
+   "gate": "trend",
+   "pass": true
+  },
+  "recovers_previous_org": {
+   "value": "finished=False, asked=19",
+   "gate": "completes, 0 human touches",
+   "pass": false,
+   "organization": "Zz Gauntlet Org 0920-201356",
+   "final": {
+    "ZZGAAAAA-8": "todo",
+    "ZZGAAAAA-3": "blocked",
+    "ZZGAAAAA-4": "done",
+    "ZZGAAAAA-2": "done",
+    "ZZGAAAAA-5": "blocked",
+    "ZZGAAAAA-7": "blocked",
+    "ZZGAAAAA-6": "blocked",
+    "ZZGAAAAA-1": "blocked"
+   }
+  }
+ },
+ "humanTouches": {
+  "answers_before_plan": 1,
+  "approves": 1,
+  "lazy_replies": 0,
+  "hand_accepts": 0
+ },
+ "askedForPredecessorOutput": [],
+ "noise": [
+  {
+   "id": "fbdc3398-a734-4f64-95de-aa317127e660",
+   "issue": "ZZGAAAAAAA-1",
+   "said": "Sure, let's move forward with the plan.\n\nThis plan outlines the necessary steps to create the four one-page guides, ensuring that each guide contains the required information and is well-written. Let "
+  }
+ ],
+ "final": {
+  "ZZGAAAAAAA-4": "todo",
+  "ZZGAAAAAAA-3": "done",
+  "ZZGAAAAAAA-2": "done",
+  "ZZGAAAAAAA-1": "blocked",
+  "ZZGAAAAAAA-6": "todo",
+  "ZZGAAAAAAA-5": "todo"
+ }
+}

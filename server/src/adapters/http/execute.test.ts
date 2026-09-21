@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@todero/shared";
 import { TODERO_PLAN_JSON_SCHEMA, TODERO_PLAN_JSON_SCHEMA_NAME } from "@todero/shared/todero-plan-schema";
-import { buildMissingPlanRetryInstruction } from "../../todero/conversation-outcome.js";
+import {
+  buildMissingPlanRetryInstruction,
+} from "../../todero/missing-plan-recovery.js";
 import {
   buildHeartbeatRunIssueComment,
   mergeHeartbeatRunResultJson,

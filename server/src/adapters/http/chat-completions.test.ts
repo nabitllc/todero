@@ -8,6 +8,7 @@ import {
   isChatCompletionsUrl,
   parseChatCompletionsReply,
   parseChatCompletionsText,
+  readChatCompletionsInputs,
 } from "./chat-completions.js";
 import { estimatePromptTokens, promptBudgetTokens } from "./prompt-budget.js";
 
@@ -492,5 +493,72 @@ describe("budgeting the prompt against the window", () => {
     expect(last.content).toContain("Write the plan block now, nothing else.");
     expect(messages[0]!.content).toContain("You are Ash");
     expect(estimatePromptTokens(messages)).toBeLessThanOrEqual(promptBudgetTokens(4096));
+  });
+});
+
+/**
+ * A task that waits on another one used to wake with no idea what that task
+ * produced. Observed 2026-09-20: the reviewer asked for the drafts five times
+ * and the project ended with two of five tasks blocked. The finished work now
+ * travels with the task, pinned, right after what the agent knows.
+ */
+describe("the work a task builds on reaches the model", () => {
+  const DRAFTS = "Draft one: how to sign up. Draft two: how to invite a teammate.";
+
+  function thread(count: number) {
+    return Array.from({ length: count }, (_v, index) => ({
+      role: index % 2 === 0 ? "user" : "agent",
+      body: `turn ${index}: ${"word ".repeat(120)}`,
+    }));
+  }
+
+  it("renders nothing when the task waits on nobody", () => {
+    expect(readChatCompletionsInputs({})).toBeNull();
+    expect(readChatCompletionsInputs({ toderoInputs: [] })).toBeNull();
+    expect(readChatCompletionsInputs({ toderoInputs: [{ identifier: "ZZF-3", title: "Drafts", body: " " }] }))
+      .toBeNull();
+  });
+
+  it("leaves every other prompt exactly as it was", () => {
+    const base = { toderoTaskMarkdown: TASK_MARKDOWN, toderoSkillText: "SKILL", toderoContextLength: 16_384 };
+    const without = buildChatCompletionsMessages(base, { agentName: "Ash" });
+    const withEmpty = buildChatCompletionsMessages({ ...base, toderoInputs: [] }, { agentName: "Ash" });
+    expect(withEmpty).toEqual(without);
+  });
+
+  it("puts the finished work after what the agent knows and before the task", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoSkillText: "SKILL TEXT",
+        toderoContextLength: 16_384,
+        toderoInputs: [{ identifier: "ZZF-3", title: "Write initial drafts", body: DRAFTS }],
+      },
+      { agentName: "Ash" },
+    );
+    const skillIndex = messages.findIndex((message) => message.content.includes("SKILL TEXT"));
+    const inputsIndex = messages.findIndex((message) => message.content.includes(DRAFTS));
+    const taskIndex = messages.findIndex((message) => message.content.includes(MISSION) && message.role === "user");
+    expect(skillIndex).toBe(1);
+    expect(inputsIndex).toBe(skillIndex + 1);
+    expect(taskIndex).toBe(inputsIndex + 1);
+    expect(messages[inputsIndex]!.role).toBe("system");
+    expect(messages[inputsIndex]!.content).toContain("ZZF-3 — Write initial drafts");
+  });
+
+  it("keeps the finished work when the conversation is trimmed", () => {
+    const messages = buildChatCompletionsMessages(
+      {
+        toderoTaskMarkdown: TASK_MARKDOWN,
+        toderoThread: thread(40),
+        toderoContextLength: 4_096,
+        toderoInputs: [{ identifier: "ZZF-3", title: "Write initial drafts", body: DRAFTS }],
+      },
+      { agentName: "Ash" },
+    );
+    const joined = messages.map((message) => message.content).join("\n");
+    expect(joined).toContain(DRAFTS);
+    expect(joined).toMatch(/left out/i);
+    expect(estimatePromptTokens(messages)).toBeLessThanOrEqual(promptBudgetTokens(4_096));
   });
 });

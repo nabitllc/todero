@@ -131,23 +131,26 @@ import {
 import { isSlowLocalTurnAgent, SLOW_LOCAL_TURN_ERROR_CODE } from "../todero/slow-local-turn.js";
 import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js";
 import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
+import { gatherTaskInputsForTurn } from "../todero/task-inputs.js";
 import {
   allPlanChildrenClosed,
-  applyMissingPlanRecovery,
-  buildMissingPlanRetryInstruction,
   buildPlanSummaryTurnInstruction,
-  buildStopAskingForPlanInstruction,
   CONVERSATION_OUTPUT_DOCUMENT_KEY,
   descriptionWithoutConversationMarkers,
-  hasGivenUpOnPlan,
   loadPlanChildren,
-  MISSING_PLAN_RETRY_WAKE_REASON,
   NEXT_PROJECT_DOCUMENT_KEY,
   parseNextProjectLine,
   planConversationOutcome,
-  planMissingPlanRecovery,
   planReviewedOutcome,
 } from "../todero/conversation-outcome.js";
+import {
+  applyMissingPlanRecovery,
+  buildMissingPlanRetryInstruction,
+  buildStopAskingForPlanInstruction,
+  hasGivenUpOnPlan,
+  MISSING_PLAN_RETRY_WAKE_REASON,
+  planMissingPlanRecovery,
+} from "../todero/missing-plan-recovery.js";
 import {
   recordConversationDispositionApplied,
   withConversationDispositionApplied,
@@ -158,6 +161,7 @@ import { syncAgentSkillFolder, writeAgentHandIn } from "../todero/agent-folder.j
 import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
 import { applyJudgeReview, judgeFailRound } from "../todero/judge-apply.js";
+import { installDeferredReviewsOnResume } from "../todero/deferred-review.js";
 import { isManagerMode, getManager } from "../todero/manager-mode.js";
 import { isWaitingForManagerSendback } from "../todero/manager-sendback.js";
 import { buildManagerAssignmentTurnInstruction } from "../todero/manager-assignment.js";
@@ -7155,6 +7159,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
   };
   const budgets = budgetService(db, budgetHooks);
   const recovery = recoveryService(db, { enqueueWakeup });
+  installDeferredReviewsOnResume(db, enqueueWakeup);
 
   function isPlanApprovalConfirmationPayload(payload: unknown) {
     const target = parseObject(parseObject(payload).target);
@@ -15057,6 +15062,31 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           "left some of what the agent knows out of this turn",
         );
       }
+      // The finished work of every task this one waited on, gathered fresh and
+      // written on the task as its own document. A task sent back and redone
+      // is what the tasks after it read on their next turn.
+      //
+      // Every task asks, whether or not it belongs to a plan: a task someone
+      // made by hand can be told to wait on another one just as well, and it
+      // should get the same hand-off. The question answers itself for a task
+      // nothing waits on — the conversation task included — which is why that
+      // one needs no exception of its own.
+      const taskInputs = await gatherTaskInputsForTurn(db, {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        issueId: issueRef.id,
+        onProblem: (error: unknown, said: string) =>
+          logger.warn({ err: error, agentId: agent.id, issueId: issueRef.id }, said),
+      });
+      if (taskInputs.length > 0) {
+        context.toderoInputs = taskInputs.map((input) => ({
+          identifier: input.identifier,
+          title: input.title,
+          body: input.body,
+        }));
+      } else {
+        delete context.toderoInputs;
+      }
       // The agent's own folder: its brief and a copy of everything turned on
       // for it. Written once, and again whenever the set changed.
       await syncAgentSkillFolder({
@@ -15088,6 +15118,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       delete context.toderoSkillText;
       delete context.toderoAvailableModels;
       delete context.toderoContextLength;
+      delete context.toderoInputs;
     }
     if (issueRef) {
       context.toderoIssue = {
@@ -15124,6 +15155,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           toderoWakeComment: context.toderoWakeComment,
           toderoTaskMarkdown: context.toderoTaskMarkdown,
           toderoTaskMarkdownCompact: context.toderoTaskMarkdownCompact,
+          // Somebody else's hand-in can quote a secret this organization
+          // registered just as easily as this task's own description can.
+          toderoInputs: context.toderoInputs,
         },
       );
       context.toderoIssue = redactedWakeContext.toderoIssue;
@@ -15135,6 +15169,9 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       }
       if (redactedWakeContext.toderoTaskMarkdownCompact) {
         context.toderoTaskMarkdownCompact = redactedWakeContext.toderoTaskMarkdownCompact;
+      }
+      if (redactedWakeContext.toderoInputs) {
+        context.toderoInputs = redactedWakeContext.toderoInputs;
       }
     }
     const requestedExecutionWorkspaceId = readNonEmptyString(issueRef?.executionWorkspaceId);
@@ -17759,8 +17796,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 // line; a second send-back already started the manager's turn
                 // above, and this line says so.
                 if (managerModeOn && manager && currentIssue.parentId && review.judgeAgent && review.verdict) {
-                  const verdictRound =
-                    judgeFailRound(review.outcome, currentIssue.description) ?? undefined;
+                  const verdictRound = judgeFailRound(review.outcome, currentIssue.description) ?? undefined;
                   await postReviewVerdictLine(
                     {
                       addComment: (id, body, agentId) => issuesSvc.addComment(id, body, { agentId }),

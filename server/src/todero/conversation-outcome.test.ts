@@ -3,23 +3,28 @@ import { descriptionWithWaitingMarker, WAITING_ON_YOU_MARKER } from "./conversat
 import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
+  descriptionForDeferredReview,
+  descriptionWithDeferredReviewMarker,
   descriptionWithoutConversationMarkers,
   descriptionWithPlanMarker,
   descriptionWithReviewMarker,
   parseNextProjectLine,
   PLAN_PENDING_MARKER,
   planConversationOutcome,
+  hasDeferredReviewMarker,
   planReviewedOutcome,
   REVIEW_PENDING_MARKER,
+} from "./conversation-outcome.js";
+import {
   applyMissingPlanRecovery,
   buildStopAskingForPlanInstruction,
-  SYSTEM_NOTICE_PRESENTATION,
   descriptionWithPlanTries,
   hasGivenUpOnPlan,
   planMissingPlanRecovery,
   readPlanTries,
+  SYSTEM_NOTICE_PRESENTATION,
   type MissingPlanRecoveryDeps,
-} from "./conversation-outcome.js";
+} from "./missing-plan-recovery.js";
 
 describe("planConversationOutcome", () => {
   it("sends a child task's done to the person for review instead of closing it", () => {
@@ -547,5 +552,43 @@ describe("applyMissingPlanRecovery", () => {
         presentation: SYSTEM_NOTICE_PRESENTATION,
       },
     ]);
+  });
+});
+
+/**
+ * Wave 18: a hand-in handed in while the organization was on hold keeps a note
+ * that a reviewer still owes it an answer. Play reads that note back.
+ */
+describe("the note a deferred review leaves on the task", () => {
+  it("says the task is with the person, in review, and still owed an answer", () => {
+    const written = descriptionForDeferredReview("<!-- todero-type: Task -->\nDraft the guide.");
+    expect(hasDeferredReviewMarker(written)).toBe(true);
+    expect(written).toContain(WAITING_ON_YOU_MARKER);
+    expect(written).toContain(REVIEW_PENDING_MARKER);
+    expect(written).toContain("Draft the guide.");
+    expect(written).toContain("<!-- todero-type: Task -->");
+  });
+
+  it("says the same thing when the hand-in already wrote its own two notes", () => {
+    const handedIn = descriptionWithReviewMarker(descriptionWithWaitingMarker("Draft the guide.", true), true);
+    expect(descriptionForDeferredReview(handedIn)).toBe(descriptionForDeferredReview("Draft the guide."));
+  });
+
+  it("can be taken off again without losing the other two", () => {
+    const written = descriptionForDeferredReview("Draft the guide.");
+    const cleared = descriptionWithDeferredReviewMarker(written, false);
+    expect(hasDeferredReviewMarker(cleared)).toBe(false);
+    expect(cleared).toContain(WAITING_ON_YOU_MARKER);
+    expect(cleared).toContain(REVIEW_PENDING_MARKER);
+  });
+
+  it("is gone once the task closes", () => {
+    const written = descriptionForDeferredReview("Draft the guide.");
+    expect(hasDeferredReviewMarker(descriptionWithoutConversationMarkers(written))).toBe(false);
+  });
+
+  it("is not there on a task nobody deferred", () => {
+    expect(hasDeferredReviewMarker("Draft the guide.")).toBe(false);
+    expect(hasDeferredReviewMarker(null)).toBe(false);
   });
 });

@@ -31,6 +31,7 @@ import {
   type ActivityPublication,
 } from "../services/activity-log.js";
 import { logger } from "../middleware/logger.js";
+import { reviewDeferredHandInsOnResume } from "../todero/deferred-review.js";
 
 /**
  * The reason this route writes. Always `manual`: only the instance-wide switch
@@ -157,6 +158,8 @@ export function toderoPauseRoutes(db: Db, deps?: ToderoPauseRouteDeps) {
       details: { scope: "company", previousReason: existing.pauseReason },
     });
     kickQueuedRuns(deps, "company");
+    // A hand-in that arrived during the hold was never looked at. Now it can be.
+    reviewDeferredHandInsOnResume(companyId);
     res.json(company);
   });
 
@@ -244,6 +247,8 @@ export function toderoPauseRoutes(db: Db, deps?: ToderoPauseRouteDeps) {
         entityId: company.id,
         details: { scope: "instance", previousReason: COMPANY_PAUSE_REASON_MASTER },
       }, publications);
+      // Each organization that starts again owes its own deferred reviews.
+      reviewDeferredHandInsOnResume(company.id);
     }
     publishBestEffort(publications, "company.resumed");
     kickQueuedRuns(deps, "instance");

@@ -1,5 +1,15 @@
 import type { Issue, IssueComment, IssuePriority, IssueStatus } from "@todero/shared";
 import type { VerdictInfo } from "./work-item-verdict";
+import {
+  PLAN_COMMENT_RE,
+  PLAN_TRIES_VALUE_RE,
+  REVIEW_COMMENT_RE,
+  TYPE_COMMENT_RE,
+  WAITING_COMMENT_RE,
+  stripWorkItemMeta,
+} from "./work-item-markers";
+
+export { stripWorkItemMeta };
 
 // "Brief" is the conversation an agent starts from: the first task of an
 // onboarding, where the person and the agent agree what the work is. Everything
@@ -60,20 +70,6 @@ export const AGENT_SUMMARY_LIMIT = 140;
 export const WAITING_ON_YOU = "Waiting on you.";
 export const APOSTROPHE = "\u2019";
 
-const TYPE_COMMENT_RE = /<!--\s*todero-type:\s*(Brief|Feature|Story|Task|Bug)\s*-->/i;
-const WAITING_COMMENT_RE = /<!--\s*todero-blocked-by:\s*waiting-on-you\s*-->/i;
-const REVIEW_COMMENT_RE = /<!--\s*todero-review:\s*pending\s*-->/i;
-const PLAN_COMMENT_RE = /<!--\s*todero-plan:\s*pending\s*-->/i;
-const JUDGE_ROUNDS_COMMENT_RE = /<!--\s*todero-judge-rounds:\s*\d+\s*-->\s*\n?/gi;
-// How many times Todero has had to ask for the plan again. Its own tally.
-const PLAN_TRIES_COMMENT_RE = /<!--\s*todero-plan-tries:\s*\d+\s*-->\s*\n?/gi;
-const PLAN_TRIES_VALUE_RE = /<!--\s*todero-plan-tries:\s*(\d+)\s*-->/i;
-// Manager mode keeps three more notes to itself in the description: who handed
-// the task out, that it is parked on the manager, and that a rewritten brief is
-// filed against it. None of them is anybody's reading.
-const MANAGER_ASSIGNED_COMMENT_RE = /<!--\s*todero-assigned-by:\s*[^>]*?-->\s*\n?/gi;
-const MANAGER_WAITING_COMMENT_RE = /<!--\s*todero-waiting-for-manager-sendback(?::[^>]*?)?-->\s*\n?/gi;
-const MANAGER_GUIDANCE_COMMENT_RE = /<!--\s*todero-has-guidance\s*-->\s*\n?/gi;
 const SECTION_HEADING_RE = /^(#{1,6}\s+|\*\*)(Acceptance Criteria|In Scope|Out of Scope|Testing Strategies)(\*\*)?\s*$/i;
 const CHECK_ITEM_RE = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/;
 
@@ -116,22 +112,6 @@ export type ParsedWorkItemDescription = {
   sections: WorkItemSection[];
   checklist: WorkItemChecklistItem[];
 };
-
-export function stripWorkItemMeta(description: string | null | undefined): string {
-  return (description ?? "")
-    .replace(TYPE_COMMENT_RE, "")
-    .replace(WAITING_COMMENT_RE, "")
-    .replace(REVIEW_COMMENT_RE, "")
-    .replace(PLAN_COMMENT_RE, "")
-    // The reviewer counts its rounds in the description; the person never
-    // needs to see the tally.
-    .replace(JUDGE_ROUNDS_COMMENT_RE, "")
-    .replace(PLAN_TRIES_COMMENT_RE, "")
-    .replace(MANAGER_ASSIGNED_COMMENT_RE, "")
-    .replace(MANAGER_WAITING_COMMENT_RE, "")
-    .replace(MANAGER_GUIDANCE_COMMENT_RE, "")
-    .replace(/^\s+/, "");
-}
 
 function matchSectionTitle(line: string): WorkItemSectionTitle | null {
   const match = line.trim().match(SECTION_HEADING_RE);

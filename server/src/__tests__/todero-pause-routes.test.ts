@@ -9,6 +9,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { toderoPauseRoutes } from "../routes/todero-pause-routes.js";
+import { setDeferredReviewRunner } from "../todero/deferred-review.js";
 import { errorHandler } from "../middleware/index.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -218,5 +219,51 @@ describeEmbeddedPostgres("Play / Pause routes", () => {
 
     await request(app).post("/api/instance/pause-all").send({}).expect(403);
     await request(app).post("/api/instance/resume-all").send({}).expect(403);
+  });
+
+  /**
+   * Waves 16-18: a hand-in made during a hold was never looked at, and the
+   * tasks behind it waited for a person who was never told. Starting an
+   * organization again has to put those hand-ins back in front of a reviewer.
+   */
+  describe("starting an organization again looks at the hand-ins its hold deferred", () => {
+    function catchResumes() {
+      const seen: string[] = [];
+      let sawOne: () => void = () => {};
+      const waited = new Promise<void>((resolve) => {
+        sawOne = resolve;
+      });
+      setDeferredReviewRunner(async (companyId: string) => {
+        seen.push(companyId);
+        sawOne();
+      });
+      return { seen, waited };
+    }
+
+    afterEach(() => setDeferredReviewRunner(null));
+
+    it("does it when one organization is started", async () => {
+      const companyId = await insertCompany("Resume Co", "paused", "manual");
+      const { seen, waited } = catchResumes();
+
+      await request(createApp()).post(`/api/companies/${companyId}/resume`).send({}).expect(200);
+
+      await waited;
+      expect(seen).toEqual([companyId]);
+    });
+
+    it("does it once for each organization that Resume everything starts", async () => {
+      const first = await insertCompany("Master One", "paused", "master");
+      const second = await insertCompany("Master Two", "paused", "master");
+      const byHand = await insertCompany("By hand", "paused", "manual");
+      const { seen, waited } = catchResumes();
+
+      await request(createApp()).post("/api/instance/resume-all").send({}).expect(200);
+
+      await waited;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect([...seen].sort()).toEqual([first, second].sort());
+      expect(seen).not.toContain(byHand);
+    });
   });
 });

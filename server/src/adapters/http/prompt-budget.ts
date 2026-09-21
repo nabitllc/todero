@@ -233,3 +233,89 @@ export function budgetChatMessages(input: {
 
   return { messages: [...markedLeading, ...kept, ...cappedTrailing], dropped };
 }
+
+/**
+ * The most of the prompt budget the work a task builds on may take.
+ *
+ * A task that waits on another one is handed that task's finished work when it
+ * wakes (doc/plans/2026-09-20-dependency-handoff.md). That work is somebody
+ * else's writing, so unlike Todero's own text it can be any length at all: four
+ * guides, or forty. Given the whole window it would push the task itself, the
+ * standing brief and the conversation out — and a reviewer that cannot see the
+ * task it was asked to review is no better off than one that never got the
+ * drafts.
+ *
+ * So the whole block is held to a quarter of the budget and split evenly
+ * between the tasks it came from. At 16,384 that is about four pages, which is
+ * what the observed failure needed. Anything longer is cut with a line saying
+ * which task holds the full text.
+ */
+export const TASK_INPUTS_MAX_BUDGET_SHARE = 0.25;
+
+/** The heading the model reads above the work its task builds on. */
+export const TASK_INPUTS_HEADING = "Work you build on";
+
+/** The heading and the one line of explanation under it. */
+export const TASK_INPUTS_LEAD = [
+  TASK_INPUTS_HEADING,
+  "This is what the tasks before yours handed in. It is the material for your own task: use it, and do not ask anyone to send it again.",
+].join("\n\n");
+
+/** What the model reads where the rest of a long hand-in would have been. */
+export function shortenedInputMarker(label: string): string {
+  return `[Todero: the rest of this was cut to fit this model's window. The whole of it is the finished work of ${label}.]`;
+}
+
+/** One task's finished work, as it reaches the prompt. */
+export type TaskInputForPrompt = {
+  identifier?: string | null;
+  title?: string | null;
+  body: string;
+};
+
+/** How a predecessor is named above its work: "ZZF-3 — Write initial drafts". */
+export function taskInputLabel(input: TaskInputForPrompt): string {
+  const identifier = typeof input.identifier === "string" ? input.identifier.trim() : "";
+  const title = typeof input.title === "string" ? input.title.trim() : "";
+  if (identifier && title) return `${identifier} — ${title}`;
+  return identifier || title || "an earlier task";
+}
+
+/**
+ * The block of finished work a task builds on, cut to fit.
+ *
+ * Pure arithmetic on strings: the same inputs and the same window always give
+ * the same block. Returns null when there is nothing to say, so a task that
+ * waits on nobody sends exactly the prompt it sent before.
+ */
+export function buildTaskInputsBlock(
+  inputs: TaskInputForPrompt[],
+  options: { contextLength?: number | null } = {},
+): string | null {
+  const usable = inputs.filter(
+    (input) => typeof input?.body === "string" && input.body.trim().length > 0,
+  );
+  if (usable.length === 0) return null;
+
+  const allowed = Math.max(
+    1,
+    Math.floor(promptBudgetTokens(options.contextLength) * TASK_INPUTS_MAX_BUDGET_SHARE),
+  );
+  const leadTokens = estimateContextTokens(TASK_INPUTS_LEAD) + MESSAGE_FRAMING_TOKENS;
+  // Evenly, so the first task in the list cannot eat the room the others need.
+  const perInput = Math.max(1, Math.floor((allowed - leadTokens) / usable.length));
+
+  const sections = usable.map((input) => {
+    const label = taskInputLabel(input);
+    const body = input.body.trim();
+    const room = perInput - estimateContextTokens(label) - MESSAGE_FRAMING_TOKENS;
+    if (estimateContextTokens(body) <= room) return `${label}\n${body}`;
+    const marker = shortenedInputMarker(label);
+    const chars = (room - estimateContextTokens(marker)) * CONTEXT_CHARS_PER_TOKEN;
+    // Not even room for a sentence of it: say where it is and move on.
+    if (chars <= 0) return `${label}\n${marker}`;
+    return `${label}\n${body.slice(0, chars)}\n${marker}`;
+  });
+
+  return [TASK_INPUTS_LEAD, ...sections].join("\n\n");
+}

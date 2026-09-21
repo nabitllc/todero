@@ -47,7 +47,7 @@ import { environmentService } from "./environments.js";
 import { heartbeatService } from "./heartbeat.js";
 import { logActivity } from "./activity-log.js";
 import { builtInAgentService } from "./built-in-agents.js";
-
+import { reviewDeferredHandInsOnResume } from "../todero/deferred-review.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export interface CompanyActivityActor {
@@ -434,12 +434,10 @@ export function companyService(db: Db) {
           logoAssetId: logoAssetId === undefined ? existing.logoAssetId : logoAssetId,
         }], tx);
 
-        const shouldLogReactivation = willReactivate &&
-          (existing.status === "archived" || agentsRestored > 0);
-
+        const logReactivation = willReactivate && (existing.status === "archived" || agentsRestored > 0);
         return {
           company: enrichCompany(hydrated),
-          reactivated: shouldLogReactivation ? { agentsRestored } : null,
+          reactivated: willReactivate ? { agentsRestored, logged: logReactivation } : null,
           archiveCascade,
           issuePrefixRederived,
         };
@@ -462,7 +460,9 @@ export function companyService(db: Db) {
           },
         });
       }
-      if (result.reactivated) {
+      // Back on its feet: any hand-in its hold left unreviewed gets one now.
+      if (result.reactivated) reviewDeferredHandInsOnResume(id);
+      if (result.reactivated?.logged) {
         await logActivity(db, {
           companyId: id,
           actorType: actor.actorType,

@@ -1,0 +1,90 @@
+{
+ "organization": "Zz Gauntlet Org 0920-201356",
+ "companyId": "67d6f192-7226-472b-9feb-85d2c361e9cb",
+ "elapsedSeconds": 2413,
+ "checks": {
+  "human_answers": {
+   "value": 1,
+   "gate": "<= 1",
+   "pass": true
+  },
+  "project_completes": {
+   "value": false,
+   "gate": "true",
+   "pass": false
+  },
+  "dependency_handoff": {
+   "value": "0/2",
+   "gate": "all",
+   "pass": false
+  },
+  "noise_handbacks": {
+   "value": 1,
+   "gate": "0",
+   "pass": false
+  },
+  "verdict_lists_checks": {
+   "value": "0/0",
+   "gate": "all",
+   "pass": false
+  },
+  "pause_holds": {
+   "value": 0,
+   "gate": "0 new starts",
+   "pass": true
+  },
+  "task_has_criteria": {
+   "value": "0/6",
+   "gate": "all",
+   "pass": false
+  },
+  "pipeline_stages": {
+   "value": "0/6",
+   "gate": "all",
+   "pass": false
+  },
+  "first_pass_rate": {
+   "value": "0/0",
+   "gate": "trend",
+   "pass": true
+  },
+  "recovers_previous_org": {
+   "value": "finished=False, asked=45",
+   "gate": "completes, 0 human touches",
+   "pass": false,
+   "organization": "Zz Gauntlet Org 0920-172324",
+   "final": {
+    "ZZGAAA-7": "todo",
+    "ZZGAAA-5": "blocked",
+    "ZZGAAA-6": "blocked",
+    "ZZGAAA-4": "done",
+    "ZZGAAA-3": "done",
+    "ZZGAAA-2": "done",
+    "ZZGAAA-1": "blocked"
+   }
+  }
+ },
+ "humanTouches": {
+  "answers_before_plan": 1,
+  "approves": 1,
+  "lazy_replies": 0,
+  "hand_accepts": 0
+ },
+ "askedForPredecessorOutput": [],
+ "noise": [
+  {
+   "id": "8bd99a90-8bc0-47c6-a53a-19f8e47ec756",
+   "issue": "ZZGAAAAA-1",
+   "said": "Got it. Based on your requirements, here's the proposed plan:\n\nThis plan ensures that we have a clear process from research to final publication, with each step building on the previous one. Let me kn"
+  }
+ ],
+ "final": {
+  "ZZGAAAAA-2": "blocked",
+  "ZZGAAAAA-1": "blocked",
+  "ZZGAAAAA-7": "todo",
+  "ZZGAAAAA-6": "todo",
+  "ZZGAAAAA-5": "todo",
+  "ZZGAAAAA-4": "todo",
+  "ZZGAAAAA-3": "todo"
+ }
+}
