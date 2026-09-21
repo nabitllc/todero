@@ -1,0 +1,80 @@
+{
+ "organization": "Zz Gauntlet Org 0921-140952",
+ "companyId": "9d181fc6-75fe-4cc9-ae04-f17e86ac0332",
+ "elapsedSeconds": 2402,
+ "checks": {
+  "human_answers": {
+   "value": 1,
+   "gate": "<= 1",
+   "pass": true
+  },
+  "project_completes": {
+   "value": false,
+   "gate": "true",
+   "pass": false
+  },
+  "dependency_handoff": {
+   "value": "2/3",
+   "gate": "all",
+   "pass": false
+  },
+  "noise_handbacks": {
+   "value": 0,
+   "gate": "0",
+   "pass": true
+  },
+  "verdict_lists_checks": {
+   "value": "4/4",
+   "gate": "all",
+   "pass": true
+  },
+  "pause_holds": {
+   "value": 0,
+   "gate": "0 new starts",
+   "pass": true
+  },
+  "task_has_criteria": {
+   "value": "0/4",
+   "gate": "all",
+   "pass": false
+  },
+  "pipeline_stages": {
+   "value": "2/4",
+   "gate": "all",
+   "pass": false
+  },
+  "first_pass_rate": {
+   "value": "2/3",
+   "gate": "trend",
+   "pass": true
+  },
+  "recovers_previous_org": {
+   "value": "finished=False, asked=0",
+   "gate": "completes, 0 human touches",
+   "pass": false,
+   "organization": "Zz Gauntlet Org 0921-092802",
+   "final": {
+    "ZZGAAAAAAAAAAA-5": "blocked",
+    "ZZGAAAAAAAAAAA-4": "done",
+    "ZZGAAAAAAAAAAA-3": "done",
+    "ZZGAAAAAAAAAAA-2": "done",
+    "ZZGAAAAAAAAAAA-1": "blocked"
+   }
+  }
+ },
+ "humanTouches": {
+  "answers_before_plan": 1,
+  "approves": 1,
+  "lazy_replies": 0,
+  "hand_accepts": 0
+ },
+ "askedForPredecessorOutput": [],
+ "noise": [],
+ "final": {
+  "ZZGAAAAAAAAAAAAAA-4": "blocked",
+  "ZZGAAAAAAAAAAAAAA-3": "done",
+  "ZZGAAAAAAAAAAAAAA-2": "done",
+  "ZZGAAAAAAAAAAAAAA-1": "blocked",
+  "ZZGAAAAAAAAAAAAAA-5": "todo"
+ }
+}

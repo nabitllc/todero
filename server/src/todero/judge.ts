@@ -10,6 +10,12 @@
  * heartbeat.
  */
 import type { ToderoPlan, ToderoPlanFeature, ToderoPlanTask } from "@todero/shared";
+import {
+  buildAcceptedWorkLines,
+  namesPackaging,
+  PACKAGING_NOTE,
+  type AcceptedFeatureWork,
+} from "./judge-feature-work.js";
 
 export type JudgeVerdict = "pass" | "fail";
 
@@ -264,6 +270,33 @@ export function findPlanFeatureForTask(plan: ToderoPlan | null, task: ToderoPlan
 export const JUDGE_VERDICT_SHAPE = "VERDICT: pass";
 
 /**
+ * Of the tasks this one waited on, the ones in the same feature that finished
+ * and handed something in. A predecessor in another feature is somebody else's
+ * work and is left out: the point is the feature's own finish line.
+ */
+export function acceptedWorkOfSameFeature(input: {
+  plan: ToderoPlan | null;
+  featureName: string | null;
+  predecessors: { identifier: string | null; title: string; body: string; status: string }[];
+}): AcceptedFeatureWork[] {
+  const wanted = (input.featureName ?? "").trim().toLowerCase();
+  if (!wanted) return [];
+  const work: AcceptedFeatureWork[] = [];
+  for (const predecessor of input.predecessors) {
+    if (predecessor.status !== "done") continue;
+    if (!predecessor.body.trim()) continue;
+    const planTask = findPlanTaskByTitle(input.plan, predecessor.title);
+    if ((planTask?.feature ?? "").trim().toLowerCase() !== wanted) continue;
+    work.push({
+      identifier: predecessor.identifier,
+      title: predecessor.title,
+      output: predecessor.body.trim(),
+    });
+  }
+  return work;
+}
+
+/**
  * The reviewer's whole prompt. Short on purpose: the same small model that
  * did the work is doing the reviewing, and a long rubric makes it hedge.
  */
@@ -278,6 +311,8 @@ export function buildJudgeReviewPrompt(input: {
   checks?: string[];
   /** The same flag `buildAcceptanceChecks` took, so the two agree. */
   isLastTaskOfFeature?: boolean;
+  /** What the tasks before this one, in this same feature, already handed in. */
+  acceptedWork?: AcceptedFeatureWork[];
 }): string {
   const parts: string[] = [
     "A teammate has finished a task and handed in the work below. Decide whether it is good enough to show the person who asked for it.",
@@ -299,17 +334,23 @@ export function buildJudgeReviewPrompt(input: {
   parts.push(`Task: ${input.taskTitle.trim()}`);
   if (input.expectedOutput?.trim()) parts.push(`Was asked to hand in: ${input.expectedOutput.trim()}`);
   const checks = (input.checks ?? []).filter((check) => check.trim());
+  // What the rest of the feature already did. Without this the reviewer sees
+  // one hand-in and the whole feature's finish line, and refuses the last task
+  // for work its own teammates finished and had accepted days earlier.
+  parts.push(...buildAcceptedWorkLines(input.acceptedWork));
   if (checks.length > 0) {
     parts.push("", "It has to be true that:");
     checks.forEach((check, index) => parts.push(`${index + 1}. ${check.trim()}`));
   }
+  parts.push("", "What was handed in:", '"""', input.deliverable.trim(), '"""', "");
+  // A line about packaging is judged on substance, because a chat reply has no
+  // other kind of substance to show. Only the lines this task is actually held
+  // to: its own hand-in line, and whatever it has to be true for — which is
+  // where the feature's finish line appears, on the task the feature ends with.
+  if (namesPackaging(input.expectedOutput) || checks.some(namesPackaging)) {
+    parts.push(PACKAGING_NOTE, "");
+  }
   parts.push(
-    "",
-    "What was handed in:",
-    '"""',
-    input.deliverable.trim(),
-    '"""',
-    "",
     input.isLastTaskOfFeature === false
       ? "Judge only what is above, and only against this one task. Pass it when it does what this task asked for, even if it could be longer or prettier, and even though the rest of the feature is still to come. Fail it only when something this task asked for is missing or wrong."
       : "Judge only what is above. Pass it when it does what the task asked and meets the done-when line, even if it could be longer or prettier. Fail it only when something the task asked for is missing or wrong.",
@@ -366,6 +407,11 @@ export function readAutoAcceptWhenJudgePasses(governance: unknown): boolean {
  * were met and which were not. When the reviewer skipped the answers it says
  * that too, in as many words: a review nobody can see into is the one thing
  * this comment must not look like.
+ *
+ * Met and not met are the reviewer's own answers and nothing else changes
+ * them, so the count at the top can never disagree with the reviewer's words
+ * underneath. Where an earlier task of the same feature already did the work a
+ * line asks for, that is added to the line as a note beside the answer.
  */
 export function buildJudgeComment(input: {
   verdict: JudgeVerdict;
@@ -373,10 +419,13 @@ export function buildJudgeComment(input: {
   outcome: JudgeOutcome;
   checks?: string[];
   checkResults?: boolean[] | null;
+  /** Per check, the earlier accepted task that had already done it, or null. */
+  checkAlreadyDone?: (string | null)[];
 }): string {
   const note = input.note.trim();
   const checks = (input.checks ?? []).filter((check) => check.trim());
   const results = input.checkResults ?? null;
+  const alreadyDone = input.checkAlreadyDone ?? [];
   const body: string[] = [];
   if (checks.length > 0 && results && results.length === checks.length) {
     const met = results.filter(Boolean).length;
@@ -384,7 +433,11 @@ export function buildJudgeComment(input: {
       [
         `Checked ${checks.length} thing${checks.length === 1 ? "" : "s"}. ${met} met, ${checks.length - met} not met.`,
         "",
-        ...checks.map((check, index) => `- ${results[index] ? "met" : "not met"} — ${check}`),
+        ...checks.map((check, index) => {
+          const answer = results[index] ? "met" : "not met";
+          const done = alreadyDone[index];
+          return `- ${answer}${done ? ` (already done on ${done} and accepted)` : ""} — ${check}`;
+        }),
       ].join("\n"),
     );
   } else if (checks.length > 0) {

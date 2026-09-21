@@ -39,6 +39,7 @@ import {
 import { applyJudgeReview, skippedReviewReasonText, type JudgeApplyResult } from "./judge-apply.js";
 import { reviewConversationHandIn, type JudgeReviewResult } from "./judge-review.js";
 import { readAutoAcceptWhenJudgePasses } from "./judge.js";
+import { recoverParkedTurns } from "./parked-turn-recovery.js";
 
 export type { DeferredHandIn } from "./deferred-review-find.js";
 
@@ -320,9 +321,37 @@ export function setDeferredReviewRunner(next: DeferredReviewRunner | null): void
   runner = next;
 }
 
-/** The one composition, installed where the db and a way to wake an agent are both in hand. */
+/**
+ * The one composition, installed where the db and a way to wake an agent are
+ * both in hand.
+ *
+ * Two things happen at this door, in this order. First the hand-ins nobody
+ * answered while the organization was on hold. Then the tasks that were parked
+ * in front of the person with nothing on them to answer — a task parked before
+ * the corrective turn existed has no other way back, because nothing wakes a
+ * parked task. The reviews go first: one of them may accept a hand-in and
+ * unblock the very tasks the second pass would otherwise walk over.
+ *
+ * Each pass is caught on its own. They are two different ways back into a
+ * stuck organization, and the first one falling over — a database read that
+ * fails, a reviewer that is not there — must not cost the second one its turn.
+ * Whatever went wrong is written down in plain words rather than swallowed.
+ */
 export function installDeferredReviewsOnResume(db: Db, enqueueWakeup: DeferredReviewWakeup): void {
-  setDeferredReviewRunner((companyId) => reviewDeferredHandIns(db, { enqueueWakeup }, { companyId }));
+  setDeferredReviewRunner(async (companyId) => {
+    let reviews: unknown = null;
+    try {
+      reviews = await reviewDeferredHandIns(db, { enqueueWakeup }, { companyId });
+    } catch (err: unknown) {
+      logger.warn({ err, companyId }, "could not review the hand-ins this organization's hold deferred");
+    }
+    try {
+      await recoverParkedTurns(db, { enqueueWakeup }, { companyId });
+    } catch (err: unknown) {
+      logger.warn({ err, companyId }, "could not start the tasks parked with nothing to answer");
+    }
+    return reviews;
+  });
 }
 
 /**
@@ -335,6 +364,8 @@ export function reviewDeferredHandInsOnResume(companyId: string): void {
   void Promise.resolve()
     .then(() => run(companyId))
     .catch((err: unknown) => {
-      logger.warn({ err, companyId }, "could not review the hand-ins this organization's hold deferred");
+      // Each pass writes its own line, so this one only ever covers what went
+      // wrong around them both.
+      logger.warn({ err, companyId }, "could not look at what this organization's hold left waiting");
     });
 }

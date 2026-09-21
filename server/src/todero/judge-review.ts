@@ -7,7 +7,8 @@
  * The request goes to the reviewer agent's own adapter config, which is a
  * copy of the worker's, so there is nothing extra to configure.
  */
-import type { Db } from "@todero/db";
+import { inArray } from "drizzle-orm";
+import { issues, type Db } from "@todero/db";
 import { parseToderoPlanBlock, type CompanySkill, type ToderoPlan } from "@todero/shared";
 import { isChatCompletionsUrl, parseChatCompletionsText } from "../adapters/http/chat-completions.js";
 import { companySkillService } from "../services/company-skills.js";
@@ -15,6 +16,7 @@ import { documentService } from "../services/documents.js";
 import { CONVERSATION_PLAN_DOCUMENT_KEY } from "./conversation-thread.js";
 import { findJudgeAgentForLead, type JudgeAgentRow } from "./judge-agent.js";
 import {
+  acceptedWorkOfSameFeature,
   buildAcceptanceChecks,
   buildJudgeComment,
   buildJudgeReviewPrompt,
@@ -28,8 +30,13 @@ import {
   type JudgeOutcome,
   type JudgeVerdict,
 } from "./judge.js";
+import {
+  checksAlreadyDone,
+  type AcceptedFeatureWork,
+} from "./judge-feature-work.js";
 import { getManager } from "./manager-mode.js";
 import { loadAgentSkillText } from "./skill-pack.js";
+import { collectTaskInputs, taskInputsDbDeps } from "./task-inputs.js";
 
 /** A cold second model load can be slow; the worker's own timeout is the same order. */
 export const JUDGE_REVIEW_TIMEOUT_MS = 120_000;
@@ -119,6 +126,47 @@ export async function loadApprovedPlanForParent(db: Db, parentIssueId: string): 
     .catch(() => null);
   const parsed = parseToderoPlanBlock(document?.body ?? "");
   return parsed?.plan ?? null;
+}
+
+/**
+ * What the tasks before this one, in the same feature, already handed in and
+ * had accepted.
+ *
+ * The tasks it waited on are the ones the hand-off already looks up
+ * (`task-inputs.ts`), so that lookup is used rather than a second one written
+ * here; all this adds is each one's status, which the hand-off has no use for.
+ * Anything that goes wrong reading it gives nothing back: a reviewer that has
+ * less to read still reviews, and one that never runs blocks the project.
+ */
+export async function loadAcceptedFeatureWork(
+  db: Db,
+  input: { companyId: string; issueId: string; plan: ToderoPlan | null; featureName: string | null },
+): Promise<AcceptedFeatureWork[]> {
+  if (!input.featureName?.trim()) return [];
+  try {
+    const predecessors = await collectTaskInputs(
+      taskInputsDbDeps(db, { companyId: input.companyId }),
+      input.issueId,
+    );
+    if (predecessors.length === 0) return [];
+    const statuses = await db
+      .select({ id: issues.id, status: issues.status })
+      .from(issues)
+      .where(inArray(issues.id, predecessors.map((predecessor) => predecessor.issueId)));
+    const byId = new Map(statuses.map((row) => [row.id, row.status]));
+    return acceptedWorkOfSameFeature({
+      plan: input.plan,
+      featureName: input.featureName,
+      predecessors: predecessors.map((predecessor) => ({
+        identifier: predecessor.identifier,
+        title: predecessor.title,
+        body: predecessor.body,
+        status: byId.get(predecessor.issueId) ?? "",
+      })),
+    });
+  } catch {
+    return [];
+  }
 }
 
 export type JudgeReviewResult = {
@@ -220,6 +268,19 @@ export async function reviewConversationHandIn(
     isLastTaskOfFeature: lastOfFeature,
   });
 
+  const featureName = feature?.name ?? planTask?.feature ?? null;
+  const acceptedWork = await loadAcceptedFeatureWork(db, {
+    companyId: input.issue.companyId,
+    issueId: input.issue.id,
+    plan,
+    featureName,
+  });
+  const checkAlreadyDone = checksAlreadyDone({
+    checks,
+    doneWhen: feature?.doneWhen ?? null,
+    acceptedWork,
+  });
+
   const review = await requestJudgeVerdict({
     config,
     expectedChecks: checks.length,
@@ -230,13 +291,14 @@ export async function reviewConversationHandIn(
     }),
     prompt: buildJudgeReviewPrompt({
       goal: plan?.goal ?? null,
-      featureName: feature?.name ?? planTask?.feature ?? null,
+      featureName,
       doneWhen: feature?.doneWhen ?? null,
       taskTitle: input.issue.title,
       expectedOutput: planTask?.output ?? null,
       deliverable,
       checks,
       isLastTaskOfFeature: lastOfFeature,
+      acceptedWork,
     }),
     fetcher: input.fetcher,
   });
@@ -257,6 +319,7 @@ export async function reviewConversationHandIn(
       outcome,
       checks,
       checkResults: review.checks,
+      checkAlreadyDone,
     }),
     judgeAgent,
     skipped: null,

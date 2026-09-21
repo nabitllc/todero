@@ -161,23 +161,12 @@ export function planEmptyTurnRecovery(input: {
   agentName?: string | null;
 }): EmptyTurnRecovery | null {
   const tries = readEmptyTurnTries(input.issue.description);
-  const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false);
-  const handBack: EmptyTurnHandBack = {
-    description: descriptionWithEmptyTurnTries(
-      descriptionWithWaitingMarker(base, true),
-      EMPTY_TURN_MAX_TRIES + 1,
-    ),
-    comment: buildEmptyTurnHandBackComment(input.agentName ?? null),
-  };
-  if (planEmptyTurnOutcome(input) === "retry") {
-    return {
-      kind: "retry",
-      description: descriptionWithEmptyTurnTries(descriptionWithWaitingMarker(base, false), tries + 1),
-      instruction: buildEmptyTurnRetryInstruction(),
-      comment: buildEmptyTurnRetryComment(),
-      fallback: handBack,
-    };
-  }
+  const retry = buildEmptyTurnRetry({
+    description: input.issue.description,
+    agentName: input.agentName ?? null,
+  });
+  const handBack: EmptyTurnHandBack = retry.fallback;
+  if (planEmptyTurnOutcome(input) === "retry") return retry;
   // The retry Todero asked for came back just as empty. That is the one round
   // the person is told about; a later one is an ordinary hand-back.
   if (tries !== EMPTY_TURN_MAX_TRIES) return null;
@@ -185,6 +174,38 @@ export function planEmptyTurnRecovery(input: {
   if (input.disposition !== "waiting") return null;
   if (asksThePersonForAnything(input.reply) || turnDeliversWork(input.reply)) return null;
   return { kind: "hand-back", ...handBack };
+}
+
+/**
+ * The corrective turn itself, built from what the task says about itself now:
+ * off the person's desk, counted as the one try, with the words for the worker
+ * and the words for the person, and the hand-back to fall back on.
+ *
+ * It is here on its own because a second door needs the same thing. The turn
+ * that ends badly is one way in; the other is an organization starting again
+ * with a task already parked, which never had a turn to end
+ * (`parked-turn-recovery.ts`). Both have to produce the same task afterwards,
+ * so both build it here.
+ */
+export function buildEmptyTurnRetry(input: {
+  description: string | null;
+  agentName?: string | null;
+}): Extract<EmptyTurnRecovery, { kind: "retry" }> {
+  const tries = readEmptyTurnTries(input.description);
+  const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.description, false), false);
+  return {
+    kind: "retry",
+    description: descriptionWithEmptyTurnTries(descriptionWithWaitingMarker(base, false), tries + 1),
+    instruction: buildEmptyTurnRetryInstruction(),
+    comment: buildEmptyTurnRetryComment(),
+    fallback: {
+      description: descriptionWithEmptyTurnTries(
+        descriptionWithWaitingMarker(base, true),
+        EMPTY_TURN_MAX_TRIES + 1,
+      ),
+      comment: buildEmptyTurnHandBackComment(input.agentName ?? null),
+    },
+  };
 }
 
 /** What Todero tells the worker when its turn produced nothing. */
