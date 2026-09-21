@@ -15067,7 +15067,18 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // own way — so only a task inside a plan gathers anything.
       const taskInputs = issueContext?.parentId
         ? await syncTaskInputs(
-            taskInputsDbDeps(db, { companyId: agent.companyId, agentId: agent.id }),
+            taskInputsDbDeps(db, {
+              companyId: agent.companyId,
+              agentId: agent.id,
+              onWriteFailed: (error: unknown) => {
+                // The task still gets the work; only the copy a person can
+                // open is missing this turn.
+                logger.warn(
+                  { err: error, agentId: agent.id, issueId: issueRef.id },
+                  "could not save the document that shows the work this task builds on",
+                );
+              },
+            }),
             issueRef.id,
           ).catch((error: unknown) => {
             logger.warn(

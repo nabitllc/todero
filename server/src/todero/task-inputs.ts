@@ -54,8 +54,12 @@ export type TaskInputsDeps = {
   listDirectPredecessors: (issueId: string) => Promise<PredecessorTask[]>;
   /** What a task handed in, or null when it handed in nothing. */
   readOutput: (issueId: string) => Promise<string | null>;
+  /** What this task's own hand-off document says now, or null when it has none. */
+  readCurrentInputs: (issueId: string) => Promise<string | null>;
   /** Put the block on the task as its own document. */
   writeInputsDocument: (input: { issueId: string; body: string }) => Promise<unknown>;
+  /** Said out loud when the document could not be written. */
+  onWriteFailed?: (error: unknown) => void;
 };
 
 /** How a predecessor is named: "ZZF-3 — Write initial drafts". */
@@ -96,11 +100,33 @@ export async function collectTaskInputs(deps: TaskInputsDeps, issueId: string): 
  * Collect it and write it on the task. Nothing is written when the task waits
  * on nobody, or when every task it waited on handed in nothing: an empty
  * document would only be a thing to explain.
+ *
+ * Two things the document must not do to the work it describes.
+ *
+ * It must not be able to take it away. A person can lock this document, or
+ * save an edit to it in the moment between the read and the write, and the
+ * documents service refuses the write in both cases. The document is only how
+ * a person sees the hand-off; the task still gets the work, and the failed
+ * write is said out loud instead of taking the work with it.
+ *
+ * And it must not grow without end. The work a task builds on is gathered
+ * again on every single wake, so an unconditional write would store another
+ * full copy of the same text every time — a task that wakes ten times would
+ * leave ten identical versions for a person to scroll past. Nothing is written
+ * when nothing it says has changed.
  */
 export async function syncTaskInputs(deps: TaskInputsDeps, issueId: string): Promise<TaskInput[]> {
   const inputs = await collectTaskInputs(deps, issueId);
   if (inputs.length === 0) return inputs;
-  await deps.writeInputsDocument({ issueId, body: buildTaskInputsDocumentBody(inputs) });
+  const body = buildTaskInputsDocumentBody(inputs);
+  try {
+    const current = await deps.readCurrentInputs(issueId);
+    if (current?.trim() !== body.trim()) {
+      await deps.writeInputsDocument({ issueId, body });
+    }
+  } catch (error) {
+    deps.onWriteFailed?.(error);
+  }
   return inputs;
 }
 
@@ -113,7 +139,12 @@ export async function syncTaskInputs(deps: TaskInputsDeps, issueId: string): Pro
  */
 export function taskInputsDbDeps(
   db: Db,
-  input: { companyId: string; agentId?: string | null; runId?: string | null },
+  input: {
+    companyId: string;
+    agentId?: string | null;
+    runId?: string | null;
+    onWriteFailed?: (error: unknown) => void;
+  },
 ): TaskInputsDeps {
   const documents = documentService(db);
   return {
@@ -142,6 +173,12 @@ export function taskInputsDbDeps(
         .catch(() => null);
       return document?.body ?? null;
     },
+    readCurrentInputs: async (issueId: string) => {
+      const document = await documents
+        .getIssueDocumentByKey(issueId, TASK_INPUTS_DOCUMENT_KEY)
+        .catch(() => null);
+      return document?.body ?? null;
+    },
     writeInputsDocument: async ({ issueId, body }) =>
       writeIssueDocumentOnLatest(db, {
         issueId,
@@ -153,5 +190,6 @@ export function taskInputsDbDeps(
         createdByAgentId: input.agentId ?? null,
         createdByRunId: input.runId ?? null,
       }),
+    onWriteFailed: input.onWriteFailed,
   };
 }

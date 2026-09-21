@@ -13,12 +13,23 @@ function deps(input: {
   predecessors: Array<{ id: string; identifier: string | null; title: string }>;
   outputs: Record<string, string>;
   writes: Array<{ issueId: string; body: string }>;
+  /** What the task's own hand-off document already says, when the test cares. */
+  stored?: { body: string | null };
+  /** Makes the write fail, the way a locked or just-edited document does. */
+  failWriteWith?: Error;
+  failures?: unknown[];
 }): TaskInputsDeps {
   return {
     listDirectPredecessors: async () => input.predecessors,
     readOutput: async (issueId: string) => input.outputs[issueId] ?? null,
+    readCurrentInputs: async () => input.stored?.body ?? null,
     writeInputsDocument: async (write) => {
+      if (input.failWriteWith) throw input.failWriteWith;
       input.writes.push(write);
+      if (input.stored) input.stored.body = write.body;
+    },
+    onWriteFailed: (error: unknown) => {
+      input.failures?.push(error);
     },
   };
 }
@@ -100,6 +111,55 @@ describe("the work a task builds on", () => {
     expect(writes).toHaveLength(2);
     expect(writes[1]!.body).toContain("The rewritten draft, with the four guides.");
     expect(writes[1]!.body).not.toContain("The first, thin draft.");
+  });
+
+  it("still hands the work to the task when the document cannot be written", async () => {
+    // A person can lock this document, or edit it in the moment between the
+    // read and the write; the documents service throws in both cases. The
+    // document is only how a person sees the hand-off. Losing it must not
+    // lose the work itself, which is the whole point of the feature.
+    const writes: Array<{ issueId: string; body: string }> = [];
+    const failures: unknown[] = [];
+    const locked = new Error("Document is locked");
+    const inputs = await syncTaskInputs(
+      deps({
+        predecessors: [{ id: "b", identifier: "ZZF-3", title: "Write initial drafts" }],
+        outputs: { b: "Draft one: how to sign up." },
+        writes,
+        failWriteWith: locked,
+        failures,
+      }),
+      CHILD,
+    );
+
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]!.body).toBe("Draft one: how to sign up.");
+    expect(writes).toEqual([]);
+    expect(failures).toEqual([locked]);
+  });
+
+  it("leaves the document alone when nothing it says has changed", async () => {
+    // Every wake of every task after this one would otherwise store another
+    // full copy of the same text, and a person opening the history would see
+    // a list of identical versions.
+    const writes: Array<{ issueId: string; body: string }> = [];
+    const outputs: Record<string, string> = { b: "Draft one: how to sign up." };
+    const state = {
+      predecessors: [{ id: "b", identifier: "ZZF-3", title: "Write initial drafts" }],
+      outputs,
+      writes,
+      stored: { body: null as string | null },
+    };
+
+    await syncTaskInputs(deps(state), CHILD);
+    await syncTaskInputs(deps(state), CHILD);
+    await syncTaskInputs(deps(state), CHILD);
+    expect(writes).toHaveLength(1);
+
+    outputs.b = "The rewritten draft, with the four guides.";
+    await syncTaskInputs(deps(state), CHILD);
+    expect(writes).toHaveLength(2);
+    expect(writes[1]!.body).toContain("The rewritten draft, with the four guides.");
   });
 
   it("says in the document where the work came from", () => {
