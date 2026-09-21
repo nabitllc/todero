@@ -21,6 +21,7 @@ import {
   buildJudgeSystemPrompt,
   findPlanFeatureForTask,
   findPlanTaskByTitle,
+  isLastTaskOfFeature,
   parseJudgeVerdict,
   planJudgeOutcome,
   readJudgeFailRounds,
@@ -196,6 +197,8 @@ export async function reviewConversationHandIn(
   const plan = await loadApprovedPlanForParent(db, input.issue.parentId);
   const planTask = findPlanTaskByTitle(plan, input.issue.title);
   const feature = findPlanFeatureForTask(plan, planTask);
+  // The feature's finish line only belongs to the task the feature ends with.
+  const lastOfFeature = isLastTaskOfFeature(plan, planTask);
 
   // What the reviewer knows. The reviewer never goes through the worker's
   // message path, so its skill is appended to its standing brief instead.
@@ -214,6 +217,7 @@ export async function reviewConversationHandIn(
     doneWhen: feature?.doneWhen ?? null,
     expectedOutput: planTask?.output ?? null,
     description: input.issue.description,
+    isLastTaskOfFeature: lastOfFeature,
   });
 
   const review = await requestJudgeVerdict({
@@ -232,6 +236,7 @@ export async function reviewConversationHandIn(
       expectedOutput: planTask?.output ?? null,
       deliverable,
       checks,
+      isLastTaskOfFeature: lastOfFeature,
     }),
     fetcher: input.fetcher,
   });

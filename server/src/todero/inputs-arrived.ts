@@ -123,6 +123,42 @@ export function turnAsksForMissingWork(body: string): boolean {
 }
 
 /**
+ * The ways a turn puts a question or a request to the person. Wider than the
+ * rule above, which only looks for one thing: the work the task is missing.
+ * This one asks whether the person has anything at all to answer.
+ *
+ * It exists because of the other half of wave 19. A task whose hand-in had
+ * been sent back wrote its task brief back out, with no guide in it and no
+ * question in it, and Todero parked it in front of the person. There was
+ * nothing there to answer, so nobody answered, and five tasks behind it never
+ * ran. A turn that asks nothing cannot be the person's turn.
+ *
+ * A question mark counts. So does a request put to the person — "please send",
+ * "could you", "let me know" — and saying it cannot go on. "We need to draft
+ * the other three guides" does not: that is the task talking about its own
+ * work, not asking the person for anything, and it is the exact sentence the
+ * deadlocked task wrote.
+ */
+const ASKS_THE_PERSON: RegExp[] = [
+  /\bplease\s+(?:provide|send|share|supply|confirm|clarify|advise|specify|let\s+me\s+know|tell\s+me|review|approve)\b/i,
+  /\b(?:could|can|would|will)\s+you\b/i,
+  /\blet\s+me\s+know\b/i,
+  // "I need the plant list" asks; "I need to write it" is a plan of its own.
+  /\b(?:i|we)\s+(?:still\s+)?(?:need|require)\s+(?!to\b)/i,
+  /\b(?:i\s+am|i'm|we\s+are|we're)\s+(?:still\s+)?wait(?:ing)?\s+(?:for|on)\b/i,
+  /\bawaiting\s+(?:your|the\s+person)/i,
+];
+
+export function asksThePersonForAnything(body: string): boolean {
+  const text = (body ?? "").trim();
+  if (!text) return false;
+  if (text.includes("?")) return true;
+  if (turnAsksForMissingWork(text)) return true;
+  if (CANNOT_GO_ON.test(text)) return true;
+  return ASKS_THE_PERSON.some((re) => re.test(text));
+}
+
+/**
  * The thread as the task should read it this turn. With the work in hand, its
  * own earlier requests for that work come out; with nothing in hand, nothing
  * changes.

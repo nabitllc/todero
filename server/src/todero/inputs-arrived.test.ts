@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import type { ConversationTurn } from "./conversation-thread.js";
 import {
   applyArrivedInputs,
+  asksThePersonForAnything,
   buildInputsArrivedTurnInstruction,
   threadWithoutRequestsForArrivedWork,
   turnAsksForMissingWork,
@@ -245,5 +246,58 @@ describe("telling a turn that the work it asked for has arrived", () => {
         { role: "agent", body: "I am still waiting for the four draft guides." },
       ]);
     });
+  });
+});
+
+// The two replies below are the real ones from wave 19, organization
+// f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3. Both were treated as the agent handing
+// the turn back to the person, and both ask the person for nothing at all.
+const PARROTED_BRIEF = [
+  "**ZZGAAAAAAAAA-4**",
+  "- **Goal:** Create four one-page guides for houseplants that survive a dark flat.",
+  "- **Feature:** Draft guides — To produce the initial content for the one-page guides.",
+  "- **Done when:** Four drafts, each naming the plant, the light it needs, and how often to water it.",
+  "- **What the person said:** Must have: the four one-page guides, each naming the plant, the light it needs, and how often to water it. Everything else can wait. Done means all four read well. Keep the plan to at most four tasks. Propose the plan now.",
+  "- **Last verdict:** The review said the second guide draft must include information for three additional houseplants. Check it before you start.",
+].join("\n");
+
+const NEXT_STEPS_LIST = [
+  "**Final Review and Next Steps:**",
+  "",
+  "- **Review Status:** The first guide for the Snake Plant (Sansevieria) has been finalized and formatted. It meets the criteria of being one page and ready for distribution.",
+  "- **Next Steps:** We need to finalize and format the remaining three guides for the other three houseplants. Once all four guides are complete, the task will be fully done.",
+  "",
+  "**Action Required:**",
+  "",
+  "1. Proceed with finalizing and formatting the guides for the remaining three houseplants.",
+  "2. Ensure each guide includes the plant name, light needs, watering frequency, and additional care instructions.",
+  "3. Hand in the first finalized guide as specified in the task.",
+].join("\n");
+
+describe("asksThePersonForAnything", () => {
+  it("says no to the two wave-19 turns that left the person nothing to answer", () => {
+    expect(asksThePersonForAnything(PARROTED_BRIEF)).toBe(false);
+    expect(asksThePersonForAnything(NEXT_STEPS_LIST)).toBe(false);
+  });
+
+  it("says yes to a question", () => {
+    expect(asksThePersonForAnything("Should the guides include repotting notes?")).toBe(true);
+  });
+
+  it("says yes to a request, however it is put", () => {
+    expect(asksThePersonForAnything("Please send me the plant list.")).toBe(true);
+    expect(asksThePersonForAnything("Could you confirm the four plants.")).toBe(true);
+    expect(asksThePersonForAnything("Let me know which four plants to cover.")).toBe(true);
+    expect(asksThePersonForAnything("I still need the four draft guides.")).toBe(true);
+    expect(asksThePersonForAnything("I am waiting for the four draft guides.")).toBe(true);
+  });
+
+  it("says yes when it says it cannot go on", () => {
+    expect(asksThePersonForAnything("I cannot proceed without the plant list.")).toBe(true);
+  });
+
+  it("does not hear a plan for itself as a request to the person", () => {
+    expect(asksThePersonForAnything("We need to finalize the remaining three guides.")).toBe(false);
+    expect(asksThePersonForAnything("")).toBe(false);
   });
 });

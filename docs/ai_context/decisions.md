@@ -816,3 +816,73 @@ credits to wave 18's organization `f818e743` are not there: they belong to `ZZGA
 older comment. `f818e743` holds ten agent turns in total, none of them left out. The test
 file for the wake backstop also says it has one case per way a task can be parked; it has
 four of the five, with a plan waiting for a yes not among them, and now says so.
+
+## ADR-023 — A task is judged on its own hand-in, and a turn that produced nothing is not parked
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Wave 19 of the improvement loop (organization
+  `f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`, "Zz Gauntlet Org 0921-034835"). Wave 3 stopped the
+  backstop from re-waking parked tasks, so the organization stopped thrashing — and deadlocked
+  instead. Two tasks ended up in front of a person without asking for anything; one of them gated
+  five tasks that never ran. The project never finished. Both deadlocks have the same two steps.
+
+  1. **A send-back nobody could satisfy.** ZZGAAAAAAAAA-4 "Draft the second guide" handed in a
+     correct second guide — Pothos, the light it needs, how often to water it — and the reviewer
+     sent it back: "not met — Four drafts, each naming the plant, the light it needs, and how
+     often to water it ... it only contains information for one plant. To pass, it must include
+     information for three additional houseplants." "Four drafts" is the feature's finish line,
+     not the task's. The reviewer's list of things to check was built from the feature's done-when
+     line plus the task's hand-in line, for every task inside the feature, so a task asked for one
+     guide was being held to a four-guide bar it could never reach. ZZGAAAAAAAAA-11 "Finalize the
+     first guide" was sent back the same way.
+  2. **A retry that delivered nothing and asked nothing.** On the round that came back, with the
+     reviewer's note in its prompt, ZZGAAAAAAAAA-4 wrote its own task brief out again — goal,
+     feature, done when, what the person said, the last verdict — with no guide in it.
+     ZZGAAAAAAAAA-11 wrote a "Final Review and Next Steps" action list about work it had not done.
+     Neither reply carried a `STATUS: done` line, and a chat reply without one means "waiting";
+     waiting means the person's turn, so both tasks were parked, the run log said "Handed the turn
+     back to the user", and the person — correctly — never answered a turn that asked nothing.
+- **Decision:** two mechanisms. The first is the cause; the second is the safety net.
+
+  1. **A task is judged on its own hand-in line.** The feature's done-when line is something the
+     reviewer must check only on the task the feature ends with — the last task in the plan
+     carrying that feature's name, which for a one-task feature is that task. On every earlier
+     task the line is still given to the reviewer, in plain words, as background: "This task is
+     one step of <feature>, which is finished when: <line>. That is the finish line for the whole
+     of <feature>, not for this task — judge only this task's hand-in." A task that wrote its own
+     Acceptance Criteria section is unaffected, as before. Leaving the flag out keeps today's
+     behaviour, so a caller that cannot tell where the task sits loses nothing.
+  2. **A turn that handed nothing in and asked nothing is not parked.** When a task inside a plan
+     hands its turn back, and its reply asks the person for nothing and hands nothing in, Todero
+     does not put it in front of the person the first time. It says so on the task in plain words,
+     and wakes the worker with one instruction: write the work itself — the guide, the list, the
+     document — not a summary of the task and not a list of next steps, and end with
+     `STATUS: done`. If the second turn is no better the task does go to the person, with a
+     message saying it produced no work twice. There is never a third silent round. The
+     conversation task is untouched: its "waiting" is the person's turn by design.
+
+  "Asks the person for anything" is wider than the wave-3 rule it sits beside: a question mark, a
+  request put to the person, or saying it cannot go on. "We need to finalize the remaining three
+  guides" is the task talking about its own work and does not count — it is the exact sentence the
+  deadlocked task wrote. "Handed nothing in" is decided by taking the task read back and the list
+  of what to do next out of the reply and seeing whether anything of substance is left. A real
+  guide with "Next steps" tacked on the end is a hand-in like any other.
+- **Consequences:**
+  - A reviewer can now pass a task that did exactly what it was asked, mid-feature. The feature's
+    finish line is still enforced, once, on the task the feature ends with.
+  - A worker gets one extra turn before its task reaches a person, and the person sees a note
+    saying nothing is needed from them. The cost is one local turn; the alternative was a deadlock.
+  - The count of empty turns is kept in the task's text (`todero-empty-turns`), beside the plan
+    tries and the reviewer's rounds, and goes back to nothing the moment the task hands real work
+    in — so "twice" means twice in a row.
+  - The retry leaves the task at `todo` and wakes it, rather than at `in_progress`. A task left
+    running with no turn behind it is read by the recovery sweep as a turn that stopped halfway,
+    which would start a second turn of its own. This is the same route the plan rescue already
+    takes, and the point holds either way: the task is not in front of the person.
+  - Both mechanisms live in their own modules (`server/src/todero/judge.ts`,
+    `server/src/todero/empty-turn-recovery.ts`). The heartbeat's two rescues now share one set of
+    dependencies and one wake, so the file did not grow.
+  - Repros: `docs/ai_context/gauntlet/repros/task-judged-on-its-own-hand-in.gauntlet.ts` and
+    `docs/ai_context/gauntlet/repros/empty-retry-is-not-parked.gauntlet.ts`, both built from the
+    real plan and the real replies of `f6e02c4b`, and both registered in `checks.json`.
