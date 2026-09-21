@@ -4,6 +4,7 @@
  * passes in four small actions and gets back what the task's status should
  * become.
  */
+import { descriptionForDeferredReview } from "./conversation-outcome.js";
 import { JUDGE_MAX_FAIL_ROUNDS, descriptionWithJudgeFailRounds, readJudgeFailRounds } from "./judge.js";
 import type { JudgeOutcome } from "./judge.js";
 import { descriptionWithWaitingForManagerMarker } from "./manager-sendback.js";
@@ -101,6 +102,21 @@ export async function applyJudgeReview(
 ): Promise<JudgeApplyResult> {
   const { review } = input;
   if (review.outcome.kind === "skip") {
+    // A hold is the one skip that comes back. Waves 16-18: the hand-in was
+    // right, the reviewer was simply not allowed to speak, and nothing ever
+    // asked again — the task sat in front of a person who was never told, and
+    // every task behind it waited with it. The task now says it is still owed
+    // an answer, and starting the organization again gives it one.
+    if (review.skipped === "paused") {
+      await deps.updateIssue(input.issue.id, {
+        description: descriptionForDeferredReview(input.issue.description),
+      });
+      deps.log(
+        "[todero] No reviewer looked at this hand-in: the organization is paused."
+          + " It will be reviewed when the organization starts again.\n",
+      );
+      return "none";
+    }
     deps.log(`[todero] No reviewer looked at this hand-in: ${skippedReviewReasonText(review.skipped)}.\n`);
     return "none";
   }

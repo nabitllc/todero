@@ -46,6 +46,39 @@ export function descriptionWithPlanMarker(description: string | null | undefined
   return withMarker(description ?? "", PLAN_PENDING_MARKER, PLAN_PENDING_RE, on);
 }
 
+/**
+ * The third of those markers, and the newest: a hand-in nobody could review,
+ * because the organization was on hold when it arrived. It means a reviewer
+ * still owes this task an answer, and it is taken off again the moment one is
+ * given.
+ */
+export const REVIEW_DEFERRED_MARKER = "<!-- todero-review: deferred -->";
+const REVIEW_DEFERRED_RE = /<!--\s*todero-review:\s*deferred\s*-->\s*\n?/gi;
+
+export function descriptionWithDeferredReviewMarker(
+  description: string | null | undefined,
+  on: boolean,
+): string {
+  return withMarker(description ?? "", REVIEW_DEFERRED_MARKER, REVIEW_DEFERRED_RE, on);
+}
+
+export function hasDeferredReviewMarker(description: string | null | undefined): boolean {
+  return (description ?? "").includes(REVIEW_DEFERRED_MARKER);
+}
+
+/**
+ * Everything a task says while its review waits for the organization to start
+ * again: it is in front of the person, it is in review, and a reviewer still
+ * owes it an answer. Written from whatever the task already said, so it holds
+ * whether the hand-in wrote its own two notes first or not.
+ */
+export function descriptionForDeferredReview(description: string | null | undefined): string {
+  return descriptionWithDeferredReviewMarker(
+    descriptionWithReviewMarker(descriptionWithWaitingMarker(description ?? "", true), true),
+    true,
+  );
+}
+
 export type ConversationOutcome = "done" | "review" | "waiting";
 
 export type ConversationOutcomePlan = {
@@ -60,7 +93,10 @@ export type ConversationOutcomePlan = {
  */
 export function descriptionWithoutConversationMarkers(description: string | null | undefined): string {
   return descriptionWithWaitingMarker(
-    descriptionWithPlanMarker(descriptionWithReviewMarker(description, false), false),
+    descriptionWithPlanMarker(
+      descriptionWithReviewMarker(descriptionWithDeferredReviewMarker(description, false), false),
+      false,
+    ),
     false,
   );
 }

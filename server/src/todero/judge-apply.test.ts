@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyJudgeReview, type JudgeApplyDeps } from "./judge-apply.js";
+import { REVIEW_PENDING_MARKER, hasDeferredReviewMarker } from "./conversation-outcome.js";
 import { descriptionWithJudgeFailRounds, planJudgeOutcome, readJudgeFailRounds } from "./judge.js";
 import { isWaitingForManagerSendback } from "./manager-sendback.js";
 import type { JudgeReviewResult } from "./judge-review.js";
@@ -370,6 +371,46 @@ describe("a hand-in nobody reviewed says why", () => {
       expect(recorded.logs).toHaveLength(1);
       expect(recorded.logs[0]).toContain("No reviewer looked at this hand-in");
       expect(recorded.logs[0]).toContain(words);
+    });
+  }
+});
+
+/**
+ * Waves 16-18: a hold did not only silence the reviewer, it lost the review.
+ * The task now carries the fact that it is still owed one, and the run log
+ * says a reviewer will look at it once the organization starts again.
+ */
+describe("a review a pause deferred is remembered", () => {
+  it("marks the task and promises the review", async () => {
+    const { deps: d, recorded } = deps();
+    const result = await applyJudgeReview(d, {
+      issue,
+      assigneeAgentId: "agent-1",
+      review: review({ outcome: { kind: "skip" }, skipped: "paused" }),
+    });
+    expect(result).toBe("none");
+    expect(recorded.updates).toHaveLength(1);
+    const written = recorded.updates[0]!.patch.description ?? "";
+    expect(hasDeferredReviewMarker(written)).toBe(true);
+    // The hand-in is still in front of the person while it waits.
+    expect(written).toContain(REVIEW_PENDING_MARKER);
+    expect(written).toContain("Draft the guide.");
+    // Nothing about where the task sits changes.
+    expect(recorded.updates[0]!.patch.status).toBeUndefined();
+    expect(recorded.logs[0]).toContain("the organization is paused");
+    expect(recorded.logs[0]).toContain("reviewed when the organization starts again");
+  });
+
+  const otherReasons = ["not_a_plan_task", "no_deliverable", "no_reviewer", "no_model", "no_verdict"] as const;
+  for (const skipped of otherReasons) {
+    it(`leaves the task untouched when the reason is ${skipped}`, async () => {
+      const { deps: d, recorded } = deps();
+      await applyJudgeReview(d, {
+        issue,
+        assigneeAgentId: "agent-1",
+        review: review({ outcome: { kind: "skip" }, skipped }),
+      });
+      expect(recorded.updates).toHaveLength(0);
     });
   }
 });
