@@ -85,6 +85,13 @@ describe("turnDeliversWork", () => {
     expect(turnDeliversWork("Output: Pothos, low light, water monthly.")).toBe(true);
     // The task read back is still the task read back, however long it is.
     expect(turnDeliversWork(PARROTED_BRIEF)).toBe(false);
+    // A report *about* the work is not the work. This is word for word the
+    // opening line of the wave-19 reply that this whole file exists to catch;
+    // today it is caught only because that reply also carries a next-steps
+    // heading above it, so it is pinned here on its own.
+    expect(
+      turnDeliversWork("Review Status: The first guide for the Snake Plant has been finalized and formatted."),
+    ).toBe(false);
   });
 
   it("says no to nothing at all", () => {
@@ -322,9 +329,11 @@ describe("applyEmptyTurnRecovery", () => {
   });
 
   it("has a wake reason of its own so the next turn gets the right instruction", () => {
-    // The heartbeat hands every wake reason to this one function and says
-    // whatever comes back, so the corrective turn reaches the worker only if
-    // its own reason is matched here and nothing else is.
+    // The heartbeat hands this one function every wake reason it has not
+    // already answered — the note about a plan the worker gave up on and the
+    // missing-plan retry are decided first — and keeps the instruction it
+    // already had when nothing comes back. So the corrective turn reaches the
+    // worker only if its own reason is matched here and nothing else is.
     expect(emptyTurnInstructionForWake(EMPTY_TURN_RETRY_WAKE_REASON)).toBe(buildEmptyTurnRetryInstruction());
     expect(emptyTurnInstructionForWake("issue_children_completed")).toBeNull();
     expect(emptyTurnInstructionForWake(undefined)).toBeNull();

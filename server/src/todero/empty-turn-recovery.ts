@@ -60,7 +60,7 @@ export { descriptionWithEmptyTurnTries, readEmptyTurnTries };
  */
 const IDENTIFIER_ONLY_RE = /^\s*\**\s*[A-Z][A-Z0-9]*-\d+\s*\**\s*$/;
 const BRIEF_LABEL_RE =
-  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:goal|feature|done[- ]when|what the person said|last verdict|task|title|objective|context|acceptance criteria)\s*\**\s*:/i;
+  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:goal|feature|done[- ]when|what the person said|last verdict|task|title|objective|context|acceptance criteria|review status|deliverable)\s*\**\s*:/i;
 
 /**
  * The other kind of label: one a worker writes the work itself under. The
@@ -68,9 +68,13 @@ const BRIEF_LABEL_RE =
  * struck out. Dropping these lines whole made a terse but complete hand-in —
  * "Output: Snake plant, low light, water every 2 weeks" — read as empty and
  * cost the task a corrective turn it did not need.
+ *
+ * Three labels only, and the lines above are tried first: "Review Status:" and
+ * "Deliverable:" head a report about the work rather than the work, so they go
+ * with their line, while a plain "Status:" loses only its label.
  */
 const WORK_LABEL_RE =
-  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:output|deliverable|result|review status|status|progress)\s*\**\s*:\s*\**\s*/i;
+  /^\s*(?:[-*]\s+|\d+[.)]\s+)?\**\s*(?:output|status|progress)\s*\**\s*:\s*\**\s*/i;
 
 /**
  * Where a reply stops being the work and starts being a list of what someone
@@ -198,9 +202,11 @@ export function buildEmptyTurnRetryInstruction(): string {
 
 /**
  * What the worker is told when it is woken again, read off the reason it was
- * woken for. The heartbeat asks this of every wake and says whatever comes
- * back, so the corrective turn reaches the worker only through here. Null for
- * every other wake: that turn has its own instruction, or none.
+ * woken for. The heartbeat asks this of every wake that is not already
+ * answered by the note about a plan it gave up on or by the missing-plan
+ * retry, and keeps whatever instruction it already had when this returns null.
+ * The corrective turn reaches the worker only through here. Null for every
+ * other wake: that turn has its own instruction, or none.
  */
 export function emptyTurnInstructionForWake(wakeReason: string | null | undefined): string | null {
   return wakeReason === EMPTY_TURN_RETRY_WAKE_REASON ? buildEmptyTurnRetryInstruction() : null;
