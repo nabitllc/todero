@@ -791,3 +791,28 @@ waiting for another person to send something, both stay. Re-measured over the 10
 agent turns: 41 of the 42 turns on `ZZGAAA-5` are still left out and the one that survives
 is still the turn that assumed the drafts already existed; none of wave 18's 21 turns is
 left out, unchanged.
+
+### Note, 2026-09-21 — the ask really does win now, and two numbers above are corrected
+
+The note before this one said that a sentence asking for the work makes the turn a request
+whatever the rest of it claims. That was the intent, not the behaviour: the check for "this
+sentence hands something over" ran before the checks for "this sentence asks", so a claim of
+work done still won whenever the two shared one sentence. On a comma, a semicolon or the word
+"so" the loop reopened — "I finished the outline, but I still need the four draft guides."
+and "I have attached the outline; please provide the four draft guides." were both kept in
+the thread. The asking checks now run first, and the sentence above is true as written. Six
+such sentences are in the tests, watched failing before the change. Re-measured over the same
+101 archived agent turns: nothing moved — 41 of the 42 turns on `ZZGAAA-5` are still left out,
+and the survivor is still the turn that assumed the drafts already existed.
+
+**What is not left out.** A bare "it" is not one of the names for the work, so "I am still
+waiting for it." now stays in the thread where it used to come out. That is deliberate — a
+task has to name the work to have its request dropped — and it costs nothing over the
+archive, where no turn is worded that way.
+
+**Two numbers above, corrected.** The twenty-one repeated turns the note before this one
+credits to wave 18's organization `f818e743` are not there: they belong to `ZZGAAAAA-3` in
+`67d6f192`. The count is right, the label was not, and it had been carried along from an
+older comment. `f818e743` holds ten agent turns in total, none of them left out. The test
+file for the wake backstop also says it has one case per way a task can be parked; it has
+four of the five, with a plan waiting for a yes not among them, and now says so.

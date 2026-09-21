@@ -105,6 +105,30 @@ describe("telling a turn that the work it asked for has arrived", () => {
       expect(turnAsksForMissingWork(HAND_IN)).toBe(false);
     });
 
+    it("reads the ask as winning even when the claim shares its sentence", () => {
+      // The model does not always put a full stop between the two. On a comma,
+      // a semicolon or the word "so", the claim used to swallow the ask and the
+      // turn stayed in the thread — the same loop, one punctuation mark away.
+      expect(
+        turnAsksForMissingWork("I finished the outline, but I still need the four draft guides."),
+      ).toBe(true);
+      expect(
+        turnAsksForMissingWork(
+          "I have drafted all four, so could you please provide the four draft guides?",
+        ),
+      ).toBe(true);
+      expect(turnAsksForMissingWork("Could you please provide the attached drafts?")).toBe(true);
+      expect(
+        turnAsksForMissingWork(
+          "I have attached the outline; please provide the four draft guides.",
+        ),
+      ).toBe(true);
+      expect(
+        turnAsksForMissingWork("Here is my summary, but I am still waiting for the four draft guides."),
+      ).toBe(true);
+      expect(turnAsksForMissingWork("I completed the review and I still need the drafts.")).toBe(true);
+    });
+
     it("reads the real loop, word for word, as asking", () => {
       // The turns wave 16 and its recovery repeated forty-one times on ZZGAAA-5.
       expect(

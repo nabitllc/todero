@@ -142,9 +142,10 @@ describeEmbeddedPostgres("the backstop that wakes a task whose earlier work is f
     expect(result.healed).toBe(1);
   }, 30_000);
 
-  // One case per way a task can be parked, each written on its own. A single
+  // Four of the ways a task can be parked, each written on its own. A single
   // case carrying two of these notes at once would still pass if only one of
-  // them were honoured, which is exactly the hole this is here to close.
+  // them were honoured, which is exactly the hole this is here to close. A
+  // plan waiting for a yes is a fifth way the server reads, and has no case here.
   const PARKED_ON_A_PERSON: Array<{ what: string; note: (description: string) => string }> = [
     {
       what: "a task Todero handed back to the person",

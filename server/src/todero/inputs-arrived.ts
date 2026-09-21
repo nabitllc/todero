@@ -51,16 +51,22 @@ export type ArrivedInput = {
  *  - the turn is read a sentence at a time. A sentence that hands something
  *    over is not a request, and it does not speak for the rest of the turn.
  *  - a turn that both claims work done and asks for the work it is missing is
- *    a request: the ask wins. "I have drafted all four. Could you please
- *    provide the four draft guides?" is the loop this exists to close.
+ *    a request: the ask wins, even when the claim and the ask share one
+ *    sentence. "I have drafted all four. Could you please provide the four
+ *    draft guides?" is the loop this exists to close, and so is the same thing
+ *    joined by a comma, a semicolon or the word "so". That is why each
+ *    sentence is checked for an ask before it is allowed to count as a
+ *    hand-in.
  *  - saying it cannot go on is only a request when nothing in the turn
  *    delivers. "I cannot finish the fourth guide without the plant list. Here
  *    are the three I have." is a delivery with a caveat.
  *  - what is asked for, waited for or needed has to be the work itself — the
- *    drafts, the guides, the documents, the notes, or a plain "them". A
- *    question about some other detail ("can you provide the brand colours?"),
- *    a request to have something clarified, and waiting for a review or for
- *    another person are all left in the thread.
+ *    drafts, the guides, the documents, the notes, or a plain "them". A bare
+ *    "it" is not on that list, so "I am still waiting for it." stays in the
+ *    thread; naming the work is the price of being left out. A question about
+ *    some other detail ("can you provide the brand colours?"), a request to
+ *    have something clarified, and waiting for a review or for another person
+ *    are all left in the thread too.
  */
 
 /** The turn is handing something over. This sentence is not a request for work. */
@@ -107,10 +113,10 @@ export function turnAsksForMissingWork(body: string): boolean {
   const sentences = sentencesOf(body ?? "");
   const delivers = sentences.some((sentence) => HANDS_WORK_IN.test(sentence));
   for (const sentence of sentences) {
-    if (HANDS_WORK_IN.test(sentence)) continue;
     if (WAITS_FOR_THE_WORK.test(sentence)) return true;
     if (NEEDS_IT.test(sentence)) return true;
     if (ASKS_FOR_IT.test(sentence)) return true;
+    if (HANDS_WORK_IN.test(sentence)) continue;
     if (!delivers && CANNOT_GO_ON.test(sentence)) return true;
   }
   return false;
