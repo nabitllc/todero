@@ -27,6 +27,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { companyService } from "../services/companies.js";
+import { setDeferredReviewRunner } from "../todero/deferred-review.js";
 import { deriveIssuePrefixBase } from "../services/issue-prefix.js";
 import { readBuiltInAgentMarker } from "../services/built-in-agent-metadata.js";
 import { builtInAgentService, reconcileBuiltInAgentsOnStartup } from "../services/built-in-agents.js";
@@ -315,6 +316,42 @@ describeEmbeddedPostgres("companyService", () => {
       status: "cancelled",
       error: "Cancelled because the company was archived",
     });
+  });
+
+  /**
+   * Wave 18's recovery step opens an archived organization again with a plain
+   * status change, and that is a resume like any other: any hand-in its hold
+   * left unreviewed has to go back in front of a reviewer.
+   */
+  it("looks at the hand-ins the hold deferred when an organization is opened again", async () => {
+    // Built first: building the service installs the real runner, and this
+    // test wants to see the call rather than run a model.
+    const service = companyService(db);
+    const seen: string[] = [];
+    let sawOne: () => void = () => {};
+    const waited = new Promise<void>((resolve) => {
+      sawOne = resolve;
+    });
+    setDeferredReviewRunner(async (companyId: string) => {
+      seen.push(companyId);
+      sawOne();
+    });
+    try {
+      const companyId = randomUUID();
+      await db.insert(companies).values({
+        id: companyId,
+        name: "Opened Again Co",
+        status: "archived",
+        issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      });
+
+      await service.update(companyId, { status: "active" });
+
+      await waited;
+      expect(seen).toEqual([companyId]);
+    } finally {
+      setDeferredReviewRunner(null);
+    }
   });
 
   it("reactivates only agents paused because the company was archived", async () => {

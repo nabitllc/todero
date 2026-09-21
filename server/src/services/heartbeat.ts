@@ -161,6 +161,7 @@ import { syncAgentSkillFolder, writeAgentHandIn } from "../todero/agent-folder.j
 import { readAutoAcceptWhenJudgePasses } from "../todero/judge.js";
 import { reviewConversationHandIn } from "../todero/judge-review.js";
 import { applyJudgeReview, judgeFailRound } from "../todero/judge-apply.js";
+import { installDeferredReviewsOnResume } from "../todero/deferred-review.js";
 import { isManagerMode, getManager } from "../todero/manager-mode.js";
 import { isWaitingForManagerSendback } from "../todero/manager-sendback.js";
 import { buildManagerAssignmentTurnInstruction } from "../todero/manager-assignment.js";
@@ -7158,6 +7159,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
   };
   const budgets = budgetService(db, budgetHooks);
   const recovery = recoveryService(db, { enqueueWakeup });
+  installDeferredReviewsOnResume(db, enqueueWakeup);
 
   function isPlanApprovalConfirmationPayload(payload: unknown) {
     const target = parseObject(parseObject(payload).target);
@@ -17794,8 +17796,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
                 // line; a second send-back already started the manager's turn
                 // above, and this line says so.
                 if (managerModeOn && manager && currentIssue.parentId && review.judgeAgent && review.verdict) {
-                  const verdictRound =
-                    judgeFailRound(review.outcome, currentIssue.description) ?? undefined;
+                  const verdictRound = judgeFailRound(review.outcome, currentIssue.description) ?? undefined;
                   await postReviewVerdictLine(
                     {
                       addComment: (id, body, agentId) => issuesSvc.addComment(id, body, { agentId }),
