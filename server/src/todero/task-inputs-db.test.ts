@@ -22,7 +22,12 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "../__tests__/helpers/embedded-postgres.js";
 import { writeIssueDocumentOnLatest } from "./issue-document-write.js";
-import { syncTaskInputs, taskInputsDbDeps, TASK_INPUTS_DOCUMENT_KEY } from "./task-inputs.js";
+import {
+  gatherTaskInputsForTurn,
+  syncTaskInputs,
+  taskInputsDbDeps,
+  TASK_INPUTS_DOCUMENT_KEY,
+} from "./task-inputs.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -168,6 +173,29 @@ describeEmbeddedPostgres("the work a task builds on, read from the database", ()
     expect(saved).toContain("T-3 — Write initial drafts");
     expect(saved).toContain("Guide 1 — Signing up");
     expect(TASK_INPUTS_DOCUMENT_KEY).toBe("inputs");
+  });
+
+  it("is what a turn asks for, in one call", async () => {
+    // The path the heartbeat actually takes.
+    const companyId = await seedCompany();
+    const drafts = await seedTask(companyId, "T-3", "Write initial drafts", 0);
+    const review = await seedTask(companyId, "T-4", "Review the drafts", 1);
+    await seedDependency(companyId, drafts, review);
+    await handIn(drafts, "Guide 1 — Signing up: open the invite link.");
+    const said: string[] = [];
+
+    const gathered = await gatherTaskInputsForTurn(db, {
+      companyId,
+      issueId: review,
+      onProblem: (_error, message) => said.push(message),
+    });
+
+    expect(said).toEqual([]);
+    expect(gathered.map((input) => input.identifier)).toEqual(["T-3"]);
+    expect(gathered[0]!.body).toContain("Guide 1 — Signing up");
+    expect(await taskInputsDbDeps(db, { companyId }).readCurrentInputs(review)).toContain(
+      "T-3 — Write initial drafts",
+    );
   });
 
   it("stores one version per change, not one per wake", async () => {

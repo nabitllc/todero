@@ -131,6 +131,36 @@ export async function syncTaskInputs(deps: TaskInputsDeps, issueId: string): Pro
 }
 
 /**
+ * What a turn calls: gather the work against the database, say out loud
+ * anything that went wrong, and hand back whatever was gathered. Neither a
+ * failed lookup nor a failed save stops the turn.
+ */
+export async function gatherTaskInputsForTurn(
+  db: Db,
+  input: {
+    companyId: string;
+    issueId: string;
+    agentId?: string | null;
+    runId?: string | null;
+    /** Put in the run's log, with the sentence already written out. */
+    onProblem: (error: unknown, said: string) => void;
+  },
+): Promise<TaskInput[]> {
+  const deps = taskInputsDbDeps(db, {
+    companyId: input.companyId,
+    agentId: input.agentId,
+    runId: input.runId,
+    // The task still gets the work; only the copy a person can open is missing.
+    onWriteFailed: (error: unknown) =>
+      input.onProblem(error, "could not save the document that shows the work this task builds on"),
+  });
+  return syncTaskInputs(deps, input.issueId).catch((error: unknown) => {
+    input.onProblem(error, "could not gather the work this task builds on");
+    return [] as TaskInput[];
+  });
+}
+
+/**
  * The real three, against the database.
  *
  * The predecessor lookup is the same shape the readiness check already uses

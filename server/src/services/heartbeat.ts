@@ -131,7 +131,7 @@ import {
 import { isSlowLocalTurnAgent, SLOW_LOCAL_TURN_ERROR_CODE } from "../todero/slow-local-turn.js";
 import { applySlowLocalTurnRecovery } from "../todero/slow-local-turn-runtime.js";
 import { writeIssueDocumentOnLatest } from "../todero/issue-document-write.js";
-import { syncTaskInputs, taskInputsDbDeps, type TaskInput } from "../todero/task-inputs.js";
+import { gatherTaskInputsForTurn } from "../todero/task-inputs.js";
 import {
   allPlanChildrenClosed,
   buildPlanSummaryTurnInstruction,
@@ -15069,26 +15069,12 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       // should get the same hand-off. The question answers itself for a task
       // nothing waits on — the conversation task included — which is why that
       // one needs no exception of its own.
-      const taskInputs = await syncTaskInputs(
-        taskInputsDbDeps(db, {
-          companyId: agent.companyId,
-          agentId: agent.id,
-          onWriteFailed: (error: unknown) => {
-            // The task still gets the work; only the copy a person can open is
-            // missing this turn.
-            logger.warn(
-              { err: error, agentId: agent.id, issueId: issueRef.id },
-              "could not save the document that shows the work this task builds on",
-            );
-          },
-        }),
-        issueRef.id,
-      ).catch((error: unknown) => {
-        logger.warn(
-          { err: error, agentId: agent.id, issueId: issueRef.id },
-          "could not gather the work this task builds on",
-        );
-        return [] as TaskInput[];
+      const taskInputs = await gatherTaskInputsForTurn(db, {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        issueId: issueRef.id,
+        onProblem: (error: unknown, said: string) =>
+          logger.warn({ err: error, agentId: agent.id, issueId: issueRef.id }, said),
       });
       if (taskInputs.length > 0) {
         context.toderoInputs = taskInputs.map((input) => ({
