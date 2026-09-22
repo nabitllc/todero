@@ -1198,3 +1198,47 @@ that holds the three doors and the one line at startup that puts both passes beh
   refusals, and six refusals that name a packaging word and have to stand) and `gauntlet/repros/parked-refusal-gets-a-fresh-review.gauntlet.ts` (wave 21's real
   parked task, shown being turned down by both older rules), both registered in
   `gauntlet/checks.json`.
+
+### 2026-09-21 — the guard in decision 2 is removed; the brief is the whole answer
+
+Decision 2 above built a guard: after the reviewer answered, its refusal was read word by word, and
+a refusal whose every complaint was about packaging did not stand against the lines that had asked
+for packaging. That guard is deleted. Decision 1 (the reviewer is told what the worker can hand
+in), decision 3 (a send-back asks for the work, not a plan) and decision 4 (a parked refusal gets
+one fresh review) are unchanged and stay.
+
+Three things decided it.
+
+**The brief did the whole job on its own.** Wave 22 on the runner was the first run where the
+organization finished the project by itself — five issues of five, one question for the person, and
+five reviewer verdicts with not one word in them about files, formats or layouts. Every bit of that
+came from the sentences the reviewer is given about the teammate it is reviewing. Told the truth up
+front, the reviewer never wrote the refusal the guard existed to catch.
+
+**The guard never fired.** Not once on a live run, across every wave it was in the build. It was a
+net under a hole that the brief had already closed.
+
+**Reading it closely proved it accepts unfinished work.** Two refusals that any person would call
+fair were read by it as being only about packaging: "Two sections are missing from the document."
+and "The discount is not in the template." Each would have turned a send-back into a pass. Both
+were repaired, and each repair only moved the hole somewhere else — which is what happens when a
+program tries to decide what a paragraph of English is really complaining about. The judgement the
+guard was making is the reviewer's judgement, and there is no safe way to take it.
+
+**The standing rule from here:** tell the reviewer the truth about what the worker under review can
+hand in, and then take the reviewer at its word. Never overrule a refusal by pattern-matching the
+words it was written with.
+
+What that leaves. `judge-text-only-worker.ts` now holds two things and nothing else: the test for
+whether a worker can only write, and the sentences the reviewer is told. Wave 5's small phrase list
+(`namesPackaging` in `judge-feature-work.ts`) stays, because it still does the job it was built for
+— on a worker that **has** tools, a line asking for work "formatted" or "ready for distribution"
+still puts wave 5's narrower note into that reviewer's brief. It no longer decides anything about a
+verdict. `judge-review.ts` applies the reviewer's verdict and the reviewer's own met/not-met answers
+straight through, and the two extra lines the guard used to write into the comment a person reads
+are gone with it. `judge-apply.ts` never held any of this. The registered repro
+`gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts` keeps its brief cases — the
+text-only worker's brief carries the sentences, and a tool-using worker's brief is word for word
+what it was before this wave — and its guard cases are deleted. The cost of the removal: if a
+reviewer does write a refusal that is only about packaging, the work goes back to the worker and
+costs a turn. Wave 22 says that is a turn nobody spends.

@@ -435,16 +435,11 @@ export function buildJudgeComment(input: {
   checkResults?: boolean[] | null;
   /** Per check, the earlier accepted task that had already done it, or null. */
   checkAlreadyDone?: (string | null)[];
-  /** Per check, why Todero counted it met although the reviewer did not, or null. */
-  checkNotes?: (string | null)[];
-  /** One line under the list when Todero changed an answer, or nothing. */
-  aboveTheNote?: string | null;
 }): string {
   const note = input.note.trim();
   const checks = (input.checks ?? []).filter((check) => check.trim());
   const results = input.checkResults ?? null;
   const alreadyDone = input.checkAlreadyDone ?? [];
-  const notes = input.checkNotes ?? [];
   const body: string[] = [];
   if (checks.length > 0 && results && results.length === checks.length) {
     const met = results.filter(Boolean).length;
@@ -455,16 +450,13 @@ export function buildJudgeComment(input: {
         ...checks.map((check, index) => {
           const answer = results[index] ? "met" : "not met";
           const done = alreadyDone[index];
-          const why = notes[index];
-          return `- ${answer}${done ? ` (already done on ${done} and accepted)` : ""}`
-            + `${why ? ` (${why})` : ""} — ${check}`;
+          return `- ${answer}${done ? ` (already done on ${done} and accepted)` : ""} — ${check}`;
         }),
       ].join("\n"),
     );
   } else if (checks.length > 0) {
     body.push(`It did not say which of the ${checks.length} checks it made, so nobody can see what was looked at.`);
   }
-  if (input.aboveTheNote?.trim()) body.push(input.aboveTheNote.trim());
   if (note) body.push(note);
   const rest = body.join("\n\n");
   if (input.verdict === "pass") {

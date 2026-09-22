@@ -34,12 +34,7 @@ import {
   checksAlreadyDone,
   type AcceptedFeatureWork,
 } from "./judge-feature-work.js";
-import {
-  applyTextOnlyWorkerAllowance,
-  isTextOnlyWorker,
-  TEXT_ONLY_WORKER_CHECK_NOTE,
-  TEXT_ONLY_WORKER_COMMENT_NOTE,
-} from "./judge-text-only-worker.js";
+import { isTextOnlyWorker } from "./judge-text-only-worker.js";
 import { getManager } from "./manager-mode.js";
 import { loadAgentSkillText } from "./skill-pack.js";
 import { collectTaskInputs, taskInputsDbDeps } from "./task-inputs.js";
@@ -334,37 +329,22 @@ export async function reviewConversationHandIn(
   });
   if (!review) return { ...SKIPPED, judgeAgent, skipped: "no_verdict" };
 
-  // The guard. A worker that can only write, refused for not having produced a
-  // file or a layout, was refused for something it could never do; the lines
-  // that asked for one are recorded as met on substance and the verdict worked
-  // out again. A line about the writing keeps the reviewer's own answer.
-  const allowance = applyTextOnlyWorkerAllowance({
-    workerIsTextOnly,
-    verdict: review.verdict,
-    note: review.note,
-    checks: review.checks,
-    checkTexts: checks,
-  });
-  const guarded = allowance.verdict !== review.verdict;
-
   const outcome = planJudgeOutcome({
-    verdict: allowance.verdict,
+    verdict: review.verdict,
     failRounds: readJudgeFailRounds(input.issue.description),
     autoAcceptWhenJudgePasses: input.autoAcceptWhenJudgePasses,
   });
   return {
     outcome,
-    verdict: allowance.verdict,
+    verdict: review.verdict,
     note: review.note,
     comment: buildJudgeComment({
-      verdict: allowance.verdict,
+      verdict: review.verdict,
       note: review.note,
       outcome,
       checks,
-      checkResults: allowance.checks,
+      checkResults: review.checks,
       checkAlreadyDone,
-      checkNotes: allowance.allowed.map((allowed) => (allowed ? TEXT_ONLY_WORKER_CHECK_NOTE : null)),
-      aboveTheNote: guarded ? TEXT_ONLY_WORKER_COMMENT_NOTE : null,
     }),
     judgeAgent,
     skipped: null,
