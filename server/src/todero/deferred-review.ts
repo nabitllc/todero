@@ -40,6 +40,7 @@ import { applyJudgeReview, skippedReviewReasonText, type JudgeApplyResult } from
 import { reviewConversationHandIn, type JudgeReviewResult } from "./judge-review.js";
 import { readAutoAcceptWhenJudgePasses } from "./judge.js";
 import { recoverParkedTurns } from "./parked-turn-recovery.js";
+import { refreshRefusedHandIns } from "./refused-review-refresh.js";
 
 export type { DeferredHandIn } from "./deferred-review-find.js";
 
@@ -185,9 +186,33 @@ async function runOneDeferredReviewPass(
   deps: DeferredReviewDeps,
   input: { companyId: string },
 ): Promise<DeferredReviewOutcome> {
-  const log = deps.log ?? ((message: string) => logger.info({ companyId: input.companyId }, message.trim()));
   const tasks = await loadDeferredHandIns(db, input.companyId);
   if (tasks.length === 0) return NOTHING_TO_DO;
+  const tally = await runReviewPass(db, deps, {
+    companyId: input.companyId,
+    tasks,
+    claim: (task) => claimDeferredHandIn(db, task),
+  });
+  return { ...tally, alreadyRunning: false };
+}
+
+/**
+ * Review a list of hand-ins and write what the reviewer decided onto each
+ * task. Everything a hand-in needs is read back off the task, so the only
+ * thing a caller brings besides the list is how a task is taken: the reviews a
+ * hold deferred flip their own mark, and a refusal being looked at again flips
+ * its own.
+ */
+export async function runReviewPass(
+  db: Db,
+  deps: DeferredReviewDeps,
+  input: {
+    companyId: string;
+    tasks: DeferredHandIn[];
+    claim: (task: DeferredHandIn) => Promise<string | null>;
+  },
+): Promise<DeferredReviewTally> {
+  const log = deps.log ?? ((message: string) => logger.info({ companyId: input.companyId }, message.trim()));
 
   const company = await db
     .select({ name: companies.name, interactionResolverGovernance: companies.interactionResolverGovernance })
@@ -208,7 +233,7 @@ async function runOneDeferredReviewPass(
         statusWhenTaken = await readCompanyStatus(db, input.companyId);
         return statusWhenTaken === "active";
       },
-      claim: (task) => claimDeferredHandIn(db, task),
+      claim: input.claim,
       review: (task) =>
         reviewConversationHandIn(db, {
           issue: {
@@ -303,9 +328,9 @@ async function runOneDeferredReviewPass(
         );
       },
     },
-    tasks,
+    input.tasks,
   );
-  return { ...tally, alreadyRunning: false };
+  return tally;
 }
 
 /**
@@ -325,17 +350,19 @@ export function setDeferredReviewRunner(next: DeferredReviewRunner | null): void
  * The one composition, installed where the db and a way to wake an agent are
  * both in hand.
  *
- * Two things happen at this door, in this order. First the hand-ins nobody
+ * Three things happen at this door, in this order. First the hand-ins nobody
  * answered while the organization was on hold. Then the tasks that were parked
  * in front of the person with nothing on them to answer — a task parked before
  * the corrective turn existed has no other way back, because nothing wakes a
- * parked task. The reviews go first: one of them may accept a hand-in and
- * unblock the very tasks the second pass would otherwise walk over.
+ * parked task. Last, the work the reviewer refused and left with the person:
+ * each of those is read once more, the way the reviewer reads work today. The
+ * reviews go first: one of them may accept a hand-in and unblock the very
+ * tasks the later passes would otherwise walk over.
  *
- * Each pass is caught on its own. They are two different ways back into a
- * stuck organization, and the first one falling over — a database read that
- * fails, a reviewer that is not there — must not cost the second one its turn.
- * Whatever went wrong is written down in plain words rather than swallowed.
+ * Each pass is caught on its own. They are three different ways back into a
+ * stuck organization, and one falling over — a database read that fails, a
+ * reviewer that is not there — must not cost the others their turn. Whatever
+ * went wrong is written down in plain words rather than swallowed.
  */
 export function installDeferredReviewsOnResume(db: Db, enqueueWakeup: DeferredReviewWakeup): void {
   setDeferredReviewRunner(async (companyId) => {
@@ -349,6 +376,11 @@ export function installDeferredReviewsOnResume(db: Db, enqueueWakeup: DeferredRe
       await recoverParkedTurns(db, { enqueueWakeup }, { companyId });
     } catch (err: unknown) {
       logger.warn({ err, companyId }, "could not start the tasks parked with nothing to answer");
+    }
+    try {
+      await refreshRefusedHandIns(db, { enqueueWakeup }, { companyId });
+    } catch (err: unknown) {
+      logger.warn({ err, companyId }, "could not look again at the work the reviewer sent back");
     }
     return reviews;
   });

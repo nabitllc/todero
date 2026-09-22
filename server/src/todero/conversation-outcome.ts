@@ -77,6 +77,26 @@ export function hasDeferredReviewMarker(description: string | null | undefined):
 }
 
 /**
+ * The deferred marker's sibling: this task's refusal has already been looked
+ * at once more under the reviewer's current brief. It stops a second start
+ * reviewing the same refused hand-in all over again, and it comes off the
+ * moment the task hands work in again or closes.
+ */
+export const REVIEW_REFRESHED_MARKER = "<!-- todero-review: refreshed -->";
+const REVIEW_REFRESHED_RE = /<!--\s*todero-review:\s*refreshed\s*-->\s*\n?/gi;
+
+export function descriptionWithRefreshedReviewMarker(
+  description: string | null | undefined,
+  on: boolean,
+): string {
+  return withMarker(description ?? "", REVIEW_REFRESHED_MARKER, REVIEW_REFRESHED_RE, on);
+}
+
+export function hasRefreshedReviewMarker(description: string | null | undefined): boolean {
+  return (description ?? "").includes(REVIEW_REFRESHED_MARKER);
+}
+
+/**
  * Everything a task says while its review waits for the organization to start
  * again: it is in front of the person, it is in review, and a reviewer still
  * owes it an answer. Written from whatever the task already said, so it holds
@@ -140,7 +160,10 @@ export function descriptionWithoutConversationMarkers(description: string | null
   return descriptionWithEmptyTurnTries(
     descriptionWithWaitingMarker(
       descriptionWithPlanMarker(
-        descriptionWithReviewMarker(descriptionWithDeferredReviewMarker(description, false), false),
+        descriptionWithReviewMarker(
+          descriptionWithRefreshedReviewMarker(descriptionWithDeferredReviewMarker(description, false), false),
+          false,
+        ),
         false,
       ),
       false,
@@ -167,7 +190,13 @@ export function planConversationOutcome(input: {
   closeAllowed?: boolean;
 }): ConversationOutcomePlan | null {
   if (input.issue.status !== "in_progress") return null;
-  const base = descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false);
+  // The mark of a fresh look comes off here as well as on close: a task that
+  // hands work in again is a new hand-in, and if a reviewer refuses that one
+  // too the next start owes it a look of its own.
+  const base = descriptionWithRefreshedReviewMarker(
+    descriptionWithPlanMarker(descriptionWithReviewMarker(input.issue.description, false), false),
+    false,
+  );
   const isConversation = !input.issue.parentId;
   if (input.disposition === "done" && isConversation && input.closeAllowed && !input.proposedPlan) {
     return { outcome: "done", status: "done", description: descriptionWithWaitingMarker(base, false) };

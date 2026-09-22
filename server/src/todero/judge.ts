@@ -16,6 +16,7 @@ import {
   PACKAGING_NOTE,
   type AcceptedFeatureWork,
 } from "./judge-feature-work.js";
+import { TEXT_ONLY_WORKER_NOTE } from "./judge-text-only-worker.js";
 
 export type JudgeVerdict = "pass" | "fail";
 
@@ -270,6 +271,14 @@ export function findPlanFeatureForTask(plan: ToderoPlan | null, task: ToderoPlan
 export const JUDGE_VERDICT_SHAPE = "VERDICT: pass";
 
 /**
+ * How the reviewer opens a refusal: once for a send-back, once for the one
+ * that puts the task in front of the person. Named because a later pass reads
+ * them back off the task to tell a refused hand-in from an accepted one.
+ */
+export const JUDGE_SENT_BACK_OPENING = "I reviewed this and it is not finished yet.";
+export const JUDGE_OVER_TO_YOU_OPENING = "I reviewed this twice and it is still not there.";
+
+/**
  * Of the tasks this one waited on, the ones in the same feature that finished
  * and handed something in. A predecessor in another feature is somebody else's
  * work and is left out: the point is the feature's own finish line.
@@ -313,6 +322,8 @@ export function buildJudgeReviewPrompt(input: {
   isLastTaskOfFeature?: boolean;
   /** What the tasks before this one, in this same feature, already handed in. */
   acceptedWork?: AcceptedFeatureWork[];
+  /** True when the worker under review can only write text in a reply. */
+  workerIsTextOnly?: boolean;
 }): string {
   const parts: string[] = [
     "A teammate has finished a task and handed in the work below. Decide whether it is good enough to show the person who asked for it.",
@@ -343,11 +354,14 @@ export function buildJudgeReviewPrompt(input: {
     checks.forEach((check, index) => parts.push(`${index + 1}. ${check.trim()}`));
   }
   parts.push("", "What was handed in:", '"""', input.deliverable.trim(), '"""', "");
-  // A line about packaging is judged on substance, because a chat reply has no
-  // other kind of substance to show. Only the lines this task is actually held
-  // to: its own hand-in line, and whatever it has to be true for — which is
-  // where the feature's finish line appears, on the task the feature ends with.
-  if (namesPackaging(input.expectedOutput) || checks.some(namesPackaging)) {
+  // What this worker can hand in at all. For one that can only write, that is
+  // said outright and covers every line whatever its wording. For anything
+  // else — a worker with tools, or one whose adapter could not be read — wave
+  // 5's narrower note stands: it fires only on the lines this task is actually
+  // held to, its own hand-in line and whatever it has to be true for.
+  if (input.workerIsTextOnly) {
+    parts.push(TEXT_ONLY_WORKER_NOTE, "");
+  } else if (namesPackaging(input.expectedOutput) || checks.some(namesPackaging)) {
     parts.push(PACKAGING_NOTE, "");
   }
   parts.push(
@@ -452,7 +466,7 @@ export function buildJudgeComment(input: {
     return rest ? `${head}\n\n${rest}` : head;
   }
   const head = input.outcome.kind === "revise"
-    ? "I reviewed this and it is not finished yet. Sending it back with what to change."
-    : "I reviewed this twice and it is still not there. Over to you.";
+    ? `${JUDGE_SENT_BACK_OPENING} Sending it back with what to change.`
+    : `${JUDGE_OVER_TO_YOU_OPENING} Over to you.`;
   return rest ? `${head}\n\n${rest}` : head;
 }

@@ -1075,3 +1075,170 @@ wrong; the parked pass runs whether or not the reviews did. The order is unchang
 `deferred-review.test.ts` drives the installed composition with a stand-in database: one test that
 both passes run, one that the parked pass runs after the reviews throw, and a reading of the source
 that holds the three doors and the one line at startup that puts both passes behind them.
+
+## ADR-025 — A worker that can only write is judged on what it wrote, and a refused hand-in gets one fresh review
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Wave 21 of the improvement loop, and two walls that between them make a stalled
+  project permanent.
+
+  1. **The same refusal, in new words each time.** Waves 19, 20 and 21 all stopped on a reviewer
+     refusing a worker's writing for what the writing is not. Wave 20
+     (`42c3d5e4-f0fd-4aea-ae98-32e90707d31f`, ZZGAAAAAAAAAAA-5 "Prepare the guides for publishing"):
+     four finished guides refused twice — "The guides are in plain text format ... it is not
+     formatted and ready for distribution". Wave 21
+     (`9d181fc6-75fe-4cc9-ae04-f17e86ac0332`, ZZGAAAAAAAAAAAAAA-4 "Review and refine the draft
+     guides"): the same four guides refused for lacking "any visual formatting or layout ... such
+     as a PDF or a well-designed webpage".
+
+     ADR-024 answered wave 20 with a list of phrases matched against the task's own line —
+     "formatted", "ready for distribution". Wave 21's line said "ready for publication", which was
+     not on the list, and the project stopped again. A list of words tested against a model's
+     vocabulary leaks. What does not change is the worker: a wizard-hired local model talks to a
+     chat endpoint and has no tools, so text in a reply is the whole of what it can hand in. A
+     file, a document format, a layout, a PDF, a page, an export — every one of those is out of its
+     reach by construction, on every task, whatever the wording.
+
+     Wave 21 also showed what a send-back gets when the worker takes the objection seriously: told
+     its guides were not ready for publication, it replied with a three-step plan to format and
+     export them. The guides themselves were then not on the task at all, and the second refusal —
+     that the work was a plan and not the guides — was right.
+
+  2. **Nothing ever comes back for a refused hand-in.** Every stuck organization of those three
+     waves ends in one shape: a task that handed real work in, was refused twice, and is parked in
+     front of the person with "I reviewed this twice and it is still not there. Over to you." The
+     two ways back built in ADR-024 both turn that shape down by design — the deferred reviews
+     because a reviewer did speak, and after the hand-in; the parked-turn pass because the last
+     turn was a real hand-in. So wave 21 reopened wave 20's organization and ran zero turns. A
+     person who updates Todero the day after a project stalls gets nothing at all out of a fix to
+     the reviewer.
+- **Decision:**
+
+  1. **The reviewer is told what the worker under review can hand in.** When the worker is one that
+     can only write — decided from its own adapter, by the same test the heartbeat uses to hand it
+     the ticket thread instead of tools, asked through `isTextOnlyWorker` rather than copied — the
+     brief says so outright: it cannot make a file, a document format, a layout, a PDF, a page, an
+     export or a publication; where a line asks for one of those, count it met when the written
+     content is complete and reads well; how the work is formatted, what file it is in, how it is
+     laid out or how it would be delivered is never a reason to send it back. This replaces
+     ADR-024's list of phrases for such a worker. The list is kept for every other worker, where it
+     still says something this sentence does not: an agent with tools really can produce a file, so
+     it is not told it cannot, and the narrower note fires only on the lines that task is held to.
+
+  2. **A refusal about packaging alone does not stand against the lines that asked for packaging.**
+     After the reviewer answers, its paragraph is read one sentence at a time, and **every**
+     sentence has to pass, not only the ones that look like complaints. A sentence passes when it
+     complains about something in a way this can read ("is not", "lacks", "does not", "never",
+     "needs to be"); when every word it complains with belongs to one of those readable complaints,
+     so "it omits the fourth guide and is not formatted for publication" is turned down because
+     "omits" sits outside them; and when the stretch from each complaining word to the end of the
+     sentence names a packaging word and contains nothing else but scaffolding — articles,
+     prepositions, "is", "ready", "suitable". One word in it that names a part of the work ("the
+     totals", "any mention of humidity", "described", "the conclusion") and the refusal stands. A
+     line of preamble stands too: this cannot tell a harmless aside from a second reason, so it
+     does not try. Content is the default and packaging is the narrow exception, because guessing
+     wrong here accepts unfinished work in the person's name.
+
+     When a refusal does pass that test, only the checks whose **own written-down line** asks for
+     something out of the worker's reach — ADR-024's list of phrases, now doing the one job the
+     sentence in point 1 cannot do, which is saying *which line* is the unreachable one — are
+     recorded as met on substance. Every other answer stays the reviewer's own, and the verdict is
+     worked out again from all of them: a refusal naming three unmet lines of which one asked for a
+     PDF is still a send-back on the other two. Where the reviewer never said which checks it made
+     there is nothing to recompute, so its refusal falls away with its reason — but only if one of
+     the task's lines asked for packaging at all. The comment a person reads says so on the line
+     itself: `met (the reviewer wanted a file or a layout; this worker can only write, and the
+     content is here) — ...`, with one line above the reviewer's own paragraph saying the same in
+     full.
+
+     Wave 20's own two refusals do **not** pass this test, and that is deliberate: each asks for a
+     layout and, in the same breath, for drafts "that have been reviewed and edited", which is
+     about the writing. Wave 20 is answered by point 1 — the reviewer is told up front what this
+     teammate can hand in — and by ADR-024's "already done on this feature" lines, not by the
+     guard. The guard is the narrow net under the brief, not the mechanism.
+
+  3. **A send-back asks for the work, not for a plan to do the work.** The turn Todero adds when a
+     worker is woken by the reviewer's send-back says: hand in the work itself, complete, in this
+     reply — not a description of what you would do.
+
+  4. **Starting an organization again gives every parked refusal one fresh review.** At the same
+     door as the other two passes, and last of the three: the company's stopped plan children that
+     say a review is pending, whose newest reviewer comment is a refusal newer than the hand-in,
+     and that no person has answered since, are each reviewed once more under the brief the
+     reviewer has today, and the answer applied exactly as a deferred review's is. Once — a mark on
+     the task says it has had its look, and that mark comes off when the task hands work in again
+     or closes — both paths, so a task that is refused again, pushed forward by a person and hands
+     in again is owed a fresh look of its own. A task already at the reviewer's two-refusal cap is
+     still offered one, because that cap counted refusals under the old brief.
+- **Where:** `judge-text-only-worker.ts` (new — the test for such a worker, the sentence, the
+  recognizers, the guard), `judge.ts` (the brief carries the sentence; the comment carries the
+  per-line note; the reviewer's two refusal openings are named so a later pass can read them back),
+  `judge-review.ts` (reads the worker's adapter and applies the guard to the verdict it acts on),
+  `judge-apply.ts` (the send-back's turn instruction, and the one place that chooses between it and
+  the empty-turn one), `heartbeat.ts` (one call swapped, nothing added — that file is at its size
+  limit), `conversation-outcome.ts` (the mark, cleared with the rest when a task closes),
+  `refused-review-refresh.ts` (new — the rule, the database reads, the pass),
+  `conversation-outcome.ts` again (the mark also comes off on the turn that hands work in),
+  `deferred-review.ts` (the reviewing wiring lifted into `runReviewPass` so both passes share it,
+  and the third pass composed at the one resume door).
+- **Consequences:** A reviewer of a text-only worker now reads one extra paragraph, and its refusal
+  can be set aside by Todero — which is a real transfer of judgement, so it is bounded twice over:
+  by the refusal (every word of what it objects to has to be about packaging) and by the line (only
+  a line that itself asked for a file, a layout or a publication can be answered for the reviewer).
+  Every check it touches says on its own line that Todero and not the reviewer answered it. The
+  widest case left is a reviewer that refuses on packaging alone and never says which checks it
+  made: that becomes a pass with no check list for a person to read, and it is allowed only when
+  one of the task's own lines asked for packaging. The cost of the narrowness is that a refusal
+  which mixes a layout complaint into a sentence about the writing still stands, whether or not the
+  writing part was fair — the brief, not the guard, is what has to reach that reviewer. A worker
+  with tools is unaffected: the brief, the guard and the comment are all exactly what they were.
+  Starting an organization now costs one model call per parked refusal, once per refusal. Repros:
+  `gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts` (waves 20 and 21's four real
+  refusals, and six refusals that name a packaging word and have to stand) and `gauntlet/repros/parked-refusal-gets-a-fresh-review.gauntlet.ts` (wave 21's real
+  parked task, shown being turned down by both older rules), both registered in
+  `gauntlet/checks.json`.
+
+### 2026-09-21 — the guard in decision 2 is removed; the brief is the whole answer
+
+Decision 2 above built a guard: after the reviewer answered, its refusal was read word by word, and
+a refusal whose every complaint was about packaging did not stand against the lines that had asked
+for packaging. That guard is deleted. Decision 1 (the reviewer is told what the worker can hand
+in), decision 3 (a send-back asks for the work, not a plan) and decision 4 (a parked refusal gets
+one fresh review) are unchanged and stay.
+
+Three things decided it.
+
+**The brief did the whole job on its own.** Wave 22 on the runner was the first run where the
+organization finished the project by itself — five issues of five, one question for the person, and
+five reviewer verdicts with not one word in them about files, formats or layouts. Every bit of that
+came from the sentences the reviewer is given about the teammate it is reviewing. Told the truth up
+front, the reviewer never wrote the refusal the guard existed to catch.
+
+**The guard never fired.** Not once on a live run, across every wave it was in the build. It was a
+net under a hole that the brief had already closed.
+
+**Reading it closely proved it accepts unfinished work.** Two refusals that any person would call
+fair were read by it as being only about packaging: "Two sections are missing from the document."
+and "The discount is not in the template." Each would have turned a send-back into a pass. Both
+were repaired, and each repair only moved the hole somewhere else — which is what happens when a
+program tries to decide what a paragraph of English is really complaining about. The judgement the
+guard was making is the reviewer's judgement, and there is no safe way to take it.
+
+**The standing rule from here:** tell the reviewer the truth about what the worker under review can
+hand in, and then take the reviewer at its word. Never overrule a refusal by pattern-matching the
+words it was written with.
+
+What that leaves. `judge-text-only-worker.ts` now holds two things and nothing else: the test for
+whether a worker can only write, and the sentences the reviewer is told. Wave 5's small phrase list
+(`namesPackaging` in `judge-feature-work.ts`) stays, because it still does the job it was built for
+— on a worker that **has** tools, a line asking for work "formatted" or "ready for distribution"
+still puts wave 5's narrower note into that reviewer's brief. It no longer decides anything about a
+verdict. `judge-review.ts` applies the reviewer's verdict and the reviewer's own met/not-met answers
+straight through, and the two extra lines the guard used to write into the comment a person reads
+are gone with it. `judge-apply.ts` never held any of this. The registered repro
+`gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts` keeps its brief cases — the
+text-only worker's brief carries the sentences, and a tool-using worker's brief is word for word
+what it was before this wave — and its guard cases are deleted. The cost of the removal: if a
+reviewer does write a refusal that is only about packaging, the work goes back to the worker and
+costs a turn. Wave 22 says that is a turn nobody spends.

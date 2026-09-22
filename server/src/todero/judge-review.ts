@@ -7,8 +7,8 @@
  * The request goes to the reviewer agent's own adapter config, which is a
  * copy of the worker's, so there is nothing extra to configure.
  */
-import { inArray } from "drizzle-orm";
-import { issues, type Db } from "@todero/db";
+import { eq, inArray } from "drizzle-orm";
+import { agents, issues, type Db } from "@todero/db";
 import { parseToderoPlanBlock, type CompanySkill, type ToderoPlan } from "@todero/shared";
 import { isChatCompletionsUrl, parseChatCompletionsText } from "../adapters/http/chat-completions.js";
 import { companySkillService } from "../services/company-skills.js";
@@ -34,6 +34,7 @@ import {
   checksAlreadyDone,
   type AcceptedFeatureWork,
 } from "./judge-feature-work.js";
+import { isTextOnlyWorker } from "./judge-text-only-worker.js";
 import { getManager } from "./manager-mode.js";
 import { loadAgentSkillText } from "./skill-pack.js";
 import { collectTaskInputs, taskInputsDbDeps } from "./task-inputs.js";
@@ -169,6 +170,27 @@ export async function loadAcceptedFeatureWork(
   }
 }
 
+/**
+ * Can the worker that handed this in only write? Read off its own adapter, the
+ * same way the heartbeat decides to hand it the thread instead of tools.
+ * Anything that goes wrong reading it answers no, which leaves the review
+ * exactly as it was before this existed.
+ */
+export async function workerCanOnlyWrite(db: Db, agentId: string): Promise<boolean> {
+  if (!agentId.trim()) return false;
+  try {
+    const worker = await db
+      .select({ adapterType: agents.adapterType, adapterConfig: agents.adapterConfig })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    return isTextOnlyWorker(worker);
+  } catch {
+    return false;
+  }
+}
+
 export type JudgeReviewResult = {
   outcome: JudgeOutcome;
   verdict: JudgeVerdict | null;
@@ -281,6 +303,8 @@ export async function reviewConversationHandIn(
     acceptedWork,
   });
 
+  const workerIsTextOnly = await workerCanOnlyWrite(db, input.leadAgentId);
+
   const review = await requestJudgeVerdict({
     config,
     expectedChecks: checks.length,
@@ -299,6 +323,7 @@ export async function reviewConversationHandIn(
       checks,
       isLastTaskOfFeature: lastOfFeature,
       acceptedWork,
+      workerIsTextOnly,
     }),
     fetcher: input.fetcher,
   });

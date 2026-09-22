@@ -5,7 +5,7 @@
  * become.
  */
 import { descriptionForDeferredReview } from "./conversation-outcome.js";
-import { descriptionWithEmptyTurnTries } from "./empty-turn-recovery.js";
+import { descriptionWithEmptyTurnTries, emptyTurnInstructionForWake } from "./empty-turn-recovery.js";
 import { JUDGE_MAX_FAIL_ROUNDS, descriptionWithJudgeFailRounds, readJudgeFailRounds } from "./judge.js";
 import type { JudgeOutcome } from "./judge.js";
 import { descriptionWithWaitingForManagerMarker } from "./manager-sendback.js";
@@ -28,6 +28,36 @@ export function judgeFailRound(
     return readJudgeFailRounds(description) + 1;
   }
   return null;
+}
+
+/** Why the worker is being brought back: the reviewer sent its work back. */
+export const JUDGE_REVISION_WAKE_REASON = "issue_judge_revision";
+
+/**
+ * The one line added to the worker's turn when the reviewer sends work back.
+ *
+ * Wave 21: told its guides were not ready for publication, the worker replied
+ * with a three-step plan to format and export them. That is a reasonable thing
+ * to say and a useless thing to hand in — the task then had no guides on it at
+ * all, and the second refusal was right. A send-back asks for the work, so the
+ * turn says so.
+ */
+export function buildJudgeRetryInstruction(): string {
+  return [
+    "Your reviewer sent this back. Read what it asked for and hand in the work itself, complete, in"
+      + " this reply — the whole thing, written out, not the parts you changed.",
+    "Do not describe what you would do, and do not write a plan for doing it. The reply is the"
+      + " hand-in.",
+  ].join("\n");
+}
+
+/**
+ * What Todero adds to a conversational worker's turn for the reason it was
+ * woken: the reviewer's send-back, a turn that produced nothing, or neither.
+ */
+export function instructionForConversationWake(wakeReason: string | null | undefined): string | null {
+  if (wakeReason === JUDGE_REVISION_WAKE_REASON) return buildJudgeRetryInstruction();
+  return emptyTurnInstructionForWake(wakeReason);
 }
 
 export type JudgeApplyDeps = {
