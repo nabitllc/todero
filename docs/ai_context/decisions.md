@@ -1380,3 +1380,20 @@ costs a turn. Wave 22 says that is a turn nobody spends.
 
   `packages/shared/src/todero-plan.ts` is now at its 500-line cap with no headroom; the next change
   to it splits the file.
+
+### Note, 2026-09-22 — the other two copies of the plan shape are back in step, and pinned
+
+Decision 1 above changed the plan shape in `packages/shared/src/todero-plan.ts`. It did not change
+the two other places that state the same shape, and both of them reach the same planning turn:
+
+- `skills/todero-plan-a-project/SKILL.md` pastes the shape word for word. It is a pack skill, it is
+  loaded onto planning turns, and it is loaded first, so the planner was reading the old rule after
+  reading the new one.
+- `packages/shared/src/todero-plan-schema.ts` is the shape a runtime holds a local model to when
+  Todero asks for the plan directly rather than asking for a fenced block. Its description of
+  `after` was still the single-task one.
+
+Both now carry the new wording. A test beside the plan's own tests reads the skill off disk and
+fails if either drifts from the text in `todero-plan.ts` again, which is the part that had no guard
+at all: the header of `todero-plan.ts` already said these places must never drift apart, and two of
+them drifted past every check the repo had.
