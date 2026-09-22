@@ -381,10 +381,10 @@ export function buildToderoPlanTaskDescription(
   return parts.join("\n");
 }
 
-/** One task with the tasks it has to wait for, named by plan id. */
 /** Why a task ended up waiting for the task listed before it in its feature. */
 export type ToderoPlanFollowsReason = "plan-said-nothing" | "stated-wait-cannot-happen";
 
+/** One task with the tasks it has to wait for, named by plan id. */
 export type ToderoPlanTaskDependency = {
   task: ToderoPlanTask;
   blockedByTaskIds: string[];
@@ -492,7 +492,7 @@ export function resolveToderoPlanTaskDependencies(tasks: ToderoPlanTask[]): Tode
       task,
       blockedByTaskIds: follows ? [follows] : fromThePlan,
       followsTaskId: follows,
-      followsReason: follows === null ? null : task.after.trim() ? "stated-wait-cannot-happen" : "plan-said-nothing",
+      followsReason: follows === null ? null : (task.after ?? "").trim() ? "stated-wait-cannot-happen" : "plan-said-nothing",
     });
     placed.add(task.id);
   }
