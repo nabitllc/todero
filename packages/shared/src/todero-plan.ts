@@ -52,10 +52,10 @@ tasks:
   - title: An imperative task title
     feature: The feature name it belongs to
     output: What you will hand in for it (a document, a list, a draft, a decision)
-    after: The title of the task that has to finish first (leave this line out when nothing has to come first)
+    after: The titles of the tasks that have to finish first, separated by commas (leave this line out when nothing has to come first)
 \`\`\`
 
-Three to seven features. Four to twelve tasks, each naming one of the features. Use \`after\` only when a task truly cannot start until another one is handed in — tasks without it run side by side with the other features. Put any words for the person before the block, not inside it.`;
+Three to seven features. Four to twelve tasks, each naming one of the features. Use \`after\` only when a task truly cannot start until another one is handed in — tasks without it run side by side with the other features. A task that reviews, checks, corrects or builds on what another task hands in cannot start until that task is handed in: name that task in \`after\`, even when it also waits for something else — list both, separated by commas. A review of the fourth guide waits for the fourth guide, not only for the review before it. Put any words for the person before the block, not inside it.`;
 
 /**
  * Todero spelled the fenced plan template out in this text.
@@ -340,6 +340,9 @@ export function buildToderoPlanTaskDescription(
   options: {
     /** What the person said in the planning conversation, oldest first. */
     personSaid?: string[];
+    /** The task this one waits for because the plan's own waits were unusable, and why. */
+    followsTaskTitled?: string | null;
+    followsReason?: ToderoPlanFollowsReason | null;
   } = {},
 ): string {
   const feature = plan.features.find((row) => row.name.toLowerCase() === task.feature.toLowerCase()) ?? null;
@@ -364,6 +367,13 @@ export function buildToderoPlanTaskDescription(
     parts.push(`Feature: ${task.feature}`);
   }
   if (task.output) parts.push(`Hand in: ${task.output}`);
+  const follows = (options.followsTaskTitled ?? "").replace(/\s+/g, " ").trim();
+  if (follows) {
+    const why = options.followsReason === "stated-wait-cannot-happen"
+      ? "The plan named a wait for this task that can never happen, so it waits for the task listed before it instead."
+      : "The plan did not say what this task waits for, so it waits for the task listed before it.";
+    parts.push(`Follows: ${follows}. ${why} Build on what that task handed in.`);
+  }
   parts.push(
     "",
     "Do this task now, in this reply: write out the output described above in full, as the deliverable itself, not a description of it. Nobody is waiting to give you more information; everything you need is above. Only if something essential is missing, ask one question. End with `STATUS: done` when the output is complete, or `STATUS: waiting` right after that one question.",
@@ -371,10 +381,16 @@ export function buildToderoPlanTaskDescription(
   return parts.join("\n");
 }
 
+/** Why a task ended up waiting for the task listed before it in its feature. */
+export type ToderoPlanFollowsReason = "plan-said-nothing" | "stated-wait-cannot-happen";
+
 /** One task with the tasks it has to wait for, named by plan id. */
 export type ToderoPlanTaskDependency = {
   task: ToderoPlanTask;
   blockedByTaskIds: string[];
+  /** The task it waits for only because the plan's own waits were unusable, and why. */
+  followsTaskId: string | null;
+  followsReason: ToderoPlanFollowsReason | null;
 };
 
 function featureKey(task: ToderoPlanTask): string {
@@ -416,7 +432,14 @@ function resolveAfterReference(
  *
  * The result is ordered so every task comes after the tasks it waits for. If
  * the plan states an impossible order (A after B, B after A), the wait that
- * closes the circle is dropped rather than the whole plan rejected.
+ * closes the circle is dropped rather than the whole plan rejected — and rule
+ * 2 then applies, so the task follows its neighbour instead of starting free.
+ * A dropped wait must not turn into no wait at all, and each task says which
+ * of the two reasons gave it its wait, so its brief can tell the worker.
+ *
+ * No rule here can connect two tasks the plan never connected: wave 19's
+ * review of an unwritten guide was a plan naming the wrong wait, and what
+ * changed for it is what the planner is asked for, at the top of this file.
  */
 export function resolveToderoPlanTaskDependencies(tasks: ToderoPlanTask[]): ToderoPlanTaskDependency[] {
   const byId = new Map<string, ToderoPlanTask>();
@@ -428,6 +451,9 @@ export function resolveToderoPlanTaskDependencies(tasks: ToderoPlanTask[]): Tode
   }
 
   const previousInFeature = new Map<string, string>();
+  // Per task: the one listed before it in its feature, and the plan's own waits.
+  const previousOf = new Map<string, string>();
+  const statedBy = new Map<string, string[]>();
   const wanted = new Map<string, string[]>();
   for (const task of tasks) {
     const key = featureKey(task);
@@ -436,12 +462,10 @@ export function resolveToderoPlanTaskDependencies(tasks: ToderoPlanTask[]): Tode
       .filter((match): match is ToderoPlanTask => match !== null && match.id !== task.id)
       .map((match) => match.id);
     const deduped = [...new Set(stated)];
-    if (deduped.length > 0) {
-      wanted.set(task.id, deduped);
-    } else {
-      const previous = previousInFeature.get(key);
-      wanted.set(task.id, previous ? [previous] : []);
-    }
+    const previous = previousInFeature.get(key);
+    if (previous) previousOf.set(task.id, previous);
+    statedBy.set(task.id, deduped);
+    wanted.set(task.id, deduped.length > 0 ? deduped : previous ? [previous] : []);
     previousInFeature.set(key, task.id);
   }
 
@@ -458,8 +482,18 @@ export function resolveToderoPlanTaskDependencies(tasks: ToderoPlanTask[]): Tode
     // dropping the waits it cannot satisfy, and carry on.
     const index = readyIndex === -1 ? 0 : readyIndex;
     const task = remaining.splice(index, 1)[0]!;
-    const blockedByTaskIds = (wanted.get(task.id) ?? []).filter((id) => placed.has(id));
-    ordered.push({ task, blockedByTaskIds });
+    // What the plan named, minus what is not there to wait for. With nothing
+    // left of it the task follows the one before it in its feature, and silent
+    // means no `after` line at all rather than one Todero could not carry out.
+    const fromThePlan = (statedBy.get(task.id) ?? []).filter((id) => placed.has(id));
+    const previous = previousOf.get(task.id) ?? null;
+    const follows = fromThePlan.length === 0 && previous && placed.has(previous) ? previous : null;
+    ordered.push({
+      task,
+      blockedByTaskIds: follows ? [follows] : fromThePlan,
+      followsTaskId: follows,
+      followsReason: follows === null ? null : (task.after ?? "").trim() ? "stated-wait-cannot-happen" : "plan-said-nothing",
+    });
     placed.add(task.id);
   }
   return ordered;

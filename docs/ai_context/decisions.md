@@ -1242,3 +1242,158 @@ text-only worker's brief carries the sentences, and a tool-using worker's brief 
 what it was before this wave — and its guard cases are deleted. The cost of the removal: if a
 reviewer does write a refusal that is only about packaging, the work goes back to the worker and
 costs a turn. Wave 22 says that is a turn nobody spends.
+
+## ADR-026 — A fresh review is a fresh attempt, and a dropped wait is not no wait
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Wave 22 of the improvement loop, and the two ways a project can stop with nobody
+  left to ask.
+
+  1. **A fresh review without a fresh attempt rescues nothing.** ADR-025 gave a task the reviewer
+     had refused and parked one fresh review, run under whatever the reviewer's brief says today.
+     Wave 22 reopened wave 21's organization (`9d181fc6-75fe-4cc9-ae04-f17e86ac0332`) and that
+     worked: the parked task "Review and refine the draft guides" had been refused twice for having
+     no "visual formatting ... a PDF", and the fresh verdict said nothing about formatting at all.
+     It judged the content, and it was right — the worker's second turn had been a plan for
+     refining the guides rather than the guides.
+
+     It still went nowhere. Two refusals had already been counted against the task under the old
+     brief, so the reviewer had no round left to spend: the fresh verdict opened with "I reviewed
+     this twice and it is still not there. Over to you." and the task was parked again the same
+     second. Runs on the task: still two, both from wave 21. The worker was never once asked to try
+     again with the corrected brief in force. Zero human touches, zero progress.
+
+  2. **A task can end up with nothing in front of it.** Wave 19
+     (`f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`) finished with "Review the fourth guide" done, no
+     blockers, nothing refused — while "Draft the fourth guide" had never run. A review task closed
+     with nothing to review.
+
+     Read back from the archive, the cause is not what it looked like. Every task in that plan
+     carried a stated wait, and "Review the fourth guide" said `after: Review the third guide`; it
+     was created waiting for exactly that and for nothing else. The planner — a 14B model — chained
+     each review to the review before it instead of to the guide it reviews, so the draft chain and
+     the review chain ran side by side and the reviews got there first. Plan approval did what the
+     approved plan asked. There is a second route to the same shape, though, and that one is ours:
+     when a plan names a wait that can never happen, the wait is dropped so the plan is not
+     rejected, and the task was then left waiting for nothing and started at once.
+
+- **Decision:**
+
+  1. **A fresh review under a new brief is a first look.** When a refused hand-in is taken for its
+     one fresh review, the count of refusals against it goes back to nothing in the same statement
+     that marks the look as taken. A refusal then sends the work back to the worker as round one,
+     with the reviewer's note, exactly as a first refusal always has. A fresh review that passes
+     closes or hands off as before, and a task gets one fresh look and no more.
+
+  2. **The worker is told what this reviewer wants.** The turn that brings a worker back to work
+     the reviewer sent back still says to hand in the work itself, complete, in that reply. It now
+     also quotes the reviewer's own sentence about what is missing. A worker whose thread holds two
+     older refusals about something else cannot otherwise tell what changed.
+
+  3. **A task with nothing left in front of it follows the task before it.** At plan approval, a
+     task whose stated waits have all been dropped, and which is not the first task of its feature,
+     waits for the task listed immediately before it in that feature. An explicit, possible wait
+     always wins, the first task of every feature stays free, and the plan document is never
+     edited. The task's own brief says in plain words that it follows the task before it because
+     the plan did not say otherwise.
+
+- **Consequences:** A stalled project now has a way back that ends in work rather than in a second
+  message to the person: start the organization again, and a refused task is read once under
+  today's brief and, if refused again, handed back to the worker with one clear thing to answer.
+  The cost is one extra worker turn on a task a person might have taken over; the loop has never
+  once seen a person take one over.
+
+  What this wave does **not** do is make wave 19's plan right. "Review the fourth guide" still
+  waits only for "Review the third guide", because that is what the approved plan says, and reading
+  a stated order as if it meant something else is the same mistake ADR-025 removed from the
+  reviewer. The planner's brief is where that belongs, and it is open work.
+
+  Everything is in `server/src/todero/` and `packages/shared/src/todero-plan.ts`;
+  `server/src/services/heartbeat.ts` gained no lines. Registered repros:
+  `gauntlet/repros/fresh-review-gives-a-fresh-attempt.gauntlet.ts` and
+  `gauntlet/repros/review-follows-its-draft.gauntlet.ts`, the second of which also pins what wave
+  19's plan actually said, so nobody re-diagnoses it from memory.
+
+## ADR-027 — A review task must be told, by the plan, what it reviews
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** The review of ADR-026 rejected it on one point, and the point held. ADR-026 closed
+  the case where a plan names a wait that can never happen, and said so honestly, but the failure
+  the wave had been called for was wave 19's, and that one was untouched: run wave 19's plan
+  through the code ADR-026 shipped and "Review the fourth guide" still waits only for "Review the
+  third guide", so it still starts and closes while the fourth guide is unwritten.
+
+  Two things came out of looking again.
+
+  1. **No rule applied at approval can fix it.** The plan states a wait for every task; it simply
+     states the wrong one. Reviews and drafts sat in two different features, so "the task listed
+     before it in its feature" is the third review — the very task it already waited for. Making a
+     stated wait lose to a neighbour would not help either, and would throw away the one thing a
+     person actually approved. The plan never connects the fourth review to the fourth guide, and
+     nothing downstream can invent that connection without guessing from the words in a title.
+
+  2. **The planner was never asked for it, and could not have written it.** The shape it is given
+     described `after` as "the title of the task that has to finish first" — one task, no hint that
+     a task may wait for two things, and nothing at all about work that builds on other work. A 14B
+     planner wrote the most obvious thing that shape allows: one chain per feature.
+
+- **Decision:**
+
+  1. **The planner is asked for the wait that matters.** The plan shape now describes `after` as
+     the titles of the tasks that have to finish first, separated by commas, and the instructions
+     add: a task that reviews, checks, corrects or builds on what another task hands in cannot
+     start until that task is handed in, so it names that task in `after` even when it also waits
+     for something else — list both. The example given is wave 19's own case, in wave 19's own
+     words. Nothing else about the shape changes, and the parser has always read a comma list, so a
+     plan written this way needs no new handling.
+
+  2. **A task is told the true reason it follows its neighbour.** ADR-026's fallback wrote "The
+     plan did not say what this task waits for" into the brief. In the one case where the fallback
+     actually bites, the plan did say something — it named a wait that could never happen. The
+     brief now says which of the two it was.
+
+- **Consequences:** The fix for wave 19 is a change to what a model is asked for, so its test is a
+  test of what the planner is told, not of an order Todero computes. That is the honest limit of
+  it: nothing here can put the fourth guide in front of its review for a plan already approved, and
+  whether a 14B planner now writes the second wait is a question only a run answers. The registered
+  repro `gauntlet/repros/review-follows-its-draft.gauntlet.ts` pins both halves — wave 19's plan
+  exactly as it was written, and the plan the amended instructions ask for parsing into the two
+  waits the fourth review needed.
+
+  Three things are recorded rather than changed, so the next wave does not rediscover them:
+
+  - ADR-026's rule 3, read literally ("a task with no stated wait follows the task before it in its
+    feature"), was already the behaviour before that wave. What ADR-026 actually changed was the
+    dropped-wait case, plus the sentence in the brief. That is a real defect and it is fixed, but
+    the loop has never observed it happening.
+  - A fresh review takes the refusal count back to nothing when the task is claimed, not when a
+    verdict is applied. A fresh review that is then skipped — no reviewer, no model, no usable
+    verdict — therefore leaves the task at nothing with its one fresh look already spent. The task
+    stays parked with the person, so nothing breaks today; if it is ever unparked and hands in
+    again, its reviewer has two rounds it would not otherwise have had.
+  - The reviewer's quoted sentence reaches the worker only for reviews run through the deferred and
+    fresh passes. A worker sent back by the review the heartbeat runs inline still gets the two
+    sentences and no quote, because `server/src/services/heartbeat.ts` is at its size cap and may
+    gain no lines.
+
+  `packages/shared/src/todero-plan.ts` is now at its 500-line cap with no headroom; the next change
+  to it splits the file.
+
+### Note, 2026-09-22 — the other two copies of the plan shape are back in step, and pinned
+
+Decision 1 above changed the plan shape in `packages/shared/src/todero-plan.ts`. It did not change
+the two other places that state the same shape, and both of them reach the same planning turn:
+
+- `skills/todero-plan-a-project/SKILL.md` pastes the shape word for word. It is a pack skill, it is
+  loaded onto planning turns, and it is loaded first, so the planner was reading the old rule after
+  reading the new one.
+- `packages/shared/src/todero-plan-schema.ts` is the shape a runtime holds a local model to when
+  Todero asks for the plan directly rather than asking for a fenced block. Its description of
+  `after` was still the single-task one.
+
+Both now carry the new wording. A test beside the plan's own tests reads the skill off disk and
+fails if either drifts from the text in `todero-plan.ts` again, which is the part that had no guard
+at all: the header of `todero-plan.ts` already said these places must never drift apart, and two of
+them drifted past every check the repo had.
