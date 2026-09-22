@@ -311,3 +311,103 @@ describe("spellsOutToderoPlanBlock", () => {
     expect(spellsOutToderoPlanBlock(null)).toBe(false);
   });
 });
+
+/**
+ * Wave 19 of the improvement loop finished with "Review the fourth guide" done
+ * while "Draft the fourth guide" had never run. Its plan is kept here word for
+ * word, from the archived organization f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3,
+ * so what it does and does not say cannot drift.
+ */
+const WAVE_19_PLAN = `\`\`\`todero-plan
+goal: Create four one-page guides for houseplants that survive a dark flat.
+features:
+  - name: Draft guides
+    why: To produce the initial content for the one-page guides.
+    done_when: Four drafts, each naming the plant, the light it needs, and how often to water it.
+  - name: Review and refine guides
+    why: To ensure the content is accurate, readable, and meets the required format.
+    done_when: Four reviewed and refined guides.
+tasks:
+  - title: Draft the first guide
+    feature: Draft guides
+    output: The first guide draft.
+  - title: Draft the second guide
+    feature: Draft guides
+    output: The second guide draft.
+    after: Draft the first guide
+  - title: Review the first guide
+    feature: Review and refine guides
+    output: The first guide review.
+    after: Draft the first guide
+  - title: Review the second guide
+    feature: Review and refine guides
+    output: The second guide review.
+    after: Review the first guide
+\`\`\``;
+
+describe("a task the plan says nothing about", () => {
+  function plan(block: string) {
+    return parseToderoPlanBlock(`\`\`\`todero-plan\ngoal: Ship it\ntasks:\n${block}\`\`\``)!.plan;
+  }
+
+  it("follows the task listed before it in its feature, and its brief says so", () => {
+    const made = plan(
+      "  - title: Draft the fourth guide\n    feature: Draft guides\n" +
+        "  - title: Review the fourth guide\n    feature: Draft guides\n",
+    );
+    const ordered = resolveToderoPlanTaskDependencies(made.tasks);
+    expect(ordered[1]!.blockedByTaskIds).toEqual(["t1"]);
+    expect(ordered[1]!.followsTaskId).toBe("t1");
+    const brief = buildToderoPlanTaskDescription(made, ordered[1]!.task, {
+      followsTaskTitled: "Draft the fourth guide",
+    });
+    expect(brief).toContain("Draft the fourth guide");
+    expect(brief).toContain("The plan did not say what this task waits for");
+  });
+
+  it("still follows it when the plan named a wait that could never happen", () => {
+    const made = plan(
+      "  - title: One\n    feature: Alpha\n" +
+        "  - title: Two\n    feature: Alpha\n    after: Three\n" +
+        "  - title: Three\n    feature: Alpha\n    after: Two\n",
+    );
+    const ordered = resolveToderoPlanTaskDependencies(made.tasks);
+    const two = ordered.find((entry) => entry.task.title === "Two")!;
+    expect(two.blockedByTaskIds).toEqual(["t1"]);
+    expect(two.followsTaskId).toBe("t1");
+  });
+
+  it("never gives one to the first task of a feature", () => {
+    const made = plan(
+      "  - title: A1\n    feature: Alpha\n" +
+        "  - title: B1\n    feature: Beta\n" +
+        "  - title: A2\n    feature: Alpha\n",
+    );
+    const ordered = resolveToderoPlanTaskDependencies(made.tasks);
+    expect(ordered.map((entry) => entry.followsTaskId)).toEqual([null, null, "t1"]);
+  });
+});
+
+describe("a plan that states every wait itself", () => {
+  const wave19 = parseToderoPlanBlock(WAVE_19_PLAN)!.plan;
+  const ordered = resolveToderoPlanTaskDependencies(wave19.tasks);
+
+  it("is left exactly as it was", () => {
+    expect(ordered.map((entry) => ({ title: entry.task.title, after: entry.blockedByTaskIds }))).toEqual([
+      { title: "Draft the first guide", after: [] },
+      { title: "Draft the second guide", after: ["t1"] },
+      { title: "Review the first guide", after: ["t1"] },
+      { title: "Review the second guide", after: ["t3"] },
+    ]);
+    expect(ordered.map((entry) => entry.followsTaskId)).toEqual([null, null, null, null]);
+  });
+
+  it("writes the same brief it wrote before, word for word", () => {
+    for (const entry of ordered) {
+      expect(buildToderoPlanTaskDescription(wave19, entry.task, { followsTaskTitled: null }))
+        .toBe(buildToderoPlanTaskDescription(wave19, entry.task));
+      expect(buildToderoPlanTaskDescription(wave19, entry.task))
+        .not.toContain("The plan did not say what this task waits for");
+    }
+  });
+});

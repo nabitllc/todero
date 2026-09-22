@@ -11,7 +11,16 @@ import {
   planConversationOutcome,
 } from "./conversation-outcome.js";
 import { descriptionWithWaitingMarker } from "./conversation-thread.js";
+import { planJudgeOutcome, readJudgeFailRounds } from "./judge.js";
 import {
+  applyJudgeReview,
+  buildJudgeRetryInstruction,
+  instructionForConversationWake,
+  JUDGE_RETRY_NOTE_KEY,
+  JUDGE_REVISION_WAKE_REASON,
+} from "./judge-apply.js";
+import {
+  descriptionForAFreshAttempt,
   findRefusedHandInsToRefresh,
   saysTheReviewerSentItBack,
   type RefusedHandIn,
@@ -124,5 +133,111 @@ describe("when the mark of a fresh look comes off", () => {
 
   it("comes off when the task closes", () => {
     expect(hasRefreshedReviewMarker(descriptionWithoutConversationMarkers(refreshedAndParked()))).toBe(false);
+  });
+});
+
+describe("a fresh review under a new brief is a fresh start", () => {
+  /** What wave 21 left on the task: two refusals counted, at the reviewer's cap. */
+  const atTheCap = descriptionWithReviewMarker(
+    descriptionWithWaitingMarker("<!-- todero-judge-rounds: 2 -->\nReview and refine the draft guides.", true),
+    true,
+  );
+
+  it("puts the count of refusals back to nothing, and marks the look as taken", () => {
+    const fresh = descriptionForAFreshAttempt(atTheCap);
+    expect(readJudgeFailRounds(fresh)).toBe(0);
+    expect(hasRefreshedReviewMarker(fresh)).toBe(true);
+    expect(fresh).toContain("Review and refine the draft guides.");
+  });
+
+  it("makes a refusal round one, where the same refusal on the old count was the end", () => {
+    const asItWas = planJudgeOutcome({
+      verdict: "fail",
+      failRounds: readJudgeFailRounds(atTheCap),
+      autoAcceptWhenJudgePasses: true,
+    });
+    expect(asItWas).toEqual({ kind: "handoff", because: "rounds_exhausted" });
+    const afresh = planJudgeOutcome({
+      verdict: "fail",
+      failRounds: readJudgeFailRounds(descriptionForAFreshAttempt(atTheCap)),
+      autoAcceptWhenJudgePasses: true,
+    });
+    expect(afresh).toEqual({ kind: "revise", round: 1 });
+  });
+
+  it("settles a refused fresh review by sending it back to the worker, not to the person", async () => {
+    const fresh = descriptionForAFreshAttempt(atTheCap);
+    const written: Array<{ status?: string; description?: string }> = [];
+    const woken: string[] = [];
+    const applied = await applyJudgeReview(
+      {
+        addComment: async () => null,
+        updateIssue: async (_id, patch) => {
+          written.push(patch);
+          return null;
+        },
+        wakeAgent: async ({ agentId }) => {
+          woken.push(agentId);
+          return null;
+        },
+        log: () => {},
+      },
+      {
+        issue: { id: "task-1", description: fresh, identifier: "ZZG-4", title: "Review and refine the draft guides" },
+        assigneeAgentId: "worker-1",
+        review: {
+          outcome: planJudgeOutcome({
+            verdict: "fail",
+            failRounds: readJudgeFailRounds(fresh),
+            autoAcceptWhenJudgePasses: true,
+          }),
+          verdict: "fail",
+          note: "It does not include the actual refined guides.",
+          comment: "I reviewed this and it is not finished yet. Sending it back with what to change.",
+          judgeAgent: { id: "reviewer-1", name: "Nova's reviewer" } as never,
+          skipped: null,
+        },
+      },
+    );
+    expect(applied).toBe("revise");
+    expect(written[0]?.status).toBe("todo");
+    expect(readJudgeFailRounds(written[0]?.description)).toBe(1);
+    expect(woken).toEqual(["worker-1"]);
+  });
+
+  it("leaves a fresh review that passes exactly as it was", () => {
+    const fresh = descriptionForAFreshAttempt(atTheCap);
+    expect(planJudgeOutcome({
+      verdict: "pass",
+      failRounds: readJudgeFailRounds(fresh),
+      autoAcceptWhenJudgePasses: true,
+    })).toEqual({ kind: "accept" });
+    expect(planJudgeOutcome({
+      verdict: "pass",
+      failRounds: readJudgeFailRounds(fresh),
+      autoAcceptWhenJudgePasses: false,
+    })).toEqual({ kind: "handoff", because: "passed" });
+  });
+});
+
+describe("what the worker is told when a fresh review sends its work back", () => {
+  const note = "It does not include the actual refined guides. Instead, it provides a plan for refining them.";
+
+  it("still asks for the work itself, and now quotes what the reviewer says is missing", () => {
+    const instruction = buildJudgeRetryInstruction(note);
+    expect(instruction).toContain("hand in the work itself, complete, in this reply");
+    expect(instruction).toContain(note);
+  });
+
+  it("says the same as before when the reviewer's words were not kept", () => {
+    expect(buildJudgeRetryInstruction()).toBe(buildJudgeRetryInstruction(null));
+    expect(buildJudgeRetryInstruction("   ")).toBe(buildJudgeRetryInstruction());
+  });
+
+  it("carries the quote from the wake that brought the worker back", () => {
+    expect(instructionForConversationWake(JUDGE_REVISION_WAKE_REASON, { [JUDGE_RETRY_NOTE_KEY]: note }))
+      .toBe(buildJudgeRetryInstruction(note));
+    expect(instructionForConversationWake(JUDGE_REVISION_WAKE_REASON))
+      .toBe(buildJudgeRetryInstruction());
   });
 });

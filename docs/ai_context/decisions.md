@@ -1242,3 +1242,75 @@ text-only worker's brief carries the sentences, and a tool-using worker's brief 
 what it was before this wave — and its guard cases are deleted. The cost of the removal: if a
 reviewer does write a refusal that is only about packaging, the work goes back to the worker and
 costs a turn. Wave 22 says that is a turn nobody spends.
+
+## ADR-026 — A fresh review is a fresh attempt, and a dropped wait is not no wait
+
+- **Date:** 2026-09-21
+- **Status:** Accepted
+- **Context:** Wave 22 of the improvement loop, and the two ways a project can stop with nobody
+  left to ask.
+
+  1. **A fresh review without a fresh attempt rescues nothing.** ADR-025 gave a task the reviewer
+     had refused and parked one fresh review, run under whatever the reviewer's brief says today.
+     Wave 22 reopened wave 21's organization (`9d181fc6-75fe-4cc9-ae04-f17e86ac0332`) and that
+     worked: the parked task "Review and refine the draft guides" had been refused twice for having
+     no "visual formatting ... a PDF", and the fresh verdict said nothing about formatting at all.
+     It judged the content, and it was right — the worker's second turn had been a plan for
+     refining the guides rather than the guides.
+
+     It still went nowhere. Two refusals had already been counted against the task under the old
+     brief, so the reviewer had no round left to spend: the fresh verdict opened with "I reviewed
+     this twice and it is still not there. Over to you." and the task was parked again the same
+     second. Runs on the task: still two, both from wave 21. The worker was never once asked to try
+     again with the corrected brief in force. Zero human touches, zero progress.
+
+  2. **A task can end up with nothing in front of it.** Wave 19
+     (`f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3`) finished with "Review the fourth guide" done, no
+     blockers, nothing refused — while "Draft the fourth guide" had never run. A review task closed
+     with nothing to review.
+
+     Read back from the archive, the cause is not what it looked like. Every task in that plan
+     carried a stated wait, and "Review the fourth guide" said `after: Review the third guide`; it
+     was created waiting for exactly that and for nothing else. The planner — a 14B model — chained
+     each review to the review before it instead of to the guide it reviews, so the draft chain and
+     the review chain ran side by side and the reviews got there first. Plan approval did what the
+     approved plan asked. There is a second route to the same shape, though, and that one is ours:
+     when a plan names a wait that can never happen, the wait is dropped so the plan is not
+     rejected, and the task was then left waiting for nothing and started at once.
+
+- **Decision:**
+
+  1. **A fresh review under a new brief is a first look.** When a refused hand-in is taken for its
+     one fresh review, the count of refusals against it goes back to nothing in the same statement
+     that marks the look as taken. A refusal then sends the work back to the worker as round one,
+     with the reviewer's note, exactly as a first refusal always has. A fresh review that passes
+     closes or hands off as before, and a task gets one fresh look and no more.
+
+  2. **The worker is told what this reviewer wants.** The turn that brings a worker back to work
+     the reviewer sent back still says to hand in the work itself, complete, in that reply. It now
+     also quotes the reviewer's own sentence about what is missing. A worker whose thread holds two
+     older refusals about something else cannot otherwise tell what changed.
+
+  3. **A task with nothing left in front of it follows the task before it.** At plan approval, a
+     task whose stated waits have all been dropped, and which is not the first task of its feature,
+     waits for the task listed immediately before it in that feature. An explicit, possible wait
+     always wins, the first task of every feature stays free, and the plan document is never
+     edited. The task's own brief says in plain words that it follows the task before it because
+     the plan did not say otherwise.
+
+- **Consequences:** A stalled project now has a way back that ends in work rather than in a second
+  message to the person: start the organization again, and a refused task is read once under
+  today's brief and, if refused again, handed back to the worker with one clear thing to answer.
+  The cost is one extra worker turn on a task a person might have taken over; the loop has never
+  once seen a person take one over.
+
+  What this wave does **not** do is make wave 19's plan right. "Review the fourth guide" still
+  waits only for "Review the third guide", because that is what the approved plan says, and reading
+  a stated order as if it meant something else is the same mistake ADR-025 removed from the
+  reviewer. The planner's brief is where that belongs, and it is open work.
+
+  Everything is in `server/src/todero/` and `packages/shared/src/todero-plan.ts`;
+  `server/src/services/heartbeat.ts` gained no lines. Registered repros:
+  `gauntlet/repros/fresh-review-gives-a-fresh-attempt.gauntlet.ts` and
+  `gauntlet/repros/review-follows-its-draft.gauntlet.ts`, the second of which also pins what wave
+  19's plan actually said, so nobody re-diagnoses it from memory.

@@ -36,7 +36,12 @@ import {
   noReviewerNote,
   type DeferredHandIn,
 } from "./deferred-review-find.js";
-import { applyJudgeReview, skippedReviewReasonText, type JudgeApplyResult } from "./judge-apply.js";
+import {
+  applyJudgeReview,
+  JUDGE_RETRY_NOTE_KEY,
+  skippedReviewReasonText,
+  type JudgeApplyResult,
+} from "./judge-apply.js";
 import { reviewConversationHandIn, type JudgeReviewResult } from "./judge-review.js";
 import { readAutoAcceptWhenJudgePasses } from "./judge.js";
 import { recoverParkedTurns } from "./parked-turn-recovery.js";
@@ -255,6 +260,10 @@ export async function runReviewPass(
             addComment: (id, body, judgeAgentId) => issuesSvc.addComment(id, body, { agentId: judgeAgentId }),
             updateIssue: (id, patch) =>
               issuesSvc.update(id, { ...patch, actorAgentId: task.assigneeAgentId ?? undefined }),
+            // The reviewer's own sentence rides along with the wake, so the
+            // worker's turn can say what this reviewer wants rather than
+            // leaving it to find that out from a thread holding older
+            // refusals that said something else.
             wakeAgent: ({ issueId, agentId }) =>
               deps.enqueueWakeup(agentId, {
                 source: "automation",
@@ -263,7 +272,11 @@ export async function runReviewPass(
                 payload: { issueId, mutation: "update" },
                 requestedByActorType: "system",
                 requestedByActorId: null,
-                contextSnapshot: { issueId, source: "issue.deferred_review" },
+                contextSnapshot: {
+                  issueId,
+                  source: "issue.deferred_review",
+                  [JUDGE_RETRY_NOTE_KEY]: review.note ?? null,
+                },
               }).catch(() => null),
             log,
           },
