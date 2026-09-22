@@ -411,3 +411,110 @@ describe("a plan that states every wait itself", () => {
     }
   });
 });
+
+/**
+ * Wave 7's second look. The wave was called because wave 19 finished with
+ * "Review the fourth guide" done while the fourth guide had never been
+ * written. Reading the archive back showed the plan itself was the cause: the
+ * planner chained each review to the review before it, and never to the guide
+ * it reviews. Nothing the approval step can work out from that plan puts the
+ * fourth guide in front of its review — the plan simply does not say it. So
+ * the fix is in what the planner is asked for.
+ */
+describe("what the planner is asked for", () => {
+  it("says a task that builds on another task's output must name that task", () => {
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "A task that reviews, checks, corrects or builds on what another task hands in cannot start"
+        + " until that task is handed in: name that task in `after`",
+    );
+  });
+
+  it("says a task can wait for more than one thing, and how to write that", () => {
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain("separated by commas");
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "even when it also waits for something else — list both",
+    );
+  });
+
+  it("gives the planner wave 19's own case as the example", () => {
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "A review of the fourth guide waits for the fourth guide, not only for the review before it.",
+    );
+  });
+
+  it("asks for a plan the parser reads as two waits, one of them the draft", () => {
+    const written = parseToderoPlanBlock(`\`\`\`todero-plan
+goal: Create four one-page guides for houseplants that survive a dark flat.
+tasks:
+  - title: Draft the third guide
+    feature: Draft guides
+  - title: Draft the fourth guide
+    feature: Draft guides
+    after: Draft the third guide
+  - title: Review the third guide
+    feature: Review and refine guides
+    after: Draft the third guide
+  - title: Review the fourth guide
+    feature: Review and refine guides
+    after: Draft the fourth guide, Review the third guide
+\`\`\``)!.plan;
+    const byId = new Map(written.tasks.map((task) => [task.id, task.title]));
+    const ordered = resolveToderoPlanTaskDependencies(written.tasks);
+    const review = ordered.find((entry) => entry.task.title === "Review the fourth guide")!;
+    expect(review.blockedByTaskIds.map((id) => byId.get(id))).toEqual([
+      "Draft the fourth guide",
+      "Review the third guide",
+    ]);
+  });
+});
+
+describe("why a task follows the one before it", () => {
+  function plan(block: string) {
+    return parseToderoPlanBlock(`\`\`\`todero-plan\ngoal: Ship it\ntasks:\n${block}\`\`\``)!.plan;
+  }
+
+  it("says the plan was silent only when the plan really was silent", () => {
+    const made = plan("  - title: One\n    feature: Alpha\n  - title: Two\n    feature: Alpha\n");
+    const two = resolveToderoPlanTaskDependencies(made.tasks)[1]!;
+    expect(two.followsReason).toBe("plan-said-nothing");
+    const brief = buildToderoPlanTaskDescription(made, two.task, {
+      followsTaskTitled: "One",
+      followsReason: two.followsReason,
+    });
+    expect(brief).toContain("The plan did not say what this task waits for");
+  });
+
+  it("says the plan named a wait that cannot happen when that is what happened", () => {
+    const made = plan(
+      "  - title: One\n    feature: Alpha\n" +
+        "  - title: Two\n    feature: Alpha\n    after: Three\n" +
+        "  - title: Three\n    feature: Alpha\n    after: Two\n",
+    );
+    const two = resolveToderoPlanTaskDependencies(made.tasks).find((entry) => entry.task.title === "Two")!;
+    expect(two.followsTaskId).toBe("t1");
+    expect(two.followsReason).toBe("stated-wait-cannot-happen");
+    const brief = buildToderoPlanTaskDescription(made, two.task, {
+      followsTaskTitled: "One",
+      followsReason: two.followsReason,
+    });
+    expect(brief).toContain("The plan named a wait for this task that can never happen");
+    expect(brief).not.toContain("The plan did not say what this task waits for");
+  });
+
+  it("calls a wait on a task that is not in the plan a wait that cannot happen", () => {
+    const made = plan(
+      "  - title: One\n    feature: Alpha\n" +
+        "  - title: Two\n    feature: Alpha\n    after: Something nobody wrote down\n",
+    );
+    const two = resolveToderoPlanTaskDependencies(made.tasks)[1]!;
+    expect(two.followsReason).toBe("stated-wait-cannot-happen");
+  });
+
+  it("leaves a task the plan spoke for alone", () => {
+    const made = plan(
+      "  - title: One\n    feature: Alpha\n  - title: Two\n    feature: Alpha\n    after: One\n",
+    );
+    const ordered = resolveToderoPlanTaskDependencies(made.tasks);
+    expect(ordered.map((entry) => entry.followsReason)).toEqual([null, null]);
+  });
+});

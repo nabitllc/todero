@@ -204,11 +204,12 @@ export async function createPlanChildren(
       title: entry.task.title,
       description: buildToderoPlanTaskDescription(input.plan, entry.task, {
         personSaid: input.personSaid,
-        // Where the wait came from, when the plan did not say: the task
-        // listed before this one. The plan document is not touched.
+        // Where the wait came from, when the plan's own waits were unusable:
+        // the task listed before this one. The plan document is not touched.
         followsTaskTitled: entry.followsTaskId
           ? input.kept.find((task) => task.id === entry.followsTaskId)?.title ?? null
           : null,
+        followsReason: entry.followsReason,
       }),
       // Every child is To do from the start, whether or not something has to
       // finish first. A task parked in the backlog is skipped by the wake that

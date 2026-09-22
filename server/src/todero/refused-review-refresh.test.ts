@@ -17,6 +17,7 @@ import {
   buildJudgeRetryInstruction,
   instructionForConversationWake,
   JUDGE_RETRY_NOTE_KEY,
+  JUDGE_RETRY_NOTE_MAX_CHARS,
   JUDGE_REVISION_WAKE_REASON,
 } from "./judge-apply.js";
 import {
@@ -239,5 +240,19 @@ describe("what the worker is told when a fresh review sends its work back", () =
       .toBe(buildJudgeRetryInstruction(note));
     expect(instructionForConversationWake(JUDGE_REVISION_WAKE_REASON))
       .toBe(buildJudgeRetryInstruction());
+  });
+
+  // A reviewer who writes at length has its opening kept and the rest cut.
+  // Nothing pinned where the cut falls, so nobody would notice it moving.
+  it("keeps the opening of a long reviewer note and marks where it was cut", () => {
+    const long = `${"a".repeat(JUDGE_RETRY_NOTE_MAX_CHARS)}b tail that must not survive`;
+    const instruction = buildJudgeRetryInstruction(long);
+    expect(instruction).toContain(`"${"a".repeat(JUDGE_RETRY_NOTE_MAX_CHARS - 1)}…"`);
+    expect(instruction).not.toContain("tail that must not survive");
+  });
+
+  it("leaves a note that just fits whole", () => {
+    const exact = "a".repeat(JUDGE_RETRY_NOTE_MAX_CHARS);
+    expect(buildJudgeRetryInstruction(exact)).toContain(`"${exact}"`);
   });
 });

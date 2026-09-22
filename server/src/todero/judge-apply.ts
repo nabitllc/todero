@@ -40,7 +40,7 @@ export const JUDGE_REVISION_WAKE_REASON = "issue_judge_revision";
 export const JUDGE_RETRY_NOTE_KEY = "judgeRetryNote";
 
 /** How much of the reviewer's paragraph the worker's turn quotes. */
-const JUDGE_RETRY_NOTE_MAX_CHARS = 600;
+export const JUDGE_RETRY_NOTE_MAX_CHARS = 600;
 
 function readRetryNote(context: unknown): string | null {
   if (!context || typeof context !== "object" || Array.isArray(context)) return null;

@@ -1,5 +1,5 @@
-// Repro — wave 7 of the improvement loop: a task nothing is left in front of
-// follows the task listed before it, instead of starting free.
+// Repro — wave 7 of the improvement loop: a review task must wait for the work
+// it reviews, and a wait that cannot happen must not become no wait at all.
 //
 // Wave 19 (organization f6e02c4b-a9d6-4dcf-a397-ecaf6eab83d3, archived)
 // finished with "Review the fourth guide" done, no blockers, nothing refused —
@@ -13,27 +13,37 @@
 // review chain were two chains side by side, both anchored on "Draft the first
 // guide", and the review chain simply ran ahead. So the plan was wrong, not the
 // approval: a 14B planner chained each review to the review before it instead
-// of to the guide it reviews. The first half of this file pins that, word for
+// of to the guide it reviews. The first part of this file pins that, word for
 // word, so nobody re-diagnoses it from memory.
 //
-// The hole this wave does close is the other way a task ends up with nothing in
-// front of it. When the plan names a wait that can never happen — two tasks
-// each waiting for the other — the wait that closes the circle is dropped, and
-// before this wave the task was then left waiting for nothing at all and
+// Nothing the approval step can work out from that plan puts the fourth guide
+// in front of its review: the plan never connects them. What changed is what
+// the planner is asked for — a task that reviews, checks, corrects or builds on
+// another task's output must name that task, and a task may name more than one.
+// The second part pins that instruction and shows the plan it asks for parsing
+// into the two waits the fourth review needed.
+//
+// The third part closes the other way a task ends up with nothing in front of
+// it. When the plan names a wait that can never happen — two tasks each waiting
+// for the other, or a name nobody wrote down — the unusable wait is dropped,
+// and before this wave the task was then left waiting for nothing at all and
 // started at once: wave 19's shape, from a different cause. It now falls back
-// to the task listed before it in its own feature, and its brief says so.
+// to the task listed before it in its own feature, and its brief says which of
+// the two reasons put it there.
 //
 // Nothing here touches a database or a model.
 //
 //   cd docs/ai_context/gauntlet
 //   node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-follows-its-draft.gauntlet.ts
 //
-// Fails on origin/main, where a dropped wait becomes no wait.
+// Fails on origin/main, where the planner is never told to name the work a task
+// builds on, and a dropped wait becomes no wait.
 import { describe, expect, it } from "vitest";
 import {
   buildToderoPlanTaskDescription,
   parseToderoPlanBlock,
   resolveToderoPlanTaskDependencies,
+  TODERO_PLAN_BLOCK_INSTRUCTIONS,
 } from "../../../../packages/shared/src/todero-plan.js";
 
 /** Wave 19's plan, from the root task's own plan document. Four of thirteen tasks. */
@@ -66,7 +76,7 @@ tasks:
 
 const wave19 = parseToderoPlanBlock(WAVE_19_PLAN)!.plan;
 
-function shape(plan: typeof wave19) {
+function shape(plan: { tasks: typeof wave19.tasks }) {
   const byId = new Map(plan.tasks.map((task) => [task.id, task.title]));
   return resolveToderoPlanTaskDependencies(plan.tasks).map((entry) => ({
     title: entry.task.title,
@@ -107,6 +117,39 @@ describe("wave 7: what wave 19's plan actually asked for", () => {
   });
 });
 
+describe("wave 7: what the planner is asked for now", () => {
+  it("tells it that a task building on another task's output names that task", () => {
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "A task that reviews, checks, corrects or builds on what another task hands in cannot start"
+        + " until that task is handed in: name that task in `after`",
+    );
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "A review of the fourth guide waits for the fourth guide, not only for the review before it.",
+    );
+  });
+
+  it("tells it a task can wait for more than one thing, and how to write that", () => {
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "The titles of the tasks that have to finish first, separated by commas",
+    );
+    expect(TODERO_PLAN_BLOCK_INSTRUCTIONS).toContain(
+      "even when it also waits for something else — list both, separated by commas",
+    );
+  });
+
+  it("asks for the plan wave 19 needed, and that plan holds both waits", () => {
+    const written = parseToderoPlanBlock(WAVE_19_PLAN.replace(
+      "    after: Review the third guide",
+      "    after: Draft the fourth guide, Review the third guide",
+    ))!.plan;
+    expect(shape(written)[3]).toEqual({
+      title: "Review the fourth guide",
+      waitsFor: ["Draft the fourth guide", "Review the third guide"],
+      follows: null,
+    });
+  });
+});
+
 describe("wave 7: a task with nothing left in front of it", () => {
   const circled = parseToderoPlanBlock(`\`\`\`todero-plan
 goal: Create four one-page guides for houseplants that survive a dark flat.
@@ -127,14 +170,34 @@ tasks:
     expect(review.follows).toBe("Draft the fourth guide");
   });
 
-  it("tells the worker where that wait came from, in plain words", () => {
+  it("tells the worker the true reason, which here is not that the plan was silent", () => {
     const ordered = resolveToderoPlanTaskDependencies(circled.tasks);
     const review = ordered.find((entry) => entry.task.title === "Review the fourth guide")!;
+    expect(review.followsReason).toBe("stated-wait-cannot-happen");
     const brief = buildToderoPlanTaskDescription(circled, review.task, {
       followsTaskTitled: "Draft the fourth guide",
+      followsReason: review.followsReason,
     });
     expect(brief).toContain("Follows: Draft the fourth guide.");
-    expect(brief).toContain("The plan did not say what this task waits for");
+    expect(brief).toContain("The plan named a wait for this task that can never happen");
+    expect(brief).not.toContain("The plan did not say what this task waits for");
+  });
+
+  it("says the plan was silent when the plan wrote no wait at all", () => {
+    const silent = parseToderoPlanBlock(`\`\`\`todero-plan
+goal: Ship it
+tasks:
+  - title: Draft the fourth guide
+    feature: Guides
+  - title: Review the fourth guide
+    feature: Guides
+\`\`\``)!.plan;
+    const review = resolveToderoPlanTaskDependencies(silent.tasks)[1]!;
+    expect(review.followsReason).toBe("plan-said-nothing");
+    expect(buildToderoPlanTaskDescription(silent, review.task, {
+      followsTaskTitled: "Draft the fourth guide",
+      followsReason: review.followsReason,
+    })).toContain("The plan did not say what this task waits for");
   });
 
   it("leaves the first task of a feature free, so separate features still run side by side", () => {
