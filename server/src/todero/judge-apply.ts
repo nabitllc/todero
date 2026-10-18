@@ -34,29 +34,64 @@ export function judgeFailRound(
 export const JUDGE_REVISION_WAKE_REASON = "issue_judge_revision";
 
 /**
- * The one line added to the worker's turn when the reviewer sends work back.
+ * Where the reviewer's own words travel when the worker is brought back: the
+ * wake carries them, and the turn is built from them at the other end.
+ */
+export const JUDGE_RETRY_NOTE_KEY = "judgeRetryNote";
+
+/** How much of the reviewer's paragraph the worker's turn quotes. */
+export const JUDGE_RETRY_NOTE_MAX_CHARS = 600;
+
+function readRetryNote(context: unknown): string | null {
+  if (!context || typeof context !== "object" || Array.isArray(context)) return null;
+  const value = (context as Record<string, unknown>)[JUDGE_RETRY_NOTE_KEY];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/**
+ * What is added to the worker's turn when the reviewer sends work back.
  *
  * Wave 21: told its guides were not ready for publication, the worker replied
  * with a three-step plan to format and export them. That is a reasonable thing
  * to say and a useless thing to hand in — the task then had no guides on it at
  * all, and the second refusal was right. A send-back asks for the work, so the
  * turn says so.
+ *
+ * Wave 7 adds the reviewer's own sentence to it. A worker whose second try is
+ * the first one under a corrected brief cannot see what changed: the thread
+ * holds two older refusals saying something else entirely. Told in the turn
+ * itself what this reviewer says is missing, it has one thing to answer.
  */
-export function buildJudgeRetryInstruction(): string {
-  return [
+export function buildJudgeRetryInstruction(reviewerNote?: string | null): string {
+  const lines = [
     "Your reviewer sent this back. Read what it asked for and hand in the work itself, complete, in"
       + " this reply — the whole thing, written out, not the parts you changed.",
     "Do not describe what you would do, and do not write a plan for doing it. The reply is the"
       + " hand-in.",
-  ].join("\n");
+  ];
+  const note = (reviewerNote ?? "").replace(/\s+/g, " ").trim();
+  if (note) {
+    const quoted = note.length > JUDGE_RETRY_NOTE_MAX_CHARS
+      ? `${note.slice(0, JUDGE_RETRY_NOTE_MAX_CHARS - 1)}…`
+      : note;
+    lines.push(`What your reviewer says is missing: "${quoted}"`);
+  }
+  return lines.join("\n");
 }
 
 /**
  * What Todero adds to a conversational worker's turn for the reason it was
  * woken: the reviewer's send-back, a turn that produced nothing, or neither.
+ *
+ * The wake that brought the worker back is handed in whole, because a
+ * send-back may have kept the reviewer's words on it. Nothing else is read off
+ * it, and a wake without them says exactly what it said before.
  */
-export function instructionForConversationWake(wakeReason: string | null | undefined): string | null {
-  if (wakeReason === JUDGE_REVISION_WAKE_REASON) return buildJudgeRetryInstruction();
+export function instructionForConversationWake(
+  wakeReason: string | null | undefined,
+  wakeContext?: unknown,
+): string | null {
+  if (wakeReason === JUDGE_REVISION_WAKE_REASON) return buildJudgeRetryInstruction(readRetryNote(wakeContext));
   return emptyTurnInstructionForWake(wakeReason);
 }
 

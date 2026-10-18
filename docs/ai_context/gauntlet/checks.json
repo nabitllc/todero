@@ -32,6 +32,8 @@
     { "id": "repro_parked_task_gets_its_way_back", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-task-gets-its-way-back.gauntlet.ts", "timeout": 300 },
     { "id": "repro_text_only_worker_judged_on_content", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts", "timeout": 300 },
     { "id": "repro_parked_refusal_gets_a_fresh_review", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-refusal-gets-a-fresh-review.gauntlet.ts", "timeout": 300 },
+    { "id": "repro_fresh_review_gives_a_fresh_attempt", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/fresh-review-gives-a-fresh-attempt.gauntlet.ts", "timeout": 300 },
+    { "id": "repro_review_follows_its_draft", "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-follows-its-draft.gauntlet.ts", "timeout": 300 },
     { "id": "improvement_loop", "cmd": "python checks/improvement-loop.py", "timeout": 3900 }
   ]
 }

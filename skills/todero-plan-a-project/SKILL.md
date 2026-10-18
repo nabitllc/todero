@@ -4,8 +4,8 @@ description: Propose a plan in the fixed shape Todero parses, with three to seve
 metadata:
   version: 1
   upstream: "C:/Development/Mich-Brain2/Playbooks/PRD_Framework.md, packages/shared/src/todero-plan.ts, https://raw.githubusercontent.com/addyosmani/agent-skills/main/skills/planning-and-task-breakdown/SKILL.md"
-  last_synced: 2026-09-11
-  last_changed_because: Shipped with the skill pack.
+  last_synced: 2026-09-22
+  last_changed_because: Brought back in step with the plan shape in packages/shared, which now says a task can wait for more than one task and that a review waits for the work it reviews.
   todero-task-kinds: [planning]
   todero-priority: 1
 ---
@@ -24,10 +24,10 @@ tasks:
   - title: An imperative task title
     feature: The feature name it belongs to
     output: What you will hand in for it (a document, a list, a draft, a decision)
-    after: The title of the task that has to finish first (leave this line out when nothing has to come first)
+    after: The titles of the tasks that have to finish first, separated by commas (leave this line out when nothing has to come first)
 ```
 
-Three to seven features. Four to twelve tasks, each naming one of the features. Use `after` only when a task truly cannot start until another one is handed in — tasks without it go side by side with the other features. Put any words for the person before the block, not inside it.
+Three to seven features. Four to twelve tasks, each naming one of the features. Use `after` only when a task truly cannot start until another one is handed in — tasks without it run side by side with the other features. A task that reviews, checks, corrects or builds on what another task hands in cannot start until that task is handed in: name that task in `after`, even when it also waits for something else — list both, separated by commas. A review of the fourth guide waits for the fourth guide, not only for the review before it. Put any words for the person before the block, not inside it.
 
 ## Ordering matters
 
@@ -54,6 +54,6 @@ Kept from **PRD_Framework.md**: the phase order (foundation first, data before U
 
 Kept from **addyosmani/agent-skills § planning-and-task-breakdown**: every task carries a way to tell it is done and names the check that proves it; split anything carrying four or more separate checks; the red flag "tasks without acceptance criteria", which here reads "no task without a done-when".
 
-The block above is `TODERO_PLAN_BLOCK_INSTRUCTIONS` from packages/shared/src/todero-plan.ts, kept whole, including its closing paragraph. One word in that closing paragraph was swapped for a plainer one — it now reads "tasks without it go side by side" — to keep this pack's plain-words rule.
+The block above is `TODERO_PLAN_BLOCK_INSTRUCTIONS` from packages/shared/src/todero-plan.ts, kept whole and word for word, including its closing paragraph. A test in packages/shared reads this file and fails if the two ever say different things.
 
 Dropped from PRD_Framework: the fifteen sections and the file on disk. Dropped from the public skill: its own plan file and its multi-level checklists — Todero parses this block itself, and a small model cannot hold the rest.

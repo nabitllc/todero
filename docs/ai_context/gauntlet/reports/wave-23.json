@@ -1,0 +1,289 @@
+{
+  "wave": 23,
+  "label": "improvement loop wave 7 - a fresh attempt",
+  "started": "2026-09-22T03:41:56+00:00",
+  "wall_seconds": 4492.9,
+  "checks": [
+    {
+      "id": "smoke",
+      "cmd": "node checks/pnpm-run.mjs check:node-version check:no-git-push",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.2,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "tokens",
+      "cmd": "node checks/pnpm-run.mjs check:tokens check:token-gates",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.1,
+      "tail": "[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting.\n[WARN] The \"pnpm\" field in package.json is no longer read by pnpm. The following keys were ignored: \"pnpm.patchedDependencies\", \"pnpm.overrides\". See https://pnpm.io/settings for the new home of each setting."
+    },
+    {
+      "id": "typecheck",
+      "cmd": "node checks/tsc.mjs packages/shared server ui",
+      "ok": true,
+      "exit": 0,
+      "seconds": 9.0,
+      "tail": "[gauntlet] tsc --noEmit in packages/shared\n[gauntlet] tsc --noEmit in server\n[gauntlet] tsc --noEmit in ui"
+    },
+    {
+      "id": "unit_shared",
+      "cmd": "node checks/vitest.mjs packages/shared",
+      "ok": true,
+      "exit": 0,
+      "seconds": 10.7,
+      "tail": "emantics > does not retry a terminal 400 or 413\n[telemetry] dropping batch 99f58a5fb89a0db19e830b952e72df98 on terminal response (HTTP 413); 1 event(s) lost\n\nstderr | src/telemetry/client.test.ts > TelemetryClient batched retry + backoff > does not retry a terminal 400\n[telemetry] dropping batch 8a269f4b64715bcf131c9c7bd8ab14fb on terminal response (HTTP 400); 1 event(s) lost\n\nstderr | src/telemetry/client.test.ts > TelemetryClient batched retry + backoff > does not retry a terminal 413\n[telemetry] dropping batch 7e7681813e038cba211a430de506ffaf on terminal response (HTTP 413); 1 event(s) lost"
+    },
+    {
+      "id": "unit_ui",
+      "cmd": "node checks/vitest.mjs ui",
+      "ok": false,
+      "exit": 1,
+      "seconds": 109.3,
+      "tail": "    Tests  3 failed | 5409 passed (5412)\n   Start at  22:42:21\n   Duration  108.44s (transform 143.60s, setup 12.51s, import 1127.39s, tests 341.04s, environment 685.58s)\n\n[gauntlet] 3 failed:\n  FAIL  src/pages/CompanySettings.test.tsx > CompanyEnvironments > omits the Local driver option and lists Sandbox before SSH\n  FAIL  src/pages/CompanySettings.test.tsx > CompanyEnvironments > shows the Local driver option when editing an existing local environment\n  FAIL  src/pages/CompanySettings.test.tsx > CompanyEnvironments > preserves sandbox config when re-selecting the same provider while editing"
+    },
+    {
+      "id": "unit_server_core",
+      "cmd": "node checks/vitest.mjs server src/todero src/adapters/http src/routes src/__tests__/openapi-routes.test.ts src/__tests__/heartbeat-paused-company-guard.test.ts src/__tests__/company-skills-service.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 166.0,
+      "tail": "stderr | src/__tests__/company-skills-service.test.ts\nSkipping the symlink cases in company-skills-service.test.ts: this host cannot create symlinks."
+    },
+    {
+      "id": "file_size_caps",
+      "cmd": "node checks/file-size-caps.mjs",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.3,
+      "tail": "[file-size] 1845 files checked, 298 standing outliers, 0 failure(s)"
+    },
+    {
+      "id": "live_loop_ollama",
+      "cmd": "python checks/live-loop.py",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1631.0,
+      "tail": " False, 'plan': False}\n22:50:13 round 2: status=blocked markers={'waiting': True, 'review': False, 'plan': True}\n22:53:04 paused for ninety seconds; nothing moved; resumed\n23:08:42 ZZGAAAAAAAAAAAAAAAAA-2: handed in, reviewed, accepted\n23:08:42 ZZGAAAAAAAAAAAAAAAAA-3: handed in, reviewed, accepted\n23:08:43 ZZGAAAAAAAAAAAAAAAAA-4: answered a question\n23:09:07 ZZGAAAAAAAAAAAAAAAAA-5: handed in, reviewed, accepted\n23:12:22 ZZGAAAAAAAAAAAAAAAAA-4: handed in, reviewed, accepted\n23:14:07 runs by status: {'succeeded': 10, 'failed': 1}\n23:14:07 archived Zz Gauntlet 0921-224656\n23:14:07 live loop passed"
+    },
+    {
+      "id": "item0_local_model_timeout",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/adapters/http/local-model-timeout.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.2,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/local-model-timeout.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  23:14:07\n   Duration  1.63s (transform 876ms, setup 166ms, import 1.29s, tests 2ms, environment 0ms)"
+    },
+    {
+      "id": "item0_recovery_copy",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/services/recovery/recovery-copy.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: src/services/recovery/recovery-copy.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  23:14:10\n   Duration  314ms (transform 29ms, setup 117ms, import 22ms, tests 17ms, environment 0ms)"
+    },
+    {
+      "id": "item1_skill_rows",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/skill-pack-row.gauntlet.ts src/components/skills/SkillPackRowMeta.gauntlet.tsx",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.5,
+      "tail": "sets through the API\nThe current testing environment is not configured to support act(...)\nThe current testing environment is not configured to support act(...)\n\nstderr | src/components/skills/SkillPackRowMeta.gauntlet.tsx > SkillPackRowMeta > shows the version and the because-line, and resets through the API\nThe current testing environment is not configured to support act(...)\n\nstderr | src/components/skills/SkillPackRowMeta.gauntlet.tsx > SkillPackRowMeta > shows the version and the because-line, and resets through the API\nThe current testing environment is not configured to support act(...)"
+    },
+    {
+      "id": "item2_wizard_window",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/local-llm-window.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.3,
+      "tail": "\u001b[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - `__dirname` (vitest.config.ts:7:25). Use `import.meta.dirname` instead\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\u001b[39m"
+    },
+    {
+      "id": "item2_cut_off_reply",
+      "cmd": "node checks/vitest.mjs server src/adapters/http/cut-off-reply.test.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 1.9,
+      "tail": "[gauntlet] vitest in server: src/adapters/http/cut-off-reply.test.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:14:16\n   Duration  1.46s (transform 806ms, setup 121ms, import 1.15s, tests 30ms, environment 0ms)"
+    },
+    {
+      "id": "item3_board_reorder",
+      "cmd": "node checks/vitest.mjs --gauntlet ui src/lib/board-reorder.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.4,
+      "tail": "\u001b[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:\n  - `__dirname` (vitest.config.ts:7:25). Use `import.meta.dirname` instead\nSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.\u001b[39m"
+    },
+    {
+      "id": "item4_send_back_one_call",
+      "cmd": "node checks/vitest.mjs --gauntlet server src/__tests__/send-back-route.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 12.6,
+      "tail": "[gauntlet] vitest in server: src/__tests__/send-back-route.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  23:14:20\n   Duration  12.07s (transform 3.12s, setup 112ms, import 6.99s, tests 4.81s, environment 0ms)"
+    },
+    {
+      "id": "item5_task_drain_stable",
+      "cmd": "node checks/repeat.mjs 5 server src/__tests__/instance-settings-routes.test.ts",
+      "ok": false,
+      "exit": 1,
+      "seconds": 59.0,
+      "tail": "k (file:///C:/Development/Todero/node_modules/.pnpm/@vitest+spy@4.1.10/node_modules/@vitest/spy/dist/index.js:332:34)\n              at publishActivitiesBestEffort (C:/Development/Todero/server/src/routes/instance-settings.ts:74:7)\n              at C:/Development/Todero/server/src/routes/instance-settings.ts:398:9\n              at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    }\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 failed (1)\n      Tests  1 failed | 49 passed (50)\n   Start at  23:15:16\n   Duration  15.58s (transform 6.01s, setup 113ms, import 133ms, tests 15.18s, environment 0ms)"
+    },
+    {
+      "id": "repro_slow_local_model_turn",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/slow-local-model-turn.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:15:32\n   Duration  2.57s (transform 832ms, setup 113ms, import 1.18s, tests 1.12s, environment 0ms)"
+    },
+    {
+      "id": "repro_plan_without_tasks",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/plan-without-tasks.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:15:35\n   Duration  309ms (transform 38ms, setup 119ms, import 33ms, tests 3ms, environment 0ms)"
+    },
+    {
+      "id": "repro_review_window",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-window.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 14.3,
+      "tail": "-ad3756c418bb\",\"runId\":\"97211a82-c23e-4e55-9ab5-867e863f317e\"}\u001b[39m\n[23:15:48] \u001b[32mINFO\u001b[39m: \u001b[36mwrote the agent's copy of the hand-in\u001b[39m \u001b[90m{\"agentId\":\"ce54f774-5b18-4cde-a35f-ad3756c418bb\",\"issueId\":\"63d289f6-583a-4f66-ae5b-fd773b787e7b\",\"path\":\"C:\\Users\\msaen\\.todero\\instances\\default\\companies\\66b699ca-990e-48d4-af25-9f9825519ff9\\agents\\ce54f774-5b18-4cde-a35f-ad3756c418bb\\documents\\2026-09-22-t66b699-2.md\"}\u001b[39m\n\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  23:15:36\n   Duration  13.83s (transform 4.46s, setup 113ms, import 8.18s, tests 5.36s, environment 0ms)"
+    },
+    {
+      "id": "repro_second_hand_in",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 8.9,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/second-hand-in.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  23:15:50\n   Duration  8.43s (transform 1.33s, setup 112ms, import 3.83s, tests 4.33s, environment 0ms)"
+    },
+    {
+      "id": "repro_dependency_handoff",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/dependency-handoff.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/dependency-handoff.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  2 passed (2)\n   Start at  23:15:59\n   Duration  2.52s (transform 1.49s, setup 124ms, import 2.23s, tests 3ms, environment 0ms)"
+    },
+    {
+      "id": "repro_deferred_review",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/deferred-review.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 15.5,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/deferred-review.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n[23:16:15] \u001b[32mINFO\u001b[39m: \u001b[36m[todero] The reviewer passed it; accepting the task.\u001b[39m \u001b[90m{\"companyId\":\"fca41509-3a9f-421a-821c-50699e19f99c\"}\u001b[39m\n\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  1 passed (1)\n   Start at  23:16:02\n   Duration  14.93s (transform 4.48s, setup 111ms, import 8.27s, tests 6.39s, environment 0ms)"
+    },
+    {
+      "id": "repro_parked_task_stays_parked",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-task-stays-parked.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/parked-task-stays-parked.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  23:16:18\n   Duration  2.49s (transform 1.47s, setup 120ms, import 2.21s, tests 4ms, environment 0ms)"
+    },
+    {
+      "id": "repro_task_judged_on_its_own_hand_in",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/task-judged-on-its-own-hand-in.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.9,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/task-judged-on-its-own-hand-in.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  23:16:21\n   Duration  2.41s (transform 1.42s, setup 115ms, import 2.14s, tests 5ms, environment 0ms)"
+    },
+    {
+      "id": "repro_empty_retry_is_not_parked",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/empty-retry-is-not-parked.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 2.9,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/empty-retry-is-not-parked.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n   Start at  23:16:23\n   Duration  2.44s (transform 1.42s, setup 124ms, import 2.15s, tests 12ms, environment 0ms)"
+    },
+    {
+      "id": "repro_last_task_judged_with_its_feature",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/last-task-judged-with-its-feature.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/last-task-judged-with-its-feature.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  5 passed (5)\n   Start at  23:16:26\n   Duration  2.51s (transform 1.50s, setup 115ms, import 2.24s, tests 4ms, environment 0ms)"
+    },
+    {
+      "id": "repro_parked_task_gets_its_way_back",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-task-gets-its-way-back.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 4.9,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/parked-task-gets-its-way-back.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  23:16:29\n   Duration  4.37s (transform 2.81s, setup 111ms, import 4.09s, tests 15ms, environment 0ms)"
+    },
+    {
+      "id": "repro_text_only_worker_judged_on_content",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 3.0,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/text-only-worker-judged-on-content.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  4 passed (4)\n   Start at  23:16:34\n   Duration  2.48s (transform 1.47s, setup 127ms, import 2.19s, tests 3ms, environment 0ms)"
+    },
+    {
+      "id": "repro_parked_refusal_gets_a_fresh_review",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/parked-refusal-gets-a-fresh-review.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 5.3,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/parked-refusal-gets-a-fresh-review.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  23:16:37\n   Duration  4.76s (transform 3.11s, setup 135ms, import 4.46s, tests 4ms, environment 0ms)"
+    },
+    {
+      "id": "repro_fresh_review_gives_a_fresh_attempt",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/fresh-review-gives-a-fresh-attempt.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 5.2,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/fresh-review-gives-a-fresh-attempt.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  6 passed (6)\n   Start at  23:16:42\n   Duration  4.74s (transform 3.09s, setup 116ms, import 4.46s, tests 4ms, environment 0ms)"
+    },
+    {
+      "id": "repro_review_follows_its_draft",
+      "cmd": "node checks/vitest.mjs --gauntlet server ../docs/ai_context/gauntlet/repros/review-follows-its-draft.gauntlet.ts",
+      "ok": true,
+      "exit": 0,
+      "seconds": 0.8,
+      "tail": "[gauntlet] vitest in server: ../docs/ai_context/gauntlet/repros/review-follows-its-draft.gauntlet.ts\n\n RUN  v4.1.10 C:/Development/Todero/server\n\n\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\u00c2\u00b7\n\n Test Files  1 passed (1)\n      Tests  10 passed (10)\n   Start at  23:16:48\n   Duration  306ms (transform 41ms, setup 112ms, import 36ms, tests 4ms, environment 0ms)"
+    },
+    {
+      "id": "improvement_loop",
+      "cmd": "python checks/improvement-loop.py",
+      "ok": false,
+      "exit": 1,
+      "seconds": 2401.3,
+      "tail": " {\n    \"ZZGAAAAAAAAAAAAAAAA-1\": \"done\",\n    \"ZZGAAAAAAAAAAAAAAAA-4\": \"done\",\n    \"ZZGAAAAAAAAAAAAAAAA-5\": \"done\",\n    \"ZZGAAAAAAAAAAAAAAAA-3\": \"done\",\n    \"ZZGAAAAAAAAAAAAAAAA-2\": \"done\"\n   }\n  }\n },\n \"humanTouches\": {\n  \"answers_before_plan\": 1,\n  \"approves\": 1,\n  \"lazy_replies\": 0,\n  \"hand_accepts\": 0\n },\n \"askedForPredecessorOutput\": [],\n \"noise\": [],\n \"final\": {\n  \"ZZGAAAAAAAAAAAAAAAAAA-5\": \"blocked\",\n  \"ZZGAAAAAAAAAAAAAAAAAA-4\": \"done\",\n  \"ZZGAAAAAAAAAAAAAAAAAA-3\": \"done\",\n  \"ZZGAAAAAAAAAAAAAAAAAA-2\": \"done\",\n  \"ZZGAAAAAAAAAAAAAAAAAA-1\": \"blocked\",\n  \"ZZGAAAAAAAAAAAAAAAAAA-6\": \"todo\"\n }\n}"
+    }
+  ],
+  "delta": {
+    "fixed": [],
+    "regressed": [
+      "unit_ui"
+    ],
+    "still_failing": [
+      "item5_task_drain_stable",
+      "improvement_loop"
+    ],
+    "new": [
+      "repro_fresh_review_gives_a_fresh_attempt",
+      "repro_review_follows_its_draft"
+    ]
+  },
+  "prev_score": 28,
+  "spend": {
+    "subagent:workflow-subagent|claude-opus-5[1m]": {
+      "input": 22,
+      "output": 4819,
+      "cacheRead": 349090,
+      "cacheCreation": 657941,
+      "usd": 4.4072612499999995
+    }
+  },
+  "local": {}
+}

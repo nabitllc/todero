@@ -24,6 +24,11 @@ import {
 import { descriptionWithWaitingMarker } from "./conversation-thread.js";
 import { writeIssueDocumentOnLatest } from "./issue-document-write.js";
 import { JUDGE_AGENT_METADATA_KEY, JUDGE_AGENT_METADATA_VERSION } from "./judge-agent.js";
+import {
+  instructionForConversationWake,
+  JUDGE_REVISION_WAKE_REASON,
+} from "./judge-apply.js";
+import { JUDGE_OVER_TO_YOU_OPENING, JUDGE_SENT_BACK_OPENING, readJudgeFailRounds } from "./judge.js";
 import { TEXT_ONLY_WORKER_NOTE } from "./judge-text-only-worker.js";
 import type { DeferredReviewWakeup } from "./deferred-review.js";
 import { loadRefusedHandInsToRefresh, refreshRefusedHandIns } from "./refused-review-refresh.js";
@@ -66,7 +71,13 @@ describeEmbeddedPostgres("the fresh review a parked refusal gets, against a real
   /** What the reviewer's model says next. */
   let verdictText = "1: met\n2: met\nVerdict: pass\nThe guides read well and cover each plant.";
 
-  const wakeup: DeferredReviewWakeup = async () => null;
+  /** Every agent this pass asked Todero to bring back, and with what. */
+  let wakes: Array<{ agentId: string; contextSnapshot: unknown }> = [];
+
+  const wakeup: DeferredReviewWakeup = async (agentId, wake) => {
+    wakes.push({ agentId, contextSnapshot: wake.contextSnapshot });
+    return null;
+  };
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("todero-refused-review-db-");
@@ -96,6 +107,7 @@ describeEmbeddedPostgres("the fresh review a parked refusal gets, against a real
 
   beforeEach(() => {
     asked = [];
+    wakes = [];
     verdictText = "1: met\n2: met\nVerdict: pass\nThe guides read well and cover each plant.";
   });
 
@@ -248,6 +260,41 @@ describeEmbeddedPostgres("the fresh review a parked refusal gets, against a real
     expect(asked[0]).toContain(TEXT_ONLY_WORKER_NOTE.slice(0, 60));
     expect((await readTask(taskId)).status).toBe("done");
     expect(await commentsOn(taskId)).toHaveLength(2);
+  });
+
+  it("sends a refusal back to the worker for another try, instead of to the person", async () => {
+    const { companyId, taskId, workerId } = await seed({ autoAcceptWhenJudgePasses: false });
+    verdictText = [
+      "1: not met",
+      "2: not met",
+      "Verdict: fail",
+      "It does not include the actual refined guides. Instead, it provides a plan for refining the guides.",
+    ].join("\n");
+
+    const tally = await refresh(companyId);
+    expect(tally.reviewed).toBe(1);
+    expect(tally.failed).toBe(0);
+
+    // The task is the worker's again, and this refusal is its first.
+    const after = await readTask(taskId);
+    expect(after.status).toBe("todo");
+    expect(readJudgeFailRounds(after.description)).toBe(1);
+
+    // The reviewer sent it back rather than handing it to the person.
+    const said = await commentsOn(taskId);
+    expect(said[said.length - 1]).toContain(JUDGE_SENT_BACK_OPENING);
+    expect(said[said.length - 1]).not.toContain(JUDGE_OVER_TO_YOU_OPENING);
+
+    // The worker is brought back, and its turn says what to fix.
+    expect(wakes.map((wake) => wake.agentId)).toEqual([workerId]);
+    const instruction = instructionForConversationWake(JUDGE_REVISION_WAKE_REASON, wakes[0]!.contextSnapshot);
+    expect(instruction).toContain("hand in the work itself, complete, in this reply");
+    expect(instruction).toContain("does not include the actual refined guides");
+
+    // Starting the organization again leaves it alone: it is the worker's turn.
+    const again = await refresh(companyId);
+    expect(again.reviewed).toBe(0);
+    expect(asked).toHaveLength(1);
   });
 
   it("gives each refusal one fresh look and no more", async () => {

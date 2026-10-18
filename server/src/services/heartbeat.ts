@@ -15023,7 +15023,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       } else if (conversationWakeReason === MISSING_PLAN_RETRY_WAKE_REASON) {
         context.toderoTurnInstruction = buildMissingPlanRetryInstruction();
       } else {
-        context.toderoTurnInstruction = instructionForConversationWake(conversationWakeReason) ?? context.toderoTurnInstruction;
+        context.toderoTurnInstruction = instructionForConversationWake(conversationWakeReason, context) ?? context.toderoTurnInstruction;
       }
       // What this agent knows for this kind of turn. The rows are the
       // organization's own copies, so a person's edit takes effect on the

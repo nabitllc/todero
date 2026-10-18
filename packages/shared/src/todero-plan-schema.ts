@@ -61,7 +61,8 @@ export const TODERO_PLAN_JSON_SCHEMA = {
           output: { type: "string", description: "What you will hand in for it." },
           after: {
             type: "string",
-            description: "The title of the task that has to finish first. Empty when nothing has to come first.",
+            description:
+              "The titles of the tasks that have to finish first, separated by commas. Empty when nothing has to come first. A task that reviews, checks, corrects or builds on what another task hands in cannot start until that task is handed in: name that task here, even when it also waits for something else.",
           },
         },
         required: ["title", "feature", "output", "after"],

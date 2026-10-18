@@ -36,7 +36,11 @@ import {
   type DeferredReviewTally,
 } from "./deferred-review.js";
 import { type DeferredHandIn } from "./deferred-review-find.js";
-import { JUDGE_OVER_TO_YOU_OPENING, JUDGE_SENT_BACK_OPENING } from "./judge.js";
+import {
+  descriptionWithJudgeFailRounds,
+  JUDGE_OVER_TO_YOU_OPENING,
+  JUDGE_SENT_BACK_OPENING,
+} from "./judge.js";
 import { findJudgeAgentForHandIn } from "./judge-review.js";
 
 /** A parked task whose last word from the reviewer was a refusal. */
@@ -165,16 +169,36 @@ export async function loadRefusedHandInsToRefresh(db: Db, companyId: string): Pr
 }
 
 /**
+ * The text a refused hand-in goes into its fresh review with: the mark that
+ * says it has had its one look, and the count of refusals back to nothing.
+ *
+ * Wave 22 is why the count goes back. Wave 21's organization was reopened, the
+ * parked task was read again under the corrected brief, and the new verdict
+ * was about the work rather than its formatting — a real, answerable
+ * complaint. It still went straight to the person: two refusals had already
+ * been counted against the task under the old brief, so the reviewer's plan
+ * had no round left to spend and said "over to you" instead of sending it
+ * back. The worker was never asked to try again. A look under a new brief is a
+ * first look, so the refusals the old brief counted are not held against it.
+ */
+export function descriptionForAFreshAttempt(description: string | null | undefined): string {
+  return descriptionWithJudgeFailRounds(descriptionWithRefreshedReviewMarker(description, true), 0);
+}
+
+/**
  * Take a task before anything talks to a model about it, by writing the mark
  * that says it has had its fresh look. One statement, with the task's own text
  * as the condition, so of two passes over the same organization only one can
  * take the same refusal — and a machine that stops half way through leaves the
  * task marked rather than coming round for ever.
  *
+ * The same statement puts the count of refusals back to nothing, so the
+ * reviewer that is about to read the work has a round to spend on it.
+ *
  * Returns the task's new text, or null when somebody else got there first.
  */
 export async function claimRefusedHandIn(db: Db, task: DeferredHandIn): Promise<string | null> {
-  const next = descriptionWithRefreshedReviewMarker(task.description, true);
+  const next = descriptionForAFreshAttempt(task.description);
   const taken = await db
     .update(issues)
     .set({ description: next, updatedAt: new Date() })
