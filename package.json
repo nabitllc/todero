@@ -73,12 +73,12 @@
     "connections:ingest-app-definitions": "node scripts/ingest-app-definitions.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
-    "agentmail": "^0.5.14",
+    "@playwright/test": "^1.64.1",
+    "agentmail": "^0.5.46",
     "cross-env": "^10.1.0",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=24.11.0"
