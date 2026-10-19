@@ -63,3 +63,8 @@ Read and fill in every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/P
 Do not write an ad hoc PR body. `CONTRIBUTING.md` gives the rules and worked examples.
 
 A change is done when it meets `docs/ai_context/session_gates.md` § Definition of done.
+
+## Golden rules and do-not-touch
+
+- **Every change follows Michael's golden rules:** `Mich-Brain2/Playbooks/Maintainability_and_Consistency.md` (design system, UI consistency, code structure, config, agent hygiene, releases, budgets, dependencies, hosting cost). Run the audit block of each section the change touches; any FAIL blocks the merge.
+- **Do not touch:** `pnpm-lock.yaml` except through pnpm; `node_modules/`.
