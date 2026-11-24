@@ -2,6 +2,9 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Brain2 machine budget (2026-11-24): each laptop exports BRAIN2_TEST_WORKERS so parallel sessions
+    // don't each take half the cores. Unset (CI, a cloud VM) -> vitest's default.
+    maxWorkers: Number(process.env.BRAIN2_TEST_WORKERS) || undefined,
     projects: [
       "packages/shared",
       "packages/skills-catalog",
